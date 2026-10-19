@@ -146,6 +146,56 @@ replaced. Stock `vendor_boot_a.img` is documented but not rebuilt: the
 built `boot.img` is self-contained, so a new `vendor_boot` is not part of
 this step.
 
+## Boot chain fix (2026-10-19)
+
+The first temporary-boot attempt showed that a header-v4 boot is not
+self-contained. The kernel came from `fastboot boot`, but the generic
+ramdisk came from the stock `init_boot_a` (the 2747936-byte Android
+`/init`), the vendor ramdisk, DTB blob and vendor command line came from
+the stock `vendor_boot_a` (`first_stage_ramdisk/fstab.qcom`, 324 modules,
+no `/init`), and the board overlay from stock `dtbo_a` entry 65. Stock init
+ran, its 6.1.84 modules failed to load against the 6.1.78 kernel, and the
+debug initramfs in `boot.img` never executed. [BOOT.md](BOOT.md) has the
+full evidence; the captured pstore console is a stock 6.1.84 boot and does
+not record the failure.
+
+`scripts/build-bootimg.sh` now also writes `init_boot.img` (header v4,
+empty kernel, the debug ramdisk, matching the stock `init_boot` layout) and
+`vendor_boot.img` (header v4 at the stock offsets, the debug ramdisk as its
+single PLATFORM vendor ramdisk, a DTB blob, and the vendor command line
+`earlycon keep_bootcon loglevel=8 log_buf_len=1M ignore_loglevel
+printk.devkmsg=on panic=-1 bootconfig`).
+
+The DTB blob concatenates the eleven volcano SoCs the vendor tree builds,
+in stock order: Volcano, Volcano6, Volcano6I FP1–FP4, Volcano6P, Volcano6IP
+FP1–FP4. Stock ships twenty, adding the Cliffs and Pineapple SoCs that this
+tree does not build; index 9 is `volcano.dtb` in both. Every built DTB gets
+`reg = <0x0 0x81f20000 0x0 0x400000>` and `console-size = <0x200000>` added
+to its `ramoops_region`, matching the stock reservation the live FDT
+records, because `volcano.dtsi` alone has no fixed address for the region
+and the stock values normally arrive through the `dtbo` overlay. The
+bootconfig keeps the stock `androidboot.usbcontroller=a600000.dwc3` tokens.
+
+The panic policy is `panic=-1`: on panic the kernel waits instead of
+rebooting, so the ramoops console survives until OrangeFox reads
+`/sys/fs/pstore`. `earlycon` follows `chosen/stdout-path`, which points at
+the GENI debug UART the driver registers an earlycon for. No UART test
+points were identified, so no serial adapter is part of this setup.
+
+Built 2026-10-19, `scripts/verify-bootimg.sh` all checks OK:
+
+| file | sha256 |
+| --- | --- |
+| `$WORK/out/boot.img` | `f1406364c3e393cb0a779edfdf4da657eb69169bfc54f5b379cd462c4a5653d3` |
+| `$WORK/out/init_boot.img` | `65fc21c462e681bf046c10d3dbe55ac6c8de3fdab975a70b2fb423358a31123f` |
+| `$WORK/out/vendor_boot.img` | `2cb726cc75262da15ec559918cf370d83037524180b0d9871e0e6f8a932164b0` |
+| `$WORK/out/dtb.img` | `f32dec096080fd828900c7acd1c7bfda3c729e124211394e0c9b059d2a3baa02` |
+| `$WORK/out/Image.gz` | `159a970903ffbf2012d706099f67703ad6c5d7e31f83441deff363e80eaacc8f` |
+| `$WORK/out/initramfs.cpio.gz` | `c4f7dbee6d3770b0991b891f6f9a7d9b3685ed3dec3d28cbddfdc0f6b9b50244` |
+| stock `init_boot_a.img` | `baa33fd43c3da1d9f3358ced9249c42abecc704fc5707a5241ea69e77c1e3193` |
+
+Nothing was flashed and no phone was booted.
+
 Stock `vendor_boot` layout, from the unpacked reference: header v4 (2128
 bytes, page size 4096), one PLATFORM vendor-ramdisk fragment of 8821389
 bytes (unnamed), a 9419891-byte DTB blob, one 108-byte ramdisk-table entry
@@ -219,7 +269,7 @@ reference, not files in git.
 
 | file | sha256 |
 | --- | --- |
-| `$WORK/out/boot.img` | `7cd886a24121c878a62839424b6b7f88840ba7504eb09cd0720eec96cb8ecfe5` |
+| `$WORK/out/boot.img` (superseded by the boot-chain fix below) | `7cd886a24121c878a62839424b6b7f88840ba7504eb09cd0720eec96cb8ecfe5` |
 | `$WORK/out/initramfs.cpio.gz` | `c4f7dbee6d3770b0991b891f6f9a7d9b3685ed3dec3d28cbddfdc0f6b9b50244` |
 | `$WORK/out/Image.gz` | `159a970903ffbf2012d706099f67703ad6c5d7e31f83441deff363e80eaacc8f` |
 | `$WORK/out/Image` | `b289b9f19171db2b110c51e98f883cf1c824c8374983c9e95e51d9194df7140f` |

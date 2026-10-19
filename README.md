@@ -71,8 +71,9 @@ identification and limitations. No flash or boot test was done.
 ## Boot image (2026-10-19)
 
 `scripts/build-bootimg.sh` packages the baseline `Image` and a minimal
-initramfs into header-v4 `boot.img` (page size 4096, stock load offsets).
-It does not flash or boot the phone. Install the extra host tools, then:
+initramfs into header-v4 `boot.img`, `init_boot.img` and `vendor_boot.img`
+(page size 4096, stock load offsets). It does not flash or boot the phone.
+Install the extra host tools, then:
 
 ```sh
 sudo apt-get install mkbootimg python3 cpio gzip curl file fakeroot
@@ -86,6 +87,13 @@ the baseline has `CONFIG_USB_CONFIGFS_RNDIS` unset. There is no dropbear:
 Ubuntu resolute publishes no arm64 dropbear package, so the image ends in a
 key-free serial shell. Details, hashes and the vendor_boot layout are in
 [UPSTREAM.md](UPSTREAM.md). Images stay under `$WORK/out`.
+
+The first `fastboot boot` of the earlier single `boot.img` was accepted by
+the bootloader and never enumerated the gadget, because a header-v4 boot
+takes its generic ramdisk from `init_boot` and its DTB and command line from
+`vendor_boot`, neither of which that attempt replaced. [BOOT.md](BOOT.md)
+records the evidence and the procedure for the next attempt. The procedure
+is documentation only: nothing in this repository flashes or boots the phone.
 
 ## License
 

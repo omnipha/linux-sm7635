@@ -85,7 +85,9 @@ make -j"$JOBS" Image dtbs 2>&1 | tee -a "$OUT/build.log"
 cp -f arch/arm64/boot/Image "$OUT/Image"
 DT=arch/arm64/boot/dts/vendor/qcom
 for f in volcano.dtb volcano6.dtb volcano6i-fp1.dtb volcano6i-fp2.dtb \
-	volcano6i-fp3.dtb volcano6i-fp4.dtb volcano-qrd-overlay.dtbo \
+	volcano6i-fp3.dtb volcano6i-fp4.dtb volcano6p.dtb volcano6ip-fp1.dtb \
+	volcano6ip-fp2.dtb volcano6ip-fp3.dtb volcano6ip-fp4.dtb \
+	volcano-qrd-overlay.dtbo \
 	volcano-qrd-pro-overlay.dtbo volcano-volcano-qrd-pro-overlay.dtb \
 	volcano6-volcano-qrd-pro-overlay.dtb \
 	volcano6i-fp1-volcano-qrd-pro-overlay.dtb \
