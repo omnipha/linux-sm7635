@@ -87,11 +87,14 @@ kernel-platform workspace and the `android/abi_gki_aarch64_qcom` symbol list,
 which this standalone tree does not contain, so it was not applied.
 
 Against the on-device config (5996 symbols, Linux/arm64 6.1.84): 5921 identical,
-75 only in the device config, 1054 only in the built config. The built config
-has 6975 symbols. Notable device-only settings are `CONFIG_MODULE_SIG_ALL=y`,
+75 device-only or changed lines, 1054 built-only or changed lines (a symbol
+with different values appears in both lists). The built config has 6975
+symbols. Notable changed settings are `CONFIG_MODULE_SIG_ALL=y`,
 `CONFIG_TRIM_UNUSED_KSYMS=y` and `CONFIG_UNUSED_KSYMS_WHITELIST`; the built
-config has both of the first two unset. Both sides set `CONFIG_LOCALVERSION=""`,
-`CONFIG_LOCALVERSION_AUTO=y`, `CONFIG_ARCH_VOLCANO=y`, `CONFIG_DEBUG_INFO_BTF=y`
+config has both of the first two unset. `CONFIG_CMDLINE` and
+`CONFIG_LOCALVERSION` also differ, as do the toolchain-generated
+`CONFIG_CC_VERSION_TEXT`, `CONFIG_CLANG_VERSION` and `CONFIG_LLD_VERSION`.
+Both sides set `CONFIG_LOCALVERSION_AUTO=y`, `CONFIG_ARCH_VOLCANO=y`, `CONFIG_DEBUG_INFO_BTF=y`
 and the same SELinux options checked. The large built-only set is mostly debug,
 test and SoC options that `olddefconfig` fills in and the device's trimmed
 config omits. The full symbol diff is `$WORK/out/comparison.txt`.
