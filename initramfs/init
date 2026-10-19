@@ -22,6 +22,7 @@ mount -t devpts devpts /dev/pts
 
 printf 'root:x:0:0:root:/root:/bin/sh\n' >/etc/passwd
 printf 'root:x:0:\n' >/etc/group
+printf '/bin/sh\n' >/etc/shells
 hostname omnipha-usb
 log 'starting'
 
@@ -67,6 +68,11 @@ else
 	fi
 fi
 
-log 'console ready; dropbear is not included'
+mkdir -p /etc/dropbear /var/run
+if /bin/dropbear -R -p 172.16.42.2:22 >/dev/console 2>&1; then
+	log 'sshd listening at 172.16.42.2:22 (public key only)'
+else
+	log 'sshd failed to start'
+fi
+log 'console ready'
 setsid cttyhack /bin/sh
-EOF

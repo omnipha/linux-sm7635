@@ -111,6 +111,9 @@ config omits. The full symbol diff is `$WORK/out/comparison.txt`.
 
 ## Boot image (2026-10-19)
 
+The original single-boot packaging is documented here for provenance;
+the current three-image debug chain with SSH is described below.
+
 `scripts/build-bootimg.sh` reads the baseline artifacts already in
 `$WORK/out` and writes `boot.img`, `Image.gz` and `initramfs.cpio.gz` there.
 `scripts/verify-bootimg.sh` unpacks `boot.img` with `unpack_bootimg` and
@@ -249,7 +252,7 @@ Nothing from the package or the device reference is committed.
 not a device serial. It then opens a root shell on the console with
 `setsid cttyhack`.
 
-### USB gadget and sshd blocker
+### USB gadget and original sshd blocker
 
 The baseline config has `CONFIG_USB_CONFIGFS_NCM=y`, `CONFIG_USB_F_NCM=y`,
 `CONFIG_USB_CONFIGFS_ECM=y` and `CONFIG_USB_F_ECM=y`. `CONFIG_USB_CONFIGFS_RNDIS`
@@ -257,14 +260,55 @@ is not set, and `CONFIG_USB_F_RNDIS` is absent. RNDIS would require a kernel
 rebuild, which this packaging step does not do. NCM is the function a host
 should use; ECM is present because it is already built in.
 
-Dropbear is not included. Ubuntu resolute has `dropbear-bin` only for amd64,
-and the arm64 Ports index has no `dropbear` or `dropbear-bin` package. The
-arm64 OpenSSH server is dynamically linked and is not a key-only initramfs
-sshd. No SSH key is generated or stored. The serial shell is the documented
-debug path until an arm64 static dropbear can be built and a key is supplied
-outside this repository.
+Dropbear was not included at that point. Ubuntu resolute has `dropbear-bin`
+only for amd64, and the arm64 Ports index has no `dropbear` or `dropbear-bin`
+package. The arm64 OpenSSH server is dynamically linked and is not a
+key-only initramfs sshd. The serial shell was the documented debug path
+until the static dropbear build below (2026-10-19) resolved this blocker.
 
-### Recorded hashes
+### SSH-capable debug initramfs (2026-10-19)
+
+`scripts/build-bootimg.sh` now uses two pinned sources (nothing from either
+source is checked into this repo):
+
+| input | source | sha256 | license |
+| --- | --- | --- | --- |
+| static arm64 busybox | Ubuntu resolute `busybox-static` 1:1.37.0-7ubuntu1 arm64 (`BUSYBOX_DEB`) | `fcf50794faf920455895d7ef103d1c54b9ebf7f18d2e52982dbf3903b7769592` | GPL-2.0-only, Ubuntu package copyright file |
+| dropbear 2026.94 source | `https://matt.ucc.asn.au/dropbear/releases/dropbear-2026.94.tar.bz2` (`DROPBEAR_TARBALL`) | `e098034a843699200c8c977a991fff73159735bf795d5f72ef672c41a6b1ae81` | MIT-style (`LICENSE`), bundled LibTomCrypt public domain, LibTomMath public domain; all three notices packed in the ramdisk |
+
+Dropbear is cross-built from source with `aarch64-linux-gnu-gcc`
+(`--enable-static --disable-zlib --disable-syslog --disable-lastlog
+--disable-wtmp --disable-utmp --disable-pututline --disable-pututxline`),
+with `DROPBEAR_SVR_PASSWORD_AUTH=0` and `DROPBEAR_SVR_PAM_AUTH=0` in
+`localoptions.h`. `file` confirms ARM aarch64 and statically linked; the
+build and verification scripts check the version under `qemu-aarch64`.
+The ramdisk carries the binary and the public notices, but no host private
+key. Its host key is generated at first connection into `/etc/dropbear`
+(`-R`) and is ephemeral; the SSH host fingerprint changes each boot.
+
+The only login is root with the `ssh-ed25519` public key read from
+`$PUBKEY` (default `~/.ssh/id_ed25519.pub`) at build time; the file is
+validated as a single ed25519 public key and packed as root-owned
+`/root/.ssh/authorized_keys` with mode 0600. The build will fail if the
+input is missing or malformed. `initramfs/init` keeps the NCM/ECM gadget
+and starts dropbear bound to `172.16.42.2:22`. There is no password or
+lockscreen authentication path. Both images containing a generic ramdisk
+(`boot.img`, `init_boot.img`) and the vendor ramdisk in `vendor_boot.img`
+are byte-identical. `scripts/verify-bootimg.sh` unpacks the ramdisk, checks
+the binary, license notices, public key, startup bind address and matching
+ramdisks. Built on the host only; no physical boot or SSH measurement.
+Two consecutive builds with the same public key produced identical images;
+`verify-bootimg.sh` passed against the unpacked images and read-only stock
+references. Final hashes (artifacts are outside this repository):
+
+| file | sha256 |
+| --- | --- |
+| `$WORK/out/boot.img` | `5e866c5416791d873b8da1a9d4ac3da63ac4dd05cf36a85aa65da1a084eb7efb` |
+| `$WORK/out/init_boot.img` | `f4b987ee9a6082a22201c763e1d437dcc1dee0c62f2e2e0d8e7a3ffad8078e89` |
+| `$WORK/out/vendor_boot.img` | `bde3a3b3bc7ea587f195de63de76db5f14f8dfd197d6d3224904f722af18fd31` |
+| `$WORK/out/initramfs.cpio.gz` | `caa3eb8218b9ee3024ec884e2e8619705e91732860628b363b933944cc56f37f` |
+
+### Recorded hashes (before the sshd update)
 
 Built on 2026-10-19 with the pinned busybox package; `scripts/verify-bootimg.sh`
 reported all checks OK. Stock hashes are identifiers of the read-only
