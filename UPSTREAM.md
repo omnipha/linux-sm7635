@@ -43,10 +43,10 @@ Artifacts stay in `$WORK/out` and are not committed.
 
 | artifact | sha256 |
 | --- | --- |
-| `Image` (39971328 bytes) | `4a0cd4d75bd3fd6923b2d5fd5d8a4cab422a01101e879c25eb866b1b80d99d18` |
-| `.config` | `5334d8e92e77af032e8dfbf04b04cf405433975731033f8e2006060d1f5c794e` |
+| `Image` (39971328 bytes) | `b289b9f19171db2b110c51e98f883cf1c824c8374983c9e95e51d9194df7140f` |
+| `.config` (237437 bytes) | `acee1959e6ab3b4fcdf72ef708d5a13957c714e6b34a3a9ccfc5cb916c04d1cc` |
 | `volcano-qrd-pro-overlay.dtbo` | `f463a7ef578263bbe4ecc373be1dab3da1a731d3cac6d423e6698dbe0cf11274` |
-| `volcano-volcano-qrd-pro-overlay.dtb` | `1c8251e52a013e0b7b9cb6d21b45a640f26b966a9984db5474d7b7c112fb111d` |
+| `volcano-volcano-qrd-pro-overlay.dtb` (368015 bytes) | `1c8251e52a013e0b7b9cb6d21b45a640f26b966a9984db5474d7b7c112fb111d` |
 
 Compiler recorded in the built config: `Ubuntu clang version 17.0.6 (23ubuntu7)`.
 The device config records `Android (10087095, +pgo, +bolt, +lto, -mlgo, based on
@@ -86,9 +86,9 @@ Merge method: `scripts/kconfig/merge_config.sh -m -r -y` over
 kernel-platform workspace and the `android/abi_gki_aarch64_qcom` symbol list,
 which this standalone tree does not contain, so it was not applied.
 
-Against the on-device config (5996 symbols, Linux/arm64 6.1.84): 5917 identical,
-79 only in the device config, 1053 only in the built config. The built config
-has 6970 symbols. Notable device-only settings are `CONFIG_MODULE_SIG_ALL=y`,
+Against the on-device config (5996 symbols, Linux/arm64 6.1.84): 5921 identical,
+75 only in the device config, 1054 only in the built config. The built config
+has 6975 symbols. Notable device-only settings are `CONFIG_MODULE_SIG_ALL=y`,
 `CONFIG_TRIM_UNUSED_KSYMS=y` and `CONFIG_UNUSED_KSYMS_WHITELIST`; the built
 config has both of the first two unset. Both sides set `CONFIG_LOCALVERSION=""`,
 `CONFIG_LOCALVERSION_AUTO=y`, `CONFIG_ARCH_VOLCANO=y`, `CONFIG_DEBUG_INFO_BTF=y`

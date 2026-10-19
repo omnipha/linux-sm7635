@@ -95,6 +95,6 @@ for f in volcano.dtb volcano6.dtb volcano6i-fp1.dtb volcano6i-fp2.dtb \
 	cp -f "$DT/$f" "$OUT/$f"
 done
 
-( cd "$OUT" && sha256sum Image .config *.dtb *.dtbo ) > "$OUT/sha256.txt"
+( cd "$OUT" && sha256sum Image .config ./*.dtb ./*.dtbo ) > "$OUT/sha256.txt"
 echo "finished: $(date -u +%Y-%m-%dT%H:%M:%SZ)" | tee -a "$OUT/build.log"
 tee -a "$OUT/build.log" < "$OUT/sha256.txt"
