@@ -101,9 +101,128 @@ config omits. The full symbol diff is `$WORK/out/comparison.txt`.
 
 ### Limitations
 
-- Not a boot test and not a packaged boot image. No modules, vendor DLKM,
-  initramfs or `dtbo.img` were built.
+- The baseline itself was not a boot test. The boot image below packages that
+  kernel; it was unpacked locally and was not flashed or booted.
+- No modules or vendor DLKM were built.
 - Source is 6.1.78; the measured device kernel is 6.1.84.
 - Toolchain is Ubuntu clang 17.0.6, not Android clang 17.0.2 build 10087095.
 - `CONFIG_MODULE_SIG_ALL` and `CONFIG_TRIM_UNUSED_KSYMS` differ from the device.
 - One local, uncommitted cast in the build worktree is required for host tools.
+
+## Boot image (2026-10-19)
+
+`scripts/build-bootimg.sh` reads the baseline artifacts already in
+`$WORK/out` and writes `boot.img`, `Image.gz` and `initramfs.cpio.gz` there.
+`scripts/verify-bootimg.sh` unpacks `boot.img` with `unpack_bootimg` and
+compares its header with the read-only stock `boot_a.img`, cross-checking the
+stock `vendor_boot_a.img` and `dtbo_a.img` layouts. Neither script writes to
+the phone.
+
+```sh
+sudo apt-get install mkbootimg python3 cpio gzip curl file fakeroot
+WORK="$HOME/sm7635-build" scripts/build-bootimg.sh
+WORK="$HOME/sm7635-build" scripts/verify-bootimg.sh
+```
+
+The build is reproducible: the cpio is generated with `--reproducible`, all
+mtimes are forced to epoch 0, and `gzip -n` omits name and timestamp. Two
+consecutive runs produce byte-identical `boot.img` and `initramfs.cpio.gz`.
+`mkbootimg` is Ubuntu `1:34.0.5-12build1`. The arguments match the stock
+header fields, not the stock payload:
+
+| field | stock and built |
+| --- | --- |
+| boot header | v4, 1584 bytes, signature size 0, empty cmdline |
+| page size | 4096 (stored in `vendor_boot`; boot v4 has no page field) |
+| base / kernel / ramdisk / tags | `0`, `0x8000`, `0x1000000`, `0x100` |
+| DTB load address | `0x1f00000` |
+| kernel payload | gzip, like stock `boot_a.img` (stock is 13949926 bytes gzipped) |
+
+Stock `boot_a.img` carries a gzipped kernel and an empty ramdisk. The built
+`boot.img` carries the gzipped baseline `Image` plus the debug ramdisk,
+because this is the image a later temporary boot would pass to fastboot.
+Stock `init_boot_a.img` keeps the first-stage ramdisk separate and is not
+replaced. Stock `vendor_boot_a.img` is documented but not rebuilt: the
+built `boot.img` is self-contained, so a new `vendor_boot` is not part of
+this step.
+
+Stock `vendor_boot` layout, from the unpacked reference: header v4 (2128
+bytes, page size 4096), one PLATFORM vendor-ramdisk fragment of 8821389
+bytes (unnamed), a 9419891-byte DTB blob, one 108-byte ramdisk-table entry
+and a 175-byte bootconfig (`androidboot.usbcontroller=a600000.dwc3` and
+related tokens). The stock kernel cmdline is empty; the stock vendor cmdline
+is `video=vfb:640x400,bpp=32,memsize=3072000 nosoftlockup log_buf_len=1M
+ignore_loglevel printk.devkmsg=on bootconfig`.
+
+### DTB and DTBO selection
+
+Stock `vendor_boot` stores twenty concatenated base SoC DTBs, in this order:
+Cliffs, Cliffs 7, Cliffs7P, CliffsP, Pineapple v2, Pineapple, PineappleP SG V2,
+PineappleP v2, PineappleP, Volcano, Volcano6, Volcano6I FP1–FP4, Volcano6IP
+FP1–FP4, Volcano6P. Their root `qcom,board-id` is `<0 0>`. The board overlay
+is not in that blob. It is entry 65 of stock `dtbo_a.img` (76 entries,
+version 0 table): model `Qualcomm Technologies, Inc. Volcano QRD Pro`, the
+live-FDT compatible list, `qcom,board-id = <0x0b 0>`, and `qcom,oem-id = <2>`.
+
+The board identity comes from `volcano-qrd-pro-overlay.dtbo` in
+`$WORK/out`, the #1 comparison match, which `verify-bootimg.sh` checks
+against stock DTBO entry 65 by model, board-id and oem-id (all three equal).
+The non-Pro overlay differs by model and `qcom,oem-id = <1>` and is not
+selected. No `dtbo.img` is produced and the stock partitions are not
+modified: on this device the board overlay lives in the dtbo partition, which
+a temporary `fastboot boot` of the built image does not replace.
+
+### Initramfs
+
+`initramfs/init` plus one downloaded binary, packed as root-owned newc cpio
+and `gzip -n -9`:
+
+| path | source |
+| --- | --- |
+| `/init` | `initramfs/init`, mode 0755 |
+| `/bin/busybox` | Ubuntu resolute `busybox-static` 1:1.37.0-7ubuntu1 arm64, static |
+| `/bin/{sh,ip,…}` | symlinks to `busybox` for the applets `/init` uses |
+| `/sbin/init` | symlink to `../bin/busybox` |
+| `/dev/{console,null,kmsg,ptmx}` | character nodes created under `fakeroot` |
+
+The package URL and sha256 are pinned in `scripts/build-bootimg.sh`
+(`fcf50794…`). `BUSYBOX_DEB` can point at a local copy of that exact package.
+Nothing from the package or the device reference is committed.
+
+`/init` mounts proc, sysfs, devtmpfs and configfs, then creates configfs gadget
+`g1` (`idVendor=0x18D1`, `idProduct=0x4EE2`, USB 2.0). It links `ncm.usb0` and
+`ecm.usb0`, binds the first UDC, and assigns `172.16.42.2/24` to `usb0` and
+`172.16.43.2/24` to `usb1`. The fixed serial string is the literal `sm7635`,
+not a device serial. It then opens a root shell on the console with
+`setsid cttyhack`.
+
+### USB gadget and sshd blocker
+
+The baseline config has `CONFIG_USB_CONFIGFS_NCM=y`, `CONFIG_USB_F_NCM=y`,
+`CONFIG_USB_CONFIGFS_ECM=y` and `CONFIG_USB_F_ECM=y`. `CONFIG_USB_CONFIGFS_RNDIS`
+is not set, and `CONFIG_USB_F_RNDIS` is absent. RNDIS would require a kernel
+rebuild, which this packaging step does not do. NCM is the function a host
+should use; ECM is present because it is already built in.
+
+Dropbear is not included. Ubuntu resolute has `dropbear-bin` only for amd64,
+and the arm64 Ports index has no `dropbear` or `dropbear-bin` package. The
+arm64 OpenSSH server is dynamically linked and is not a key-only initramfs
+sshd. No SSH key is generated or stored. The serial shell is the documented
+debug path until an arm64 static dropbear can be built and a key is supplied
+outside this repository.
+
+### Recorded hashes
+
+Built on 2026-10-19 with the pinned busybox package; `scripts/verify-bootimg.sh`
+reported all checks OK. Stock hashes are identifiers of the read-only
+reference, not files in git.
+
+| file | sha256 |
+| --- | --- |
+| `$WORK/out/boot.img` | `7cd886a24121c878a62839424b6b7f88840ba7504eb09cd0720eec96cb8ecfe5` |
+| `$WORK/out/initramfs.cpio.gz` | `c4f7dbee6d3770b0991b891f6f9a7d9b3685ed3dec3d28cbddfdc0f6b9b50244` |
+| `$WORK/out/Image.gz` | `159a970903ffbf2012d706099f67703ad6c5d7e31f83441deff363e80eaacc8f` |
+| `$WORK/out/Image` | `b289b9f19171db2b110c51e98f883cf1c824c8374983c9e95e51d9194df7140f` |
+| stock `boot_a.img` | `197aff11679301ca4a2d6f74dfcb942c3543ac9d41628e4e2116af0bdb706d4d` |
+| stock `vendor_boot_a.img` | `237259404601045205715a71b88016744c73729d4513349cfe90c754b0dc1253` |
+| stock `dtbo_a.img` | `759813dbfd94f4a4124b08afb2c9ef85f1f9afb7cdca9829be2558ffde13c992` |

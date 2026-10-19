@@ -1,0 +1,72 @@
+#!/bin/busybox sh
+set -u
+export PATH=/bin:/sbin
+export HOME=/root
+
+log() { printf 'usb-init: %s\n' "$*" >/dev/kmsg 2>/dev/null || true; }
+
+mkdir -p /proc /sys /dev /dev/pts /run /bin /sbin /root /etc /tmp
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+if ! mount -t devtmpfs devtmpfs /dev 2>/dev/null; then
+	mount -t tmpfs devtmpfs /dev
+fi
+mount -t configfs configfs /sys/kernel/config
+mount -t devpts devpts /dev/pts
+
+[ -e /dev/null ] || mknod /dev/null c 1 3
+[ -e /dev/zero ] || mknod /dev/zero c 1 5
+[ -e /dev/console ] || mknod /dev/console c 5 1
+[ -e /dev/kmsg ] || mknod /dev/kmsg c 1 11
+[ -e /dev/ptmx ] || mknod /dev/ptmx c 5 2
+
+printf 'root:x:0:0:root:/root:/bin/sh\n' >/etc/passwd
+printf 'root:x:0:\n' >/etc/group
+hostname omnipha-usb
+log 'starting'
+
+UDC=""
+i=0
+while [ "$i" -lt 40 ]; do
+	for candidate in /sys/class/udc/*; do
+		if [ -e "$candidate" ]; then
+			UDC=${candidate##*/}
+			break
+		fi
+	done
+	[ -n "$UDC" ] && break
+	sleep 0.25
+	i=$((i + 1))
+done
+
+if [ -z "$UDC" ]; then
+	log 'no UDC; USB gadget not bound'
+else
+	G=/sys/kernel/config/usb_gadget/g1
+	mkdir -p "$G/strings/0x409" "$G/configs/c.1/strings/0x409"
+	printf '0x18D1' >"$G/idVendor"
+	printf '0x4EE2' >"$G/idProduct"
+	printf '0x0100' >"$G/bcdDevice"
+	printf '0x0200' >"$G/bcdUSB"
+	printf 'omnipha' >"$G/strings/0x409/manufacturer"
+	printf 'SM7635 USB debug' >"$G/strings/0x409/product"
+	printf 'sm7635' >"$G/strings/0x409/serialnumber"
+	printf 'NCM+ECM' >"$G/configs/c.1/strings/0x409/configuration"
+	printf '250' >"$G/configs/c.1/MaxPower"
+	mkdir -p "$G/functions/ncm.usb0" "$G/functions/ecm.usb0"
+	ln -s "$G/functions/ncm.usb0" "$G/configs/c.1/"
+	ln -s "$G/functions/ecm.usb0" "$G/configs/c.1/"
+	if printf '%s' "$UDC" >"$G/UDC"; then
+		log "gadget bound to $UDC"
+		ip link set usb0 up 2>/dev/null || true
+		ip addr add 172.16.42.2/24 dev usb0 2>/dev/null || true
+		ip link set usb1 up 2>/dev/null || true
+		ip addr add 172.16.43.2/24 dev usb1 2>/dev/null || true
+	else
+		log "gadget bind failed for $UDC"
+	fi
+fi
+
+log 'console ready; dropbear is not included'
+setsid cttyhack /bin/sh
+EOF
