@@ -1,5 +1,9 @@
 # Upstream tracking
 
+- Policy (2026-10-19): reference the active vendor repository by immutable
+  commit. Do not publish an Omnipha `upstream` mirror unless Nothing removes,
+  freezes, or stops maintaining this source, or an Omnipha patch branch becomes
+  necessary. A local bare backup on the build host is sufficient until then.
 - Source: https://github.com/NothingOSS/android_kernel_msm-6.1_nothing_sm7635
 - Maintainer: NothingOSS; GPL kernel and devicetree for Phone (3a) and Phone (3a) Pro.
 - First target: Nothing Phone (3a) Pro A059P / `asteroids` / `volcano`, measured
