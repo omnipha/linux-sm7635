@@ -68,6 +68,25 @@ and the generated report are never committed.
 See [UPSTREAM.md](UPSTREAM.md) for tested hashes, config differences, board DT
 identification and limitations. No flash or boot test was done.
 
+## Boot image (2026-10-19)
+
+`scripts/build-bootimg.sh` packages the baseline `Image` and a minimal
+initramfs into header-v4 `boot.img` (page size 4096, stock load offsets).
+It does not flash or boot the phone. Install the extra host tools, then:
+
+```sh
+sudo apt-get install mkbootimg python3 cpio gzip curl file fakeroot
+WORK="$HOME/sm7635-build" scripts/build-bootimg.sh
+WORK="$HOME/sm7635-build" scripts/verify-bootimg.sh
+```
+
+The initramfs is a gzip newc cpio with a static arm64 busybox and a configfs
+USB gadget. NCM is the network function; ECM is the second function because
+the baseline has `CONFIG_USB_CONFIGFS_RNDIS` unset. There is no dropbear:
+Ubuntu resolute publishes no arm64 dropbear package, so the image ends in a
+key-free serial shell. Details, hashes and the vendor_boot layout are in
+[UPSTREAM.md](UPSTREAM.md). Images stay under `$WORK/out`.
+
 ## License
 
 Upstream Linux kernel is GPL-2.0-only. Do not add proprietary firmware.
