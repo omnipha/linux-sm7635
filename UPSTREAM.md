@@ -154,7 +154,9 @@ ramdisk came from the stock `init_boot_a` (the 2747936-byte Android
 `/init`), the vendor ramdisk, DTB blob and vendor command line came from
 the stock `vendor_boot_a` (`first_stage_ramdisk/fstab.qcom`, 324 modules,
 no `/init`), and the board overlay from stock `dtbo_a` entry 65. Stock init
-ran, its 6.1.84 modules failed to load against the 6.1.78 kernel, and the
+ran and began loading its 6.1.84 modules into the 6.1.78 kernel; the
+captured console ends there, so the exact path from that module load to the
+fallback onto slot `_a` is not established. What is established is that the
 debug initramfs in `boot.img` never executed. [BOOT.md](BOOT.md) has the
 full evidence; the captured pstore console is a stock 6.1.84 boot and does
 not record the failure.
@@ -166,10 +168,11 @@ single PLATFORM vendor ramdisk, a DTB blob, and the vendor command line
 `earlycon keep_bootcon loglevel=8 log_buf_len=1M ignore_loglevel
 printk.devkmsg=on panic=-1 bootconfig`).
 
-The DTB blob concatenates the eleven volcano SoCs the vendor tree builds,
-in stock order: Volcano, Volcano6, Volcano6I FP1–FP4, Volcano6P, Volcano6IP
-FP1–FP4. Stock ships twenty, adding the Cliffs and Pineapple SoCs that this
-tree does not build; index 9 is `volcano.dtb` in both. Every built DTB gets
+The DTB blob keeps the stock twenty-entry layout. The first nine entries
+are the stock Cliffs and Pineapple DTBs copied verbatim from the read-only
+`vendor_boot_a` reference, so the bootloader's `dtb_idx` selection is
+unchanged: index 9 is the built `volcano.dtb`, followed by the ten remaining
+built volcano variants in stock order. Every built entry gets
 `reg = <0x0 0x81f20000 0x0 0x400000>` and `console-size = <0x200000>` added
 to its `ramoops_region`, matching the stock reservation the live FDT
 records, because `volcano.dtsi` alone has no fixed address for the region
@@ -188,8 +191,8 @@ Built 2026-10-19, `scripts/verify-bootimg.sh` all checks OK:
 | --- | --- |
 | `$WORK/out/boot.img` | `f1406364c3e393cb0a779edfdf4da657eb69169bfc54f5b379cd462c4a5653d3` |
 | `$WORK/out/init_boot.img` | `65fc21c462e681bf046c10d3dbe55ac6c8de3fdab975a70b2fb423358a31123f` |
-| `$WORK/out/vendor_boot.img` | `2cb726cc75262da15ec559918cf370d83037524180b0d9871e0e6f8a932164b0` |
-| `$WORK/out/dtb.img` | `f32dec096080fd828900c7acd1c7bfda3c729e124211394e0c9b059d2a3baa02` |
+| `$WORK/out/vendor_boot.img` | `93e7625f003ce1b67792d32fdc302b7f903eeb61fbc9d1a44396d0e73e7a2afd` |
+| `$WORK/out/dtb.img` | `abf5c3cc2da1be67f1be064bd5e05168f771ec42c9d7a7a42f26b530b07fb7da` |
 | `$WORK/out/Image.gz` | `159a970903ffbf2012d706099f67703ad6c5d7e31f83441deff363e80eaacc8f` |
 | `$WORK/out/initramfs.cpio.gz` | `c4f7dbee6d3770b0991b891f6f9a7d9b3685ed3dec3d28cbddfdc0f6b9b50244` |
 | stock `init_boot_a.img` | `baa33fd43c3da1d9f3358ced9249c42abecc704fc5707a5241ea69e77c1e3193` |
