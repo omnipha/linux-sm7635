@@ -11,7 +11,7 @@ BUSYBOX_SHA256=fcf50794faf920455895d7ef103d1c54b9ebf7f18d2e52982dbf3903b7769592
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 need() { command -v "$1" >/dev/null 2>&1 || die "missing tool: $1"; }
 
-for tool in mkbootimg python3 cpio gzip sha256sum dpkg-deb curl file fakeroot; do
+for tool in mkbootimg python3 cpio gzip sha256sum dpkg-deb curl file fakeroot dtc; do
 	need "$tool"
 done
 case "$(realpath -m "$OUT")/" in
@@ -22,10 +22,16 @@ esac
 for option in CONFIG_USB_GADGET CONFIG_CONFIGFS_FS CONFIG_USB_CONFIGFS \
 	CONFIG_USB_CONFIGFS_NCM CONFIG_USB_F_NCM CONFIG_USB_CONFIGFS_ECM \
 	CONFIG_USB_F_ECM CONFIG_USB_CONFIGFS_ACM CONFIG_USB_DWC3_QCOM \
-	CONFIG_BLK_DEV_INITRD CONFIG_RD_GZIP; do
+	CONFIG_BLK_DEV_INITRD CONFIG_RD_GZIP CONFIG_PSTORE CONFIG_PSTORE_RAM \
+	CONFIG_PSTORE_CONSOLE CONFIG_SERIAL_EARLYCON CONFIG_SERIAL_QCOM_GENI; do
 	grep -qx "$option=y" "$OUT/.config" || die "baseline kernel requires $option=y"
 done
 [ -f "$ROOT/initramfs/init" ] || die "missing initramfs/init"
+for base in volcano volcano6 volcano6i-fp1 volcano6i-fp2 volcano6i-fp3 \
+	volcano6i-fp4 volcano6p volcano6ip-fp1 volcano6ip-fp2 volcano6ip-fp3 \
+	volcano6ip-fp4; do
+	[ -s "$OUT/$base.dtb" ] || die "missing $OUT/$base.dtb; rebuild the baseline"
+done
 
 mkdir -p "$WORK"
 if [ ! -f "$BUSYBOX_DEB" ]; then
@@ -70,20 +76,118 @@ fakeroot -- bash "$stage/archive.sh" "$stage/root" >"$stage/initramfs.cpio"
 gzip -n -9 -c "$stage/initramfs.cpio" >"$OUT/initramfs.cpio.gz"
 gzip -n -9 -c "$OUT/Image" >"$OUT/Image.gz"
 
+python3 - "$OUT" "$OUT/dtb.img" <<'PY'
+import pathlib
+import struct
+import sys
+
+out = pathlib.Path(sys.argv[1])
+bases = (
+    "volcano", "volcano6", "volcano6i-fp1", "volcano6i-fp2",
+    "volcano6i-fp3", "volcano6i-fp4", "volcano6p", "volcano6ip-fp1",
+    "volcano6ip-fp2", "volcano6ip-fp3", "volcano6ip-fp4",
+)
+
+
+def align4(value):
+    return (value + 3) & ~3
+
+
+def fix_ramoops(blob):
+    off_struct, off_strings = struct.unpack_from(">II", blob, 8)
+    size_strings, size_struct = struct.unpack_from(">II", blob, 32)
+    struct_blob = bytearray(blob[off_struct:off_struct + size_struct])
+    strings = bytearray(blob[off_strings:off_strings + size_strings])
+    pos = 0
+    depth = 0
+    target = None
+    insert = None
+    while pos < len(struct_blob):
+        tag = struct.unpack_from(">I", struct_blob, pos)[0]
+        if tag == 1:
+            end = struct_blob.index(b"\x00", pos + 4)
+            name = bytes(struct_blob[pos + 4:end]).decode()
+            depth += 1
+            pos = align4(end + 1)
+            if name == "ramoops_region":
+                target = depth
+        elif tag == 2:
+            if target == depth and insert is None:
+                insert = pos
+            depth -= 1
+            pos += 4
+        elif tag == 3:
+            length = struct.unpack_from(">I", struct_blob, pos + 4)[0]
+            pos += 12 + align4(length)
+        elif tag == 4:
+            pos += 4
+        elif tag == 9:
+            break
+        else:
+            raise SystemExit(f"invalid DTB tag {tag:#x}")
+    if insert is None:
+        raise SystemExit("DTB has no ramoops_region node")
+    reg_name = len(strings)
+    strings += b"reg\x00"
+    console_name = len(strings)
+    strings += b"console-size\x00"
+    properties = struct.pack(
+        ">IIIIIII", 3, 16, reg_name, 0, 0x81F20000, 0, 0x400000)
+    properties += struct.pack(">IIII", 3, 4, console_name, 0x200000)
+    struct_blob[insert:insert] = properties
+    header = bytearray(blob[:off_struct])
+    struct.pack_into(">I", header, 4, off_struct + len(struct_blob) + len(strings))
+    struct.pack_into(">I", header, 12, off_struct + len(struct_blob))
+    struct.pack_into(">I", header, 32, len(strings))
+    struct.pack_into(">I", header, 36, len(struct_blob))
+    return bytes(header) + struct_blob + strings
+
+
+fixed = [fix_ramoops((out / f"{name}.dtb").read_bytes()) for name in bases]
+pathlib.Path(sys.argv[2]).write_bytes(b"".join(fixed))
+PY
+
+printf '%s\n' \
+	'androidboot.hardware=qcom' \
+	'androidboot.memcg=1' \
+	'androidboot.usbcontroller=a600000.dwc3' \
+	'androidboot.load_modules_parallel=true' \
+	'androidboot.vendor.qspa=true' \
+	'androidboot.console=0' >"$stage/bootconfig"
+
+BOOT_CMDLINE='console=ttynull stack_depot_disable=on cgroup_disable=pressure kasan.page_alloc.sample=10 kasan.stacktrace=off kvm-arm.mode=protected bootconfig ioremap_guard loglevel=6'
+VENDOR_CMDLINE='earlycon keep_bootcon loglevel=8 log_buf_len=1M ignore_loglevel printk.devkmsg=on panic=-1 bootconfig'
+
 mkbootimg --header_version 4 --pagesize 4096 \
 	--base 0x00000000 --kernel_offset 0x00008000 \
 	--ramdisk_offset 0x01000000 --tags_offset 0x00000100 \
 	--dtb_offset 0x0000000001f00000 \
 	--os_version 0.0.0 --os_patch_level 0 \
 	--kernel "$OUT/Image.gz" --ramdisk "$OUT/initramfs.cpio.gz" \
-	--cmdline '' --output "$OUT/boot.img"
+	--cmdline "$BOOT_CMDLINE" \
+	--dtb "$OUT/dtb.img" \
+	--vendor_cmdline "$VENDOR_CMDLINE" \
+	--vendor_ramdisk "$OUT/initramfs.cpio.gz" \
+	--vendor_bootconfig "$stage/bootconfig" \
+	--output "$OUT/boot.img" --vendor_boot "$OUT/vendor_boot.img"
 
-python3 - "$OUT/boot.img" "$OUT/Image.gz" "$OUT/initramfs.cpio.gz" <<'PY'
+: >"$stage/empty-kernel"
+mkbootimg --header_version 4 --pagesize 4096 \
+	--base 0x00000000 --kernel_offset 0x00008000 \
+	--ramdisk_offset 0x01000000 --tags_offset 0x00000100 \
+	--dtb_offset 0x0000000001f00000 \
+	--os_version 0.0.0 --os_patch_level 0 \
+	--kernel "$stage/empty-kernel" --ramdisk "$OUT/initramfs.cpio.gz" \
+	--cmdline '' --output "$OUT/init_boot.img"
+
+python3 - "$OUT/boot.img" "$OUT/vendor_boot.img" "$OUT/init_boot.img" \
+	"$OUT/Image.gz" "$OUT/initramfs.cpio.gz" "$OUT/dtb.img" <<'PY'
 import pathlib
 import struct
 import sys
 
-boot, kernel, ramdisk = (pathlib.Path(p).read_bytes() for p in sys.argv[1:])
+boot, vendor, init_boot, kernel, ramdisk, dtb = (
+    pathlib.Path(path).read_bytes() for path in sys.argv[1:])
 if boot[:8] != b"ANDROID!" or struct.unpack_from("<I", boot, 40)[0] != 4:
     raise SystemExit("boot header is not v4")
 if struct.unpack_from("<I", boot, 20)[0] != 1584:
@@ -97,9 +201,32 @@ if boot[start:start + len(kernel)] != kernel:
 start += (len(kernel) + page - 1) // page * page
 if boot[start:start + len(ramdisk)] != ramdisk:
     raise SystemExit("ramdisk payload does not match")
+if vendor[:8] != b"VNDRBOOT" or struct.unpack_from("<I", vendor, 8)[0] != 4:
+    raise SystemExit("vendor boot header is not v4")
+if struct.unpack_from("<III", vendor, 12) != (page, 0x8000, 0x1000000):
+    raise SystemExit("vendor boot geometry does not match stock")
+if struct.unpack_from("<I", vendor, 24)[0] != len(ramdisk):
+    raise SystemExit("vendor ramdisk size does not match")
+if struct.unpack_from("<Q", vendor, 2104)[0] != 0x1F00000:
+    raise SystemExit("vendor DTB load address is not 0x1f00000")
+if struct.unpack_from("<I", vendor, 2100)[0] != len(dtb):
+    raise SystemExit("vendor DTB size does not match")
+dtb_offset = page + (len(ramdisk) + page - 1) // page * page
+if vendor[dtb_offset:dtb_offset + len(dtb)] != dtb:
+    raise SystemExit("vendor DTB payload does not match")
+cmdline = vendor[28:2076].split(b"\x00", 1)[0]
+if b"earlycon" not in cmdline or b"panic=-1" not in cmdline:
+    raise SystemExit("vendor command line is missing diagnosis options")
+if init_boot[:8] != b"ANDROID!" or struct.unpack_from("<I", init_boot, 40)[0] != 4:
+    raise SystemExit("init_boot header is not v4")
+if struct.unpack_from("<I", init_boot, 8)[0] != 0:
+    raise SystemExit("init_boot kernel is not empty")
+if struct.unpack_from("<I", init_boot, 12)[0] != len(ramdisk):
+    raise SystemExit("init_boot ramdisk size does not match")
 PY
 
 (
 	cd "$OUT"
-	sha256sum boot.img Image.gz initramfs.cpio.gz Image
+	sha256sum boot.img init_boot.img vendor_boot.img dtb.img Image.gz \
+		initramfs.cpio.gz Image
 ) | tee "$OUT/bootimg-sha256.txt"
