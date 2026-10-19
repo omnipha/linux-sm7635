@@ -11,7 +11,8 @@ ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 need() { command -v "$1" >/dev/null 2>&1 || die "missing tool: $1"; }
-for tool in unpack_bootimg python3 cpio gzip sha256sum file mktemp fdtget dtc; do
+for tool in unpack_bootimg python3 cpio gzip sha256sum file mktemp fdtget dtc \
+	qemu-aarch64; do
 	need "$tool"
 done
 for reference in "$STOCK_BOOT" "$STOCK_VENDOR" "$STOCK_INIT" "$STOCK_DTBO"; do
@@ -209,12 +210,37 @@ done
 grep -q 'bin/busybox' "$scratch/ramdisk-list.txt" || die "initramfs has no busybox"
 gzip -dc "$scratch/built-boot/ramdisk" | \
 	(cd "$scratch/ramdisk" && cpio -id --quiet --no-absolute-filenames \
-		init bin/busybox)
+		init bin/busybox bin/dropbear root/.ssh/authorized_keys \
+		usr/share/doc/dropbear/LICENSE \
+		usr/share/doc/dropbear/LibTomCrypt-LICENSE \
+		usr/share/doc/dropbear/LibTomMath-LICENSE)
 [ -x "$scratch/ramdisk/init" ] || die "initramfs has no init"
 [ -f "$scratch/ramdisk/bin/busybox" ] || die "initramfs has no busybox"
 file "$scratch/ramdisk/bin/busybox" | grep -q 'ARM aarch64' || die "busybox is not arm64"
 grep -q 'ncm.usb0' "$scratch/ramdisk/init" || die "init has no NCM gadget"
 grep -q 'ecm.usb0' "$scratch/ramdisk/init" || die "init has no ECM gadget"
+[ -x "$scratch/ramdisk/bin/dropbear" ] || die "initramfs has no sshd"
+file "$scratch/ramdisk/bin/dropbear" | grep -q 'ARM aarch64' ||
+	die "dropbear is not arm64"
+file "$scratch/ramdisk/bin/dropbear" | grep -q 'statically linked' ||
+	die "dropbear is not static"
+qemu-aarch64 "$scratch/ramdisk/bin/dropbear" -V 2>&1 | grep -q 'v2026.94' ||
+	die "dropbear does not run under qemu-aarch64 or reports the wrong version"
+[ -s "$scratch/ramdisk/root/.ssh/authorized_keys" ] ||
+	die "initramfs has no authorized_keys"
+grep -q '^ssh-ed25519 ' "$scratch/ramdisk/root/.ssh/authorized_keys" ||
+	die "authorized_keys does not hold an ed25519 public key"
+[ "$(wc -l <"$scratch/ramdisk/root/.ssh/authorized_keys")" -eq 1 ] ||
+	die "authorized_keys is not a single key"
+grep -q '172.16.42.2:22' "$scratch/ramdisk/init" ||
+	die "init does not start sshd bound to 172.16.42.2:22"
+grep -q 'Copyright (c) 2002' "$scratch/ramdisk/usr/share/doc/dropbear/LICENSE" ||
+	die "dropbear LICENSE is missing"
+grep -q 'LibTomCrypt is public domain' \
+	"$scratch/ramdisk/usr/share/doc/dropbear/LibTomCrypt-LICENSE" ||
+	die "LibTomCrypt license is missing"
+grep -q 'public domain' "$scratch/ramdisk/usr/share/doc/dropbear/LibTomMath-LICENSE" ||
+	die "LibTomMath license is missing"
 cmp -s "$scratch/built-boot/ramdisk" "$scratch/built-vendor/vendor_ramdisk00" ||
 	die "boot and vendor ramdisks differ"
 cmp -s "$scratch/built-boot/ramdisk" "$scratch/built-init/ramdisk" ||
@@ -227,7 +253,7 @@ report=$OUT/bootimg-verify.txt
 	echo "built DTBO: $built_model; board-id <$built_board>; oem-id <$built_oem>"
 	echo "built vendor DTB: 20 entries, Volcano at index 9; ramoops reg <$ramoops>; console-size 0x$console_size"
 	echo 'vendor cmdline: earlycon keep_bootcon panic=-1 log_buf_len=1M'
-	echo 'initramfs: gzip newc; static arm64 busybox; NCM+ECM; console shell; no sshd'
+	echo 'initramfs: gzip newc; static arm64 busybox + dropbear 2026.94 sshd; NCM+ECM; authorized_keys; console shell'
 	echo 'unpack verification: passed'
 	(cd "$OUT" && sha256sum boot.img init_boot.img vendor_boot.img dtb.img \
 		Image.gz initramfs.cpio.gz Image)

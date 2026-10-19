@@ -76,17 +76,20 @@ initramfs into header-v4 `boot.img`, `init_boot.img` and `vendor_boot.img`
 Install the extra host tools, then:
 
 ```sh
-sudo apt-get install mkbootimg python3 cpio gzip curl file fakeroot
+sudo apt-get install mkbootimg python3 cpio gzip curl file fakeroot \
+    gcc-aarch64-linux-gnu libc6-dev-arm64-cross qemu-user
 WORK="$HOME/sm7635-build" scripts/build-bootimg.sh
 WORK="$HOME/sm7635-build" scripts/verify-bootimg.sh
 ```
 
-The initramfs is a gzip newc cpio with a static arm64 busybox and a configfs
-USB gadget. NCM is the network function; ECM is the second function because
-the baseline has `CONFIG_USB_CONFIGFS_RNDIS` unset. There is no dropbear:
-Ubuntu resolute publishes no arm64 dropbear package, so the image ends in a
-key-free serial shell. Details, hashes and the vendor_boot layout are in
-[UPSTREAM.md](UPSTREAM.md). Images stay under `$WORK/out`.
+The initramfs is a gzip newc cpio with a static arm64 busybox, a static
+arm64 dropbear SSH server, and a configfs USB gadget. NCM is the network
+function; ECM is the second function because the baseline has
+`CONFIG_USB_CONFIGFS_RNDIS` unset. Only root with the host's ed25519 public
+key can log in; set `PUBKEY` to override the build-time input
+`~/.ssh/id_ed25519.pub`. No private key is embedded. Details, hashes,
+licenses and the vendor_boot layout are in [UPSTREAM.md](UPSTREAM.md).
+Images stay under `$WORK/out`.
 
 The first `fastboot boot` of the earlier single `boot.img` was accepted by
 the bootloader and never enumerated the gadget, because a header-v4 boot

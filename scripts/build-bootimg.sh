@@ -8,11 +8,18 @@ STOCK_VENDOR=${STOCK_VENDOR:-$HOME/phone-second-life-data/mb003/parts/vendor_boo
 BUSYBOX_DEB=${BUSYBOX_DEB:-$WORK/busybox-static_1.37.0-7ubuntu1_arm64.deb}
 BUSYBOX_URL=https://ports.ubuntu.com/ubuntu-ports/pool/main/b/busybox/busybox-static_1.37.0-7ubuntu1_arm64.deb
 BUSYBOX_SHA256=fcf50794faf920455895d7ef103d1c54b9ebf7f18d2e52982dbf3903b7769592
+DROPBEAR_TARBALL=${DROPBEAR_TARBALL:-$WORK/dropbear-2026.94.tar.bz2}
+DROPBEAR_URL=https://matt.ucc.asn.au/dropbear/releases/dropbear-2026.94.tar.bz2
+DROPBEAR_SHA256=e098034a843699200c8c977a991fff73159735bf795d5f72ef672c41a6b1ae81
+PUBKEY=${PUBKEY:-$HOME/.ssh/id_ed25519.pub}
+
+umask 077
 
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 need() { command -v "$1" >/dev/null 2>&1 || die "missing tool: $1"; }
 
-for tool in mkbootimg python3 cpio gzip sha256sum dpkg-deb curl file fakeroot dtc; do
+for tool in mkbootimg python3 cpio gzip sha256sum dpkg-deb curl file fakeroot dtc \
+	tar make aarch64-linux-gnu-gcc; do
 	need "$tool"
 done
 case "$(realpath -m "$OUT")/" in
@@ -47,9 +54,13 @@ trap 'rm -rf "$stage"' EXIT
 mkdir -p "$stage/package" "$stage/root/bin" "$stage/root/sbin" \
 	"$stage/root/dev/pts" "$stage/root/proc" \
 	"$stage/root/sys/kernel/config" "$stage/root/run" \
-	"$stage/root/etc" "$stage/root/root" "$stage/root/tmp"
+	"$stage/root/etc" "$stage/root/root" "$stage/root/tmp" \
+	"$stage/root/usr/share/doc/dropbear"
 chmod 0755 "$stage/root" "$stage/root"/* "$stage/root/dev/pts" \
-	"$stage/root/sys/kernel" "$stage/root/sys/kernel/config"
+	"$stage/root/sys/kernel" "$stage/root/sys/kernel/config" \
+	"$stage/root/usr" "$stage/root/usr/share" \
+	"$stage/root/usr/share/doc" "$stage/root/usr/share/doc/dropbear"
+chmod 0700 "$stage/root/root"
 chmod 1777 "$stage/root/tmp"
 dpkg-deb -x "$BUSYBOX_DEB" "$stage/package"
 busybox=$stage/package/usr/bin/busybox
@@ -57,6 +68,69 @@ busybox=$stage/package/usr/bin/busybox
 file "$busybox" | grep -q 'ARM aarch64' || die "busybox is not arm64"
 file "$busybox" | grep -q 'statically linked' || die "busybox is not static"
 install -m 0755 "$busybox" "$stage/root/bin/busybox"
+
+[ -s "$PUBKEY" ] || die "missing public key file: $PUBKEY (set PUBKEY=<path>)"
+python3 - "$PUBKEY" "$stage/root/root/.ssh/authorized_keys" <<'PY'
+import base64
+import pathlib
+import sys
+
+key = pathlib.Path(sys.argv[1]).read_text()
+fields = key.strip().split()
+if len(fields) not in (2, 3) or fields[0] != "ssh-ed25519":
+    raise SystemExit("expected exactly one ssh-ed25519 public key")
+try:
+    data = base64.b64decode(fields[1], validate=True)
+except ValueError as exc:
+    raise SystemExit("invalid public key encoding") from exc
+if not data.startswith(b"\x00\x00\x00\x0bssh-ed25519\x00\x00\x00\x20") or len(data) != 51:
+    raise SystemExit("invalid ed25519 public key data")
+path = pathlib.Path(sys.argv[2])
+path.parent.mkdir(mode=0o700)
+path.write_text(" ".join(fields[:2]) + "\n")
+path.chmod(0o600)
+PY
+
+if [ ! -f "$DROPBEAR_TARBALL" ]; then
+	curl -fL --retry 3 --retry-delay 2 -o "$DROPBEAR_TARBALL" "$DROPBEAR_URL"
+fi
+printf '%s  %s\n' "$DROPBEAR_SHA256" "$DROPBEAR_TARBALL" | sha256sum -c -
+dropbear_build=$(mktemp -d "$WORK/dropbear-build.XXXXXXXX")
+trap 'rm -rf "$stage" "$dropbear_build"' EXIT
+(
+	cd "$dropbear_build"
+	tar -xjf "$DROPBEAR_TARBALL" --strip-components=1
+	cat >localoptions.h <<'OPTIONS'
+#define DROPBEAR_SVR_PASSWORD_AUTH 0
+#define DROPBEAR_SVR_PAM_AUTH 0
+#define DROPBEAR_SVR_LOCALTCPFWD 0
+#define DROPBEAR_SVR_REMOTETCPFWD 0
+#define DROPBEAR_DSS 0
+#define DO_MOTD 0
+OPTIONS
+	CC=aarch64-linux-gnu-gcc ./configure --host=aarch64-linux-gnu \
+		--enable-static --disable-zlib --disable-syslog \
+		--disable-lastlog --disable-wtmp --disable-utmp \
+		--disable-pututline --disable-pututxline >/dev/null
+	make -j "${JOBS:-2}" PROGRAMS=dropbear >/dev/null
+)
+dropbear_bin=$dropbear_build/dropbear
+[ -x "$dropbear_bin" ] || die "dropbear build produced no binary"
+file "$dropbear_bin" | grep -q 'ARM aarch64' || die "dropbear is not arm64"
+file "$dropbear_bin" | grep -q 'statically linked' || die "dropbear is not static"
+if command -v qemu-aarch64 >/dev/null 2>&1; then
+	qemu-aarch64 "$dropbear_bin" -V 2>&1 | grep -q 'v2026.94' ||
+		die "built dropbear does not report v2026.94 under qemu-aarch64"
+else
+	echo 'note: qemu-aarch64 not found; skipping dropbear version smoke test' >&2
+fi
+install -m 0755 "$dropbear_bin" "$stage/root/bin/dropbear"
+install -m 0644 "$dropbear_build/LICENSE" "$stage/root/usr/share/doc/dropbear/LICENSE"
+install -m 0644 "$dropbear_build/libtomcrypt/LICENSE" \
+	"$stage/root/usr/share/doc/dropbear/LibTomCrypt-LICENSE"
+install -m 0644 "$dropbear_build/libtommath/LICENSE" \
+	"$stage/root/usr/share/doc/dropbear/LibTomMath-LICENSE"
+
 install -m 0755 "$ROOT/initramfs/init" "$stage/root/init"
 for applet in sh ip sleep mount mkdir mknod ln hostname setsid cttyhack; do
 	ln -s busybox "$stage/root/bin/$applet"
