@@ -46,18 +46,21 @@ ramdisks were unpacked and listed:
 | built `boot.img` | 1032027 bytes, gzip | `/init` (the debug shell), `/bin/busybox` |
 
 Header v4 boots the generic ramdisk from `init_boot`, and `fastboot boot`
-does not replace `init_boot`. The kernel therefore ran the stock Android
-`/init` from `init_boot_a`, not the debug `/init` sitting in the boot
-ramdisk. The console records that hand-off at 0.169s: `Run /init as init
-process`, then `init: init first stage started!`, then `init: Loading module
+does not replace `init_boot`. The kernel therefore ran the stock Android `/init` from `init_boot_a`, not
+the debug `/init` sitting in the boot ramdisk. The console records that
+hand-off at 0.169s: `Run /init as init process`, then `init: init first
+stage started!`, then `init: Loading module
 /lib/modules/qcom-reboot-reason.ko`. Those modules are the 6.1.84 modules
-from the vendor ramdisk. The baseline kernel is 6.1.78 and was not built
-with the stock signing key, so loading them fails and stock init reboots.
-The bootloader then falls back to the verified slot `_a`.
+from the vendor ramdisk, and the baseline kernel is 6.1.78 built without
+the stock signing key, so stock init cannot load them.
 
-The debug initramfs never got control, which is why nothing enumerated
-`18d1:4ee2`. Putting a ramdisk in `boot.img` cannot fix it: on this header
-the generic ramdisk comes from `init_boot`.
+What happens after that load failure is not established. The only console
+captured afterwards is the stock 6.1.84 boot described below, so there is
+no record of whether stock init aborted, retried, or rebooted, and the
+fallback to slot `_a` is observed only from the outside. The part that is
+certain is that the debug initramfs never got control, which is why nothing
+enumerated `18d1:4ee2`. Putting a ramdisk in `boot.img` cannot fix it: on
+this header the generic ramdisk comes from `init_boot`.
 
 ## What the pstore file does and does not show
 
@@ -118,12 +121,15 @@ whichever of `boot` or `init_boot` supplies it.
 | `init_boot.img` | header v4, empty kernel, debug ramdisk, empty command line, matching the stock `init_boot` layout |
 | `vendor_boot.img` | header v4 at the stock offsets, the debug ramdisk as its single PLATFORM vendor ramdisk, the DTB blob, vendor command line `earlycon keep_bootcon loglevel=8 log_buf_len=1M ignore_loglevel printk.devkmsg=on panic=-1 bootconfig` |
 
-The DTB blob has the eleven volcano SoCs the vendor tree builds, in the
-stock order, each with the ramoops reservation above. Stock `vendor_boot`
-has twenty because it also ships the Cliffs and Pineapple SoCs, which are
-not built here; index 9 is `volcano.dtb` in both, and that is the index the
-bootloader selected. The board overlay stays stock `dtbo_a` entry 65, and no
-`dtbo.img` is produced.
+The DTB blob keeps the stock layout of twenty concatenated base DTBs and
+replaces the volcano entries with the ones this tree builds. The first nine
+are the stock Cliffs and Pineapple DTBs copied verbatim from the read-only
+`vendor_boot_a` reference: this tree does not build them, and the bootloader
+selects by index, so they have to stay in front. Index 9 is the built
+`volcano.dtb`, which is the index `ro.boot.dtb_idx` selected, and it is
+followed by the remaining ten built volcano variants in stock order. Every
+built entry gets the ramoops reservation above. The board overlay stays
+stock `dtbo_a` entry 65, and no `dtbo.img` is produced.
 
 Replacing the vendor ramdisk drops `first_stage_ramdisk/fstab.qcom` and the
 324 stock modules from the chain. The debug init never mounts a block

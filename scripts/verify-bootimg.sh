@@ -136,9 +136,10 @@ check("stock vendor DTB unpack",
       stock_vendor[stock_dtb_offset:stock_dtb_offset + stock_dtb_size] == stock_dtbs)
 stock_models = dtbs(stock_dtbs, "stock vendor DTB count", 20)
 check("stock vendor contains Volcano", b"Volcano SoC" in stock_models[9])
-built_models = dtbs(built_dtbs, "built vendor DTB count", 11)
+built_models = dtbs(built_dtbs, "built vendor DTB count", 20)
 check("built vendor DTB payload", built_dtbs == dtb)
-check("built vendor contains Volcano", b"Volcano SoC" in built_models[0])
+check("built vendor preserves stock prefix", built_models[:9] == stock_models[:9])
+check("built vendor selects Volcano at index 9", b"Volcano SoC" in built_models[9])
 
 if stock_dtbo[:4] != b"\xd7\xb7\xab\x1e":
     raise SystemExit("stock dtbo table has incorrect magic")
@@ -186,8 +187,11 @@ import struct
 import sys
 
 blob = pathlib.Path(sys.argv[1]).read_bytes()
-size = struct.unpack_from(">I", blob, 4)[0]
-pathlib.Path(sys.argv[2]).write_bytes(blob[:size])
+pos = 0
+for index in range(9):
+    pos += struct.unpack_from(">I", blob, pos + 4)[0]
+size = struct.unpack_from(">I", blob, pos + 4)[0]
+pathlib.Path(sys.argv[2]).write_bytes(blob[pos:pos + size])
 PY
 dtc -I dtb -O dts "$scratch/volcano.dtb" >/dev/null
 ramoops=$(fdtget -t x "$scratch/volcano.dtb" /reserved-memory/ramoops_region reg)
@@ -221,7 +225,7 @@ report=$OUT/bootimg-verify.txt
 	echo 'boot header v4 / vendor page size 4096; stock offsets match'
 	echo "stock DTBO entry 65: $model; board-id <$board>; oem-id <$oem>"
 	echo "built DTBO: $built_model; board-id <$built_board>; oem-id <$built_oem>"
-	echo "built vendor DTB: 11 volcano SoCs; ramoops reg <$ramoops>; console-size 0x$console_size"
+	echo "built vendor DTB: 20 entries, Volcano at index 9; ramoops reg <$ramoops>; console-size 0x$console_size"
 	echo 'vendor cmdline: earlycon keep_bootcon panic=-1 log_buf_len=1M'
 	echo 'initramfs: gzip newc; static arm64 busybox; NCM+ECM; console shell; no sshd'
 	echo 'unpack verification: passed'

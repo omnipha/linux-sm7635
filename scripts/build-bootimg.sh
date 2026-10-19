@@ -4,6 +4,7 @@ set -euo pipefail
 WORK=${WORK:-$HOME/sm7635-build}
 OUT=$WORK/out
 ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
+STOCK_VENDOR=${STOCK_VENDOR:-$HOME/phone-second-life-data/mb003/parts/vendor_boot_a.img}
 BUSYBOX_DEB=${BUSYBOX_DEB:-$WORK/busybox-static_1.37.0-7ubuntu1_arm64.deb}
 BUSYBOX_URL=https://ports.ubuntu.com/ubuntu-ports/pool/main/b/busybox/busybox-static_1.37.0-7ubuntu1_arm64.deb
 BUSYBOX_SHA256=fcf50794faf920455895d7ef103d1c54b9ebf7f18d2e52982dbf3903b7769592
@@ -32,6 +33,8 @@ for base in volcano volcano6 volcano6i-fp1 volcano6i-fp2 volcano6i-fp3 \
 	volcano6ip-fp4; do
 	[ -s "$OUT/$base.dtb" ] || die "missing $OUT/$base.dtb; rebuild the baseline"
 done
+[ -f "$STOCK_VENDOR" ] ||
+	die "missing stock vendor_boot reference: $STOCK_VENDOR"
 
 mkdir -p "$WORK"
 if [ ! -f "$BUSYBOX_DEB" ]; then
@@ -76,16 +79,17 @@ fakeroot -- bash "$stage/archive.sh" "$stage/root" >"$stage/initramfs.cpio"
 gzip -n -9 -c "$stage/initramfs.cpio" >"$OUT/initramfs.cpio.gz"
 gzip -n -9 -c "$OUT/Image" >"$OUT/Image.gz"
 
-python3 - "$OUT" "$OUT/dtb.img" <<'PY'
+python3 - "$OUT" "$STOCK_VENDOR" "$OUT/dtb.img" <<'PY'
 import pathlib
 import struct
 import sys
 
 out = pathlib.Path(sys.argv[1])
+stock_vendor = pathlib.Path(sys.argv[2]).read_bytes()
 bases = (
     "volcano", "volcano6", "volcano6i-fp1", "volcano6i-fp2",
-    "volcano6i-fp3", "volcano6i-fp4", "volcano6p", "volcano6ip-fp1",
-    "volcano6ip-fp2", "volcano6ip-fp3", "volcano6ip-fp4",
+    "volcano6i-fp3", "volcano6i-fp4", "volcano6ip-fp1", "volcano6ip-fp2",
+    "volcano6ip-fp3", "volcano6ip-fp4", "volcano6p",
 )
 
 
@@ -143,8 +147,35 @@ def fix_ramoops(blob):
     return bytes(header) + struct_blob + strings
 
 
+def split_dtbs(blob):
+    found = []
+    pos = 0
+    while pos < len(blob):
+        if blob[pos:pos + 4] != b"\xd0\x0d\xfe\xed":
+            raise SystemExit(f"invalid DTB at {pos}")
+        size = struct.unpack_from(">I", blob, pos + 4)[0]
+        if size <= 0 or pos + size > len(blob):
+            raise SystemExit(f"invalid DTB size at {pos}")
+        found.append(blob[pos:pos + size])
+        pos += size
+    return found
+
+
+# The bootloader selects a base DTB by index (ro.boot.dtb_idx=9). Stock
+# vendor_boot puts Volcano at index 9, after nine Cliffs/Pineapple DTBs this
+# tree does not build, so those nine are carried over verbatim from the
+# read-only stock reference to preserve the index.
+page = 4096
+stock_ramdisk_size = struct.unpack_from("<I", stock_vendor, 24)[0]
+stock_dtb_size = struct.unpack_from("<I", stock_vendor, 2100)[0]
+stock_dtb_offset = page + (stock_ramdisk_size + page - 1) // page * page
+stock_blob = stock_vendor[stock_dtb_offset:stock_dtb_offset + stock_dtb_size]
+stock_list = split_dtbs(stock_blob)
+if len(stock_list) != 20 or b"Volcano SoC" not in stock_list[9]:
+    raise SystemExit("stock vendor DTB layout is unexpected")
+
 fixed = [fix_ramoops((out / f"{name}.dtb").read_bytes()) for name in bases]
-pathlib.Path(sys.argv[2]).write_bytes(b"".join(fixed))
+pathlib.Path(sys.argv[3]).write_bytes(b"".join(stock_list[:9] + fixed))
 PY
 
 printf '%s\n' \
