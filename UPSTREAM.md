@@ -68,11 +68,12 @@ and `qcom,oem-id = <1>`.
 `volcano.dtb` is the base SoC (`msm-id` 0x27c only, model "Volcano SoC").
 Kbuild's composite `volcano-volcano-qrd-pro-overlay.dtb` applies that overlay
 but its root model/compatible stay the base SoC's, so it is not the identity
-match. Applying the same overlay with standalone `fdtoverlay` fails to resolve
-the overlay's symbolic phandle targets even though the base DTB contains
-`__symbols__`; the Kbuild composite is the usable combined blob. Camera,
-display and other vendor DTBO sets under `vendor/qcom/proprietary` are not part
-of `make dtbs` and were not built.
+match. Applying the built QRD Pro overlay to the built base with `fdtoverlay`
+succeeds in the #10 host-only comparison, but this pairing is not present in
+the attempted chain: the actual stock `dtbo_a` overlay cannot apply to that
+built base. The Kbuild composite also combines the built base and built board
+overlay. Camera, display and other vendor DTBO sets under
+`vendor/qcom/proprietary` are not part of `make dtbs` and were not built.
 
 ### Config comparison
 
@@ -171,16 +172,15 @@ single PLATFORM vendor ramdisk, a DTB blob, and the vendor command line
 `earlycon keep_bootcon loglevel=8 log_buf_len=1M ignore_loglevel
 printk.devkmsg=on panic=-1 bootconfig`).
 
-The DTB blob keeps the stock twenty-entry layout. The first nine entries
-are the stock Cliffs and Pineapple DTBs copied verbatim from the read-only
-`vendor_boot_a` reference, so the bootloader's `dtb_idx` selection is
-unchanged: index 9 is the built `volcano.dtb`, followed by the ten remaining
-built volcano variants in stock order. Every built entry gets
-`reg = <0x0 0x81f20000 0x0 0x400000>` and `console-size = <0x200000>` added
-to its `ramoops_region`, matching the stock reservation the live FDT
-records, because `volcano.dtsi` alone has no fixed address for the region
-and the stock values normally arrive through the `dtbo` overlay. The
-bootconfig keeps the stock `androidboot.usbcontroller=a600000.dwc3` tokens.
+The failed #8 DTB blob kept the stock twenty-entry layout. The first nine
+Cliffs and Pineapple DTBs were copied verbatim from read-only `vendor_boot_a`;
+index 9 and the other ten Volcano DTBs were built from the vendor source and
+had the ramoops reservation added directly. The stock `dtbo_a` entry 65
+cannot resolve those built DTBs' missing symbols. In the #10 host-only build,
+all twenty stock DTBs are copied verbatim instead, retaining the stock
+`dtb_idx=9` selection and allowing the stock overlay to supply its ramoops
+reservation. The bootconfig still keeps the stock
+`androidboot.usbcontroller=a600000.dwc3` tokens.
 
 The panic policy is `panic=-1`: on panic the kernel waits instead of
 rebooting, so the ramoops console survives until OrangeFox reads
@@ -223,10 +223,12 @@ live-FDT compatible list, `qcom,board-id = <0x0b 0>`, and `qcom,oem-id = <2>`.
 The board identity comes from `volcano-qrd-pro-overlay.dtbo` in
 `$WORK/out`, the #1 comparison match, which `verify-bootimg.sh` checks
 against stock DTBO entry 65 by model, board-id and oem-id (all three equal).
-The non-Pro overlay differs by model and `qcom,oem-id = <1>` and is not
-selected. No `dtbo.img` is produced and the stock partitions are not
-modified: on this device the board overlay lives in the dtbo partition, which
-a temporary `fastboot boot` of the built image does not replace.
+This identity check alone did not test overlay compatibility; #10 also applies
+the actual stock entry 65 to the selected base. The non-Pro overlay differs
+by model and `qcom,oem-id = <1>` and is not selected. No `dtbo.img` is produced
+and the stock partitions are not modified: on this device the board overlay
+lives in the dtbo partition, which a temporary `fastboot boot` of the built
+image does not replace.
 
 ### Initramfs
 
@@ -307,6 +309,86 @@ references. Final hashes (artifacts are outside this repository):
 | `$WORK/out/init_boot.img` | `f4b987ee9a6082a22201c763e1d437dcc1dee0c62f2e2e0d8e7a3ffad8078e89` |
 | `$WORK/out/vendor_boot.img` | `bde3a3b3bc7ea587f195de63de76db5f14f8dfd197d6d3224904f722af18fd31` |
 | `$WORK/out/initramfs.cpio.gz` | `caa3eb8218b9ee3024ec884e2e8619705e91732860628b363b933944cc56f37f` |
+
+### #10 full-chain diagnosis and host-only DTB correction (2026-10-20)
+
+The failed #8 physical attempt and the distinction between evidence and
+hypotheses are recorded in [BOOT.md](BOOT.md). These are parsed structural
+facts from SHA-256-verified read-only stock slot-A backups versus the #8 images;
+no backup or raw capture is published. `$WORK/out/bootimg-verify.txt` and
+`$WORK/out/issue-10-verify.log` are host-only verification references, not
+public attachments.
+
+| field | verified stock | failed #8 set | #10 host-only set |
+| --- | --- | --- | --- |
+| `boot` bytes | 100663296 | 16777216 | 16777216 |
+| `init_boot` bytes | 8388608 | 1679360 | 1679360 |
+| `vendor_boot` bytes | 100663296 | 10387456 | 11108352 |
+| boot/init vendor page size and kernel/ramdisk/tags/DTB load addresses | 4096; `0x8000` / `0x1000000` / `0x100` / `0x1f00000` | same | same |
+| header version / boot+init header bytes / vendor header bytes | 4 / 1584 / 2128 | same | same |
+| kernel gzip bytes, offset | 13949926 at 4096 | 15097006 at 4096 | same as #8 |
+| `boot` ramdisk bytes | 0 | 1672600 | same as #8 |
+| `init_boot` ramdisk bytes, offset | 2113581 at 4096 (LZ4 legacy) | 1672600 at 4096 (gzip) | same as #8 |
+| vendor ramdisk bytes, offset | 8821389 at 4096 (LZ4 legacy) | 1672600 at 4096 (gzip) | same as #8 |
+| vendor DTB bytes, offset | 9419891 at 8826880 | 8696042 at 1679360 | 9419891 at 1679360 |
+| vendor ramdisk table / bootconfig offsets | 18247680 / 18251776 | 10379264 / 10383360 | 11100160 / 11104256 |
+| OS version/patch-level field | 0 | 0 | 0 |
+
+The boot and init_boot cmdlines are empty in stock; #8/#10 boot has a
+169-byte diagnostic cmdline and init_boot remains empty. The vendor cmdline
+changes from 113 to 101 bytes for earlycon and panic diagnostics. Both vendor
+ramdisk tables have one 108-byte, unnamed PLATFORM fragment at ramdisk offset
+zero with zero board IDs. All three bootconfig payloads are byte-identical to
+the 175-byte stock payload (SHA-256
+`2411fccec1d3e10a7cefe916abd38cf81d4deb5f93f510dce675b1ec91796457`).
+The gzip/LZ4 difference is not proof of bootloader rejection. The stock kernel
+is 6.1.84; the baseline kernel is 6.1.78 and is not binary-identical.
+
+Stock DTB index 9 is 435290 bytes (2818 nodes, 11993 properties); #8 index 9
+is 358368 bytes (2504 nodes, 9697 properties). Indices 0–8 matched stock.
+The unchanged stock `dtbo_a` entry 65 is 209313 bytes at offset 18486288
+in a 76-entry table. Its 143 fixup symbols all resolve against stock index 9;
+32 symbols referenced at 82 sites across 29 fragments are missing from #8
+index 9. Applying stock DTBO 65 to #8 index 9 in memory returned
+`FDT_ERR_NOTFOUND`; applying it to the stock index 9 succeeded. The generated
+QRD Pro overlay is 28629 bytes and applies to the generated base but was not
+packed in the flashed `dtbo`. The #10 correction copies the verified stock
+20-DTB blob verbatim into `vendor_boot`; the new verifier rejects drift in any
+entry and runs `fdtoverlay` on stock entry 65 and selected index 9, checking
+the overlaid ramoops reservation. This is a reproducible fix for the observed
+DTB/DTBO incompatibility, not evidence that it caused the fastboot return.
+
+Each stock partition is full-sized and has an `AVBf` footer at size minus 64.
+The footer records original image sizes of 13971456 (`boot`), 2121728
+(`init_boot`) and 18255872 (`vendor_boot`), with embedded vbmeta at those
+offsets (2496, 832 and 640 bytes respectively). Stock `boot` additionally
+has a 16384-byte AVB0 region at the aligned payload boundary, distinct from
+the footer-referenced vbmeta. The generated images lack these structures.
+Stock `vbmeta_a` (SHA-256
+`cc1926d2aa8e9c12df6a469111bf87f1e61e70022b84626fabcd014ae33cdffe`)
+has a boot chain descriptor (rollback location 3) and hash descriptors for
+`dtbo`, `init_boot` and `vendor_boot` (flags zero); its root and stock embedded
+salted SHA-256 hashes match the stock image prefixes. The generated prefixes
+do not match. The automated checker validates the stock hashes, bounds and
+links but does not cryptographically validate signatures or infer bootloader
+policy; the older locked/green property capture does not describe the attempt.
+Do not conflate a missing footer with the cause, or treat this artifact set as
+a flash approval.
+
+Host-only build and `scripts/verify-bootimg.sh` passed after the DTB change:
+
+| artifact | sha256 |
+| --- | --- |
+| `$WORK/out/boot.img` (unchanged from #8) | `5e866c5416791d873b8da1a9d4ac3da63ac4dd05cf36a85aa65da1a084eb7efb` |
+| `$WORK/out/init_boot.img` (unchanged from #8) | `f4b987ee9a6082a22201c763e1d437dcc1dee0c62f2e2e0d8e7a3ffad8078e89` |
+| `$WORK/out/vendor_boot.img` | `6078269d48d1aba27688dc9a8694dc2bf89156622680bcd6c99554b444ecfc4d` |
+| `$WORK/out/dtb.img` | `e04c86261f328dddb7d0ef72483e575809bfe63c5c8feab73271e0e5743c87a9` |
+
+The old set fails the new equality check against stock DTBs; the new set
+passes the full verifier, including stock overlay application. The verifier's
+AVB check is structural/hash-only; it does not validate signatures or prove
+that the bootloader accepts an unlocked-device mismatch. All images and
+logs remain outside Git. No physical operation was performed for #10.
 
 ### Recorded hashes (before the sshd update)
 

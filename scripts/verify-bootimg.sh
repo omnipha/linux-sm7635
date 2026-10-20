@@ -5,6 +5,7 @@ STOCK_BOOT=${STOCK_BOOT:-$HOME/phone-second-life-data/mb003/parts/boot_a.img}
 STOCK_VENDOR=${STOCK_VENDOR:-$HOME/phone-second-life-data/mb003/parts/vendor_boot_a.img}
 STOCK_INIT=${STOCK_INIT:-$HOME/phone-second-life-data/mb003/parts/init_boot_a.img}
 STOCK_DTBO=${STOCK_DTBO:-$HOME/phone-second-life-data/mb003/parts/dtbo_a.img}
+STOCK_VBMETA=${STOCK_VBMETA:-$HOME/phone-second-life-data/mb003/parts/vbmeta_a.img}
 WORK=${WORK:-$HOME/sm7635-build}
 OUT=$WORK/out
 ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
@@ -12,12 +13,19 @@ ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 need() { command -v "$1" >/dev/null 2>&1 || die "missing tool: $1"; }
 for tool in unpack_bootimg python3 cpio gzip sha256sum file mktemp fdtget dtc \
-	qemu-aarch64; do
+	fdtoverlay qemu-aarch64; do
 	need "$tool"
 done
-for reference in "$STOCK_BOOT" "$STOCK_VENDOR" "$STOCK_INIT" "$STOCK_DTBO"; do
+for reference in "$STOCK_BOOT" "$STOCK_VENDOR" "$STOCK_INIT" "$STOCK_DTBO" "$STOCK_VBMETA"; do
 	[ -f "$reference" ] || die "missing stock reference: $reference"
 done
+printf '%s\n' \
+	'197aff11679301ca4a2d6f74dfcb942c3543ac9d41628e4e2116af0bdb706d4d  '"$STOCK_BOOT" \
+	'baa33fd43c3da1d9f3358ced9249c42abecc704fc5707a5241ea69e77c1e3193  '"$STOCK_INIT" \
+	'237259404601045205715a71b88016744c73729d4513349cfe90c754b0dc1253  '"$STOCK_VENDOR" \
+	'759813dbfd94f4a4124b08afb2c9ef85f1f9afb7cdca9829be2558ffde13c992  '"$STOCK_DTBO" \
+	'cc1926d2aa8e9c12df6a469111bf87f1e61e70022b84626fabcd014ae33cdffe  '"$STOCK_VBMETA" | sha256sum -c - ||
+	die 'stock references differ from verified slot-A backups'
 for artifact in "$OUT/boot.img" "$OUT/init_boot.img" "$OUT/vendor_boot.img" \
 	"$OUT/dtb.img" "$OUT/Image.gz" "$OUT/initramfs.cpio.gz" \
 	"$OUT/volcano-qrd-pro-overlay.dtbo"; do
@@ -42,7 +50,9 @@ python3 - "$STOCK_BOOT" "$STOCK_VENDOR" "$STOCK_INIT" "$STOCK_DTBO" \
 	"$scratch/stock-boot/kernel" "$scratch/built-boot/kernel" \
 	"$scratch/built-boot/ramdisk" "$scratch/stock-vendor/dtb" \
 	"$scratch/built-vendor/dtb" "$scratch/built-vendor/vendor_ramdisk00" \
-	"$scratch/built-init/ramdisk" "$OUT/volcano-qrd-pro-overlay.dtbo" <<'PY'
+	"$scratch/built-init/ramdisk" "$OUT/volcano-qrd-pro-overlay.dtbo" \
+	"$STOCK_VBMETA" <<'PY'
+import hashlib
 import pathlib
 import struct
 import sys
@@ -50,7 +60,7 @@ import sys
 (stock_boot, stock_vendor, stock_init, stock_dtbo, built_boot, built_vendor,
  built_init, kernel, ramdisk, dtb, stock_kernel, unpacked_kernel,
  unpacked_ramdisk, stock_dtbs, built_dtbs, built_vendor_ramdisk,
- built_init_ramdisk, overlay) = (
+ built_init_ramdisk, overlay, stock_vbmeta) = (
     pathlib.Path(p).read_bytes() for p in sys.argv[1:])
 
 
@@ -66,6 +76,57 @@ def check(name, condition):
     print(f"{name}: {'OK' if condition else 'FAIL'}")
     if not condition:
         raise SystemExit(1)
+
+
+def require(condition, message):
+    if not condition:
+        raise SystemExit(message)
+
+
+def avb_descriptors(vbmeta):
+    require(len(vbmeta) >= 256 and vbmeta[:4] == b"AVB0", "invalid AVB0 header")
+    auth, aux = struct.unpack_from(">QQ", vbmeta, 12)
+    offset, length = struct.unpack_from(">QQ", vbmeta, 96)
+    start = 256 + auth + offset
+    end = start + length
+    require(256 + auth + aux <= len(vbmeta) and offset + length <= aux,
+            "AVB metadata out of bounds")
+    pos = start
+    while pos < end:
+        require(pos + 16 <= end, "AVB descriptor header out of bounds")
+        tag, size = struct.unpack_from(">QQ", vbmeta, pos)
+        require(size > 0 and pos + 16 + size <= end, "AVB descriptor out of bounds")
+        yield tag, vbmeta[pos + 16:pos + 16 + size]
+        pos += 16 + size
+
+
+def avb_hashes(vbmeta):
+    hashes = {}
+    for tag, body in avb_descriptors(vbmeta):
+        if tag != 2:
+            continue
+        require(len(body) >= 116, "AVB hash descriptor too short")
+        image_size = struct.unpack_from(">Q", body)[0]
+        algorithm = body[8:40].split(b"\0", 1)[0]
+        name_len, salt_len, digest_len, flags = struct.unpack_from(">IIII", body, 40)
+        total = 116 + name_len + salt_len + digest_len
+        require(total <= len(body), "AVB hash data out of bounds")
+        name = body[116:116 + name_len]
+        salt = body[116 + name_len:116 + name_len + salt_len]
+        digest = body[116 + name_len + salt_len:total]
+        require(algorithm == b"sha256" and digest_len == 32 and flags == 0 and
+                name not in hashes, "unexpected stock AVB hash format")
+        hashes[name] = (image_size, salt, digest)
+    return hashes
+
+
+def avb_footer(image):
+    footer = image[-64:]
+    require(len(footer) == 64 and footer[:4] == b"AVBf", "stock AVB footer missing")
+    original, offset, size = struct.unpack_from(">QQQ", footer, 12)
+    require(original == offset and offset + size <= len(image) - 64,
+            "stock AVB footer out of bounds")
+    return original, image[offset:offset + size]
 
 
 def dtbs(blob, expected, count):
@@ -103,9 +164,47 @@ check("boot kernel size", u32(built_boot, 8) == len(kernel))
 built_cmdline = built_boot[44:1580].split(b"\x00", 1)[0]
 check("boot cmdline diagnosis prefix",
       built_cmdline.startswith(b"console=ttynull ") and b"bootconfig" in built_cmdline)
+stock_boot_end = 4096 + (u32(stock_boot, 8) + 4095) // 4096 * 4096
+check("stock boot has separate 16KiB AVB0 region",
+      stock_boot[stock_boot_end:stock_boot_end + 4] == b"AVB0" and
+      stock_boot[stock_boot_end + 16384:stock_boot_end + 16388] == b"AVB0")
 check("stock init kernel empty", u32(stock_init, 8) == 0)
 check("built init kernel empty", u32(built_init, 8) == 0)
 check("built init ramdisk", built_init_ramdisk == ramdisk)
+
+root_hashes = avb_hashes(stock_vbmeta)
+for name, stock, built in ((b"boot", stock_boot, built_boot),
+                           (b"init_boot", stock_init, built_init),
+                           (b"vendor_boot", stock_vendor, built_vendor)):
+    label = name.decode()
+    original, embedded = avb_footer(stock)
+    embedded_hashes = avb_hashes(embedded)
+    check(f"stock {label} embedded hash descriptor", name in embedded_hashes)
+    size, salt, digest = embedded_hashes[name]
+    if name == b"boot":
+        check("stock boot AVB0 region ends at embedded vbmeta",
+              stock_boot_end + 16384 == original)
+    check(f"stock {label} hash matches footer", size == original and
+          hashlib.sha256(salt + stock[:size]).digest() == digest)
+    if name in (b"init_boot", b"vendor_boot"):
+        check(f"stock vbmeta_a {label} hash matches embedded metadata",
+              root_hashes.get(name) == embedded_hashes[name])
+        check(f"stock vbmeta_a {label} hashed prefix",
+              hashlib.sha256(root_hashes[name][1] +
+                             stock[:root_hashes[name][0]]).digest() == root_hashes[name][2])
+    check(f"built {label} differs from stock AVB hash",
+          len(built) < size or hashlib.sha256(salt + built[:size]).digest() != digest)
+    check(f"built {label} has no stock AVB footer", built[-64:-60] != b"AVBf")
+    print(f"{label} AVB: stock footer/embedded hash valid; built stock hash invalid; "
+          "built footer absent")
+check("stock vbmeta_a has dtbo hash", b"dtbo" in root_hashes)
+dtbo_size, dtbo_salt, dtbo_digest = root_hashes[b"dtbo"]
+check("stock dtbo matches vbmeta_a hash", dtbo_size <= len(stock_dtbo) and
+      hashlib.sha256(dtbo_salt + stock_dtbo[:dtbo_size]).digest() == dtbo_digest)
+check("stock vbmeta_a chains boot", any(
+    tag == 4 and len(body) >= 84 and struct.unpack_from(">I", body, 4)[0] == 4
+    and body[76:80] == b"boot" and struct.unpack_from(">I", body)[0] == 3
+    for tag, body in avb_descriptors(stock_vbmeta)))
 
 for image, label in ((stock_vendor, "stock"), (built_vendor, "built")):
     check(f"{label} vendor magic", image[:8] == b"VNDRBOOT")
@@ -123,6 +222,23 @@ for image, label in ((stock_vendor, "stock"), (built_vendor, "built")):
         print(f"{label} {name}: {actual:#x}")
         check(f"{label} {name}", actual == value)
     check(f"{label} dtb address", u64(image, 2104) == 0x1F00000)
+    ramdisk_size, dtb_size = u32(image, 24), u32(image, 2100)
+    table_offset = 4096 + ((ramdisk_size + 4095) // 4096 +
+                           (dtb_size + 4095) // 4096) * 4096
+    check(f"{label} vendor ramdisk table size", u32(image, 2112) == 108)
+    check(f"{label} vendor ramdisk table bounds", table_offset + 108 <= len(image))
+    size, offset, ramdisk_type = struct.unpack_from("<III", image, table_offset)
+    check(f"{label} vendor ramdisk table PLATFORM fragment",
+          (size, offset, ramdisk_type) == (ramdisk_size, 0, 1) and
+          not any(image[table_offset + 12:table_offset + 108]))
+    bootconfig_offset = table_offset + 4096
+    bootconfig_size = u32(image, 2124)
+    check(f"{label} bootconfig bounds", bootconfig_offset + bootconfig_size <= len(image))
+    if label == "stock":
+        stock_bootconfig = image[bootconfig_offset:bootconfig_offset + bootconfig_size]
+    else:
+        check("built bootconfig matches stock", bootconfig_size == len(stock_bootconfig) and
+              image[bootconfig_offset:bootconfig_offset + bootconfig_size] == stock_bootconfig)
 check("stock bootconfig size", u32(stock_vendor, 2124) == 175)
 check("built vendor ramdisk", built_vendor_ramdisk == ramdisk)
 built_vendor_cmdline = built_vendor[28:2076].split(b"\x00", 1)[0]
@@ -139,7 +255,7 @@ stock_models = dtbs(stock_dtbs, "stock vendor DTB count", 20)
 check("stock vendor contains Volcano", b"Volcano SoC" in stock_models[9])
 built_models = dtbs(built_dtbs, "built vendor DTB count", 20)
 check("built vendor DTB payload", built_dtbs == dtb)
-check("built vendor preserves stock prefix", built_models[:9] == stock_models[:9])
+check("built vendor preserves stock DTBs", built_models == stock_models)
 check("built vendor selects Volcano at index 9", b"Volcano SoC" in built_models[9])
 
 if stock_dtbo[:4] != b"\xd7\xb7\xab\x1e":
@@ -148,8 +264,10 @@ entries = struct.unpack_from(">I", stock_dtbo, 16)[0]
 entry_size = struct.unpack_from(">I", stock_dtbo, 12)[0]
 table_offset = struct.unpack_from(">I", stock_dtbo, 20)[0]
 check("stock DTBO entry size", entry_size >= 8 and entries > 65)
+check("stock DTBO table bounds", table_offset + entries * entry_size <= len(stock_dtbo))
 entry = table_offset + 65 * entry_size
 size, offset = struct.unpack_from(">II", stock_dtbo, entry)
+check("stock DTBO entry 65 bounds", size >= 40 and offset + size <= len(stock_dtbo))
 check("stock DTBO entry 65", stock_dtbo[offset:offset + size][:4] == b"\xd0\x0d\xfe\xed")
 check("selected overlay has FDT magic", overlay[:4] == b"\xd0\x0d\xfe\xed")
 print(f"stock DTB count: {len(stock_models)}, built DTB count: {len(built_models)}")
@@ -168,6 +286,8 @@ import sys
 image = pathlib.Path(sys.argv[1]).read_bytes()
 entry = struct.unpack_from(">I", image, 20)[0] + 65 * struct.unpack_from(">I", image, 12)[0]
 size, offset = struct.unpack_from(">II", image, entry)
+if size < 40 or offset + size > len(image):
+    raise SystemExit("stock DTBO entry 65 is out of bounds")
 pathlib.Path(sys.argv[2]).write_bytes(image[offset:offset + size])
 PY
 model=$(fdtget -t s "$stock_overlay" / model)
@@ -194,13 +314,15 @@ for index in range(9):
 size = struct.unpack_from(">I", blob, pos + 4)[0]
 pathlib.Path(sys.argv[2]).write_bytes(blob[pos:pos + size])
 PY
-dtc -I dtb -O dts "$scratch/volcano.dtb" >/dev/null
-ramoops=$(fdtget -t x "$scratch/volcano.dtb" /reserved-memory/ramoops_region reg)
-console_size=$(fdtget -t x "$scratch/volcano.dtb" /reserved-memory/ramoops_region console-size)
-pmsg_size=$(fdtget -t x "$scratch/volcano.dtb" /reserved-memory/ramoops_region pmsg-size)
-[ "$ramoops" = '0 81f20000 0 400000' ] || die "ramoops reservation is not 0x81f20000/4MiB"
-[ "$console_size" = '200000' ] || die "ramoops console size is not 2MiB"
-[ "$pmsg_size" = '200000' ] || die "ramoops pmsg size is not 2MiB"
+dtc -I dtb -O dts "$scratch/volcano.dtb" >"$scratch/volcano.dts" 2>"$scratch/dtc-warnings.txt"
+fdtoverlay -i "$scratch/volcano.dtb" -o "$scratch/stock-board.dtb" "$stock_overlay" ||
+	die 'stock DTBO entry 65 does not apply to built vendor DTB index 9'
+ramoops=$(fdtget -t x "$scratch/stock-board.dtb" /reserved-memory/ramoops_region reg)
+console_size=$(fdtget -t x "$scratch/stock-board.dtb" /reserved-memory/ramoops_region console-size)
+pmsg_size=$(fdtget -t x "$scratch/stock-board.dtb" /reserved-memory/ramoops_region pmsg-size)
+[ "$ramoops" = '0 81f20000 0 400000' ] &&
+	[ "$console_size" = '200000' ] && [ "$pmsg_size" = '200000' ] ||
+	die 'stock DTBO overlay did not provide the stock ramoops reservation'
 
 mkdir -p "$scratch/ramdisk"
 gzip -dc "$scratch/built-boot/ramdisk" | cpio -itv --quiet >"$scratch/ramdisk-list.txt"
@@ -249,13 +371,15 @@ cmp -s "$scratch/built-boot/ramdisk" "$scratch/built-init/ramdisk" ||
 report=$OUT/bootimg-verify.txt
 {
 	echo 'boot header v4 / vendor page size 4096; stock offsets match'
+	echo 'stock AVB footers and hashed image prefixes match embedded metadata; vbmeta_a init_boot/vendor_boot/dtbo hashes match stock; boot is chained'
+	echo 'built images are not authenticated by stock vbmeta_a: no AVB footer, stock hashes do not match; bootloader policy during attempt unknown'
 	echo "stock DTBO entry 65: $model; board-id <$board>; oem-id <$oem>"
 	echo "built DTBO: $built_model; board-id <$built_board>; oem-id <$built_oem>"
-	echo "built vendor DTB: 20 entries, Volcano at index 9; ramoops reg <$ramoops>; console-size 0x$console_size"
+	echo "built vendor DTBs: all 20 byte-identical to stock; DTBO 65 applies to index 9; ramoops reg <$ramoops>; console-size 0x$console_size"
 	echo 'vendor cmdline: earlycon keep_bootcon panic=-1 log_buf_len=1M'
 	echo 'initramfs: gzip newc; static arm64 busybox + dropbear 2026.94 sshd; NCM+ECM; authorized_keys; console shell'
 	echo 'unpack verification: passed'
 	(cd "$OUT" && sha256sum boot.img init_boot.img vendor_boot.img dtb.img \
 		Image.gz initramfs.cpio.gz Image)
-	sha256sum "$STOCK_BOOT" "$STOCK_INIT" "$STOCK_VENDOR" "$STOCK_DTBO"
+	sha256sum "$STOCK_BOOT" "$STOCK_INIT" "$STOCK_VENDOR" "$STOCK_DTBO" "$STOCK_VBMETA"
 } | tee "$report"
