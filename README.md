@@ -49,7 +49,8 @@ WORK="$HOME/sm7635-build" scripts/compare-baseline.sh
 
 The build script checks out the vendor commit from the local cache (no network
 fetch) into `$WORK/src`, merges `gki_defconfig`, `pineapple_GKI.config`,
-`consolidate.fragment` and `pineapple_consolidate.config` with the vendor's
+`consolidate.fragment`, `pineapple_consolidate.config` and the final additive
+`configs/asteroids-stock-cmdline.fragment` override with the vendor's
 `scripts/kconfig/merge_config.sh -m -r -y`, then `make olddefconfig`,
 `make -j8 Image dtbs` (`ARCH=arm64 LLVM=-17 LLVM_IAS=1 HOSTCC=gcc`).
 All artifacts and logs stay under `$WORK/out`, **outside this repo**. The
@@ -99,7 +100,12 @@ stock overlay. Only `vendor_boot.img` differs from the failed #8 set. The
 corrected #10 chain was also physically tested and returned to fastboot. The
 #12 host-only verifier checks the separate stock boot AVB0 hash record; it does
 not identify the failed boot boundary or authorize repeating either image set.
-See [BOOT.md](BOOT.md) for the measured outcomes and diagnostic limits.
+The #14 host-only rebuild changes only the kernel's built-in command line to
+the measured stock A059P value: `boot.img` differs, while `init_boot.img` and
+`vendor_boot.img` retain the #10 hashes. Verification checks the merged config,
+built config and unpacked kernel against the read-only stock `config.gz` and
+rejects `panic_on_taint` and contradictory debug flags. See [BOOT.md](BOOT.md)
+for the new SHA set, measured outcomes and diagnostic limits.
 
 The first `fastboot boot` of the earlier single `boot.img` returned
 `Booting OKAY` but never enumerated the gadget. A header-v4 boot takes its
