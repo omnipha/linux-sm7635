@@ -1,8 +1,105 @@
 # Temporary boot chain: diagnosis and next attempt
 
-The 2026-10-19 analysis and historical test plan below preceded the failed
-2026-10-20 full-chain slot-A attempt. Repository work never performs device
+The 2026-10-19 analysis and historical test plan below preceded two failed
+2026-10-20 full-chain slot-A attempts. Repository work never performs device
 operations. The historical procedure below is not authorization to repeat it.
+
+## Corrected-chain return to fastboot (#12, 2026-10-20)
+
+**Observed:** The physical coordinator's 06:40 attempt used the #10 chain:
+`boot` SHA-256 `5e866c5416791d873b8da1a9d4ac3da63ac4dd05cf36a85aa65da1a084eb7efb`,
+`init_boot` `f4b987ee9a6082a22201c763e1d437dcc1dee0c62f2e2e0d8e7a3ffad8078e89`,
+`vendor_boot` `6078269d48d1aba27688dc9a8694dc2bf89156622680bcd6c99554b444ecfc4d`.
+All three slot-A writes returned OKAY; the phone returned to fastboot within
+five seconds and stayed there through 45 observations over roughly four
+minutes, without gadget, adb or SSH. The unchanged stock `dtbo_a` and all
+three restored stock slot-A images matched the verified on-device backup
+hashes; stock Android subsequently completed boot on slot A. Host-only
+records at `~/phone-second-life-data/mb003/pstore/attempt-20261020-0640/`
+include a 1,197,548-byte recovery console (SHA-256
+`56d976062bd7e1f6853f0ee2ab389f194964eab5dec224f2e5600abc0049b81e`)
+with one stock/recovery 6.1.84 boot banner, zero 6.1.78 baseline banners and
+zero dropbear markers. It was collected *after* fallback, verified stock
+rollback and an explicit recovery boot, but before Android, so it does not
+establish whether the attempted kernel entered.
+Only `vendor_boot` differed between the failed #8 and #10 chains: the stock
+DTB/DTBO incompatibility fixed in #10 was not the **sole** cause of the same
+observed return to fastboot.
+
+**Host-only comparison:** `scripts/verify-bootimg.sh` passed against SHA-pinned
+slot-A stock `boot`, `init_boot`, `vendor_boot`, `dtbo` and `vbmeta` references
+and the exact failed #10 images. Stock `vbmeta_a` has flags zero and rollback
+index zero; it chains `boot` at rollback location 3 and has matching salted
+hash descriptors for stock `init_boot`, `vendor_boot` and `dtbo`. Each stock
+boot-family image fills its partition and has a footer-referenced embedded
+vbmeta with a matching hash of its stock prefix. Stock `boot` also has a
+**separate** 16 KiB AVB0 record between its kernel and footer-referenced
+vbmeta; it hashes the shorter kernel-only prefix. The regression check now
+checks that record's descriptor and hash separately, verifies the zero
+verification flags of the stock records, and confirms the test `boot` has
+no corresponding separate record. It does not verify signatures or
+establish which records the bootloader enforced on the failed attempt. The
+stock `vbmeta_a` hash for `dtbo` still matches: no `dtbo` or `vbmeta` change is
+proposed.
+
+| relationship | verified stock slot A | failed #10 chain |
+| --- | --- | --- |
+| boot image | 96 MiB; header v4, kernel at 4096; separate AVB0 at 13,955,072, embedded vbmeta at 13,971,456 | 16 MiB; v4, gzipped 6.1.78 kernel at 4096 and debug ramdisk at 15,101,952; no stock AVB0 record or footer; stock boot hash does not match |
+| init_boot | 8 MiB; v4, generic Android LZ4 ramdisk at 4096, embedded vbmeta at 2,121,728 | 1,679,360 bytes; v4, empty kernel, debug gzip generic ramdisk at 4096; shorter than stock hashed prefix, no footer |
+| vendor_boot | 96 MiB; v4, one PLATFORM LZ4 ramdisk, DTB at 8,826,880, table at 18,247,680, bootconfig at 18,251,776; embedded vbmeta at 18,255,872 | 11,108,352 bytes; v4, one PLATFORM gzip debug ramdisk, DTB at 1,679,360, table at 11,100,160, bootconfig at 11,104,256; shorter than stock hashed prefix, no footer |
+| selection and parameters | stock property capture reports DTB index 9, DTBO entry 65; vendor page 4096, kernel/ramdisk/tags/DTB addresses `0x8000`/`0x1000000`/`0x100`/`0x1f00000` | same geometry; all 20 stock DTBs byte-identical, stock entry 65 applies to index 9 and supplies ramoops; bootconfig matches stock's 175 bytes |
+
+The boot cmdline and vendor cmdline differ from stock (diagnostic earlycon,
+`panic=-1`); stock `boot` has no generic ramdisk, while the test places the
+debug ramdisk in `init_boot` as required by header v4. The stock 6.1.84
+kernel/vendor modules and Android generic ramdisk cannot be assumed compatible
+with the 6.1.78 baseline; the test instead replaces both ramdisks with the
+same debug payload and never loads the stock vendor modules. Gzip versus LZ4,
+smaller image geometry and AVB mismatches are candidate explanations, **not**
+a bootloader verdict. A pre-attempt unlocked/orange report supersedes the
+older locked/green stock property capture, but does not show what policy was
+enforced at hand-off. The preserved pre/post `getvar` records identify slot A
+and unlocked state; no attempt-specific AVB accept/reject status, boot reason,
+A/B retry counter or supported read-only source for them is established by the
+host records. Stock-kernel boot counters in pstore cannot be attributed to
+this attempted hand-off. The OrangeFox pmsg boot-recovery reason follows an
+explicit recovery request after stock rollback, and its slot-suffix use does
+not identify which image the bootloader loaded during the failed attempt.
+A successful fastboot write or reboot is not proof of bootloader image
+acceptance.
+
+**Single selected diagnostic:** the host-only AVB relationship audit in
+`scripts/verify-bootimg.sh`, including the separate stock boot AVB0 record.
+It confirms structural divergences, not the boundary at which the device
+failed; no supported single-variable image correction follows. No new images
+were built or designated for flashing. Do **not** repeat the #8 or #10 SHA
+sets or try a multi-variable revision. The current host evidence cannot
+distinguish rejection before kernel hand-off from a very early kernel failure
+or a later init/USB failure.
+
+**Conditional measurement/rollback handoff (physical coordinator only):**
+There is no new test request or flash approval in this diagnosis. If distinct
+images are ever independently justified and the existing bounded slot-A gate
+is re-evaluated, the coordinator owns the complete test and verified stock
+rollback. Before any such test, the coordinator must establish a supported
+read-only evidence channel or explicitly accept that the boundary may remain
+unknown; a new image SHA alone cannot discriminate it. An attempt-tagged
+record should associate image SHAs and a timed first return to fastboot with
+any *supported, bounded, read-only* bootloader
+AVB decision, slot/retry and boot-reason observations **before** recovery,
+stock boot or rollback can erase evidence; do not use a broad or hung probe.
+If such a signal is unavailable, record it as unavailable rather than infer
+a verdict. An explicit rejection supports failure before hand-off. An
+explicit acceptance **without** a test-kernel marker remains inconclusive:
+very early failure or lost/overwritten ramoops is still possible. A surviving
+6.1.78 kernel marker establishes hand-off; last kernel progress before
+`usb-init: starting` supports an early/pre-init failure, while `usb-init`
+markers without gadget or SSH support a later init/USB failure. Preserve only
+parsed marker counts, timing and structural facts in public reports, not raw
+dumps. The coordinator alone decides whether and how to obtain a timely
+record and restore/verify the three stock slot-A partitions. No operation on
+slot B, `dtbo`, `vbmeta` or `userdata` is in scope. Without a supported
+attempt-specific read-only signal or new evidence-backed artifact, stop.
 
 ## 2026-10-20 full-chain attempt and host-only diagnosis (#10)
 
@@ -51,21 +148,11 @@ all 20 DTBs byte-for-byte, applies stock DTBO 65, and checks the resulting
 ramoops fields and the stock AVB hash relationship; it does *not* establish
 bootloader acceptance. Images and reports stay under `~/sm7635-build/out/`.
 
-If a future physical coordinator authorizes another bounded attempt, isolate
-one variable at a time: the DTB-only replacement is the first candidate, *not*
-a release or a request to reflash the same #8 set. Before any later stock or
-recovery boot can replace the record, correlate the attempt-specific bootloader
-AVB result, boot reason, active slot and retry status with preserved kernel
-markers, if the physical team can obtain them without additional writes. An
-explicit AVB/slot rejection supports a bootloader-side failure; acceptance
-without a 6.1.78 marker is inconclusive (very early entry or record loss are
-still possible); a 6.1.78 entry establishes kernel hand-off, and its last
-recorded progress distinguishes a pre-init hang from a debug-init/USB failure.
-If evidence shows AVB rejection, stop before altering vbmeta or signing policy;
-if the DTB-compatible set still produces no decisive record, stop rather than
-repeating it or changing multiple variables. Physical tests, record capture
-and stock slot-A restoration remain exclusively the coordinator's responsibility;
-slot B, dtbo, vbmeta and userdata are outside #10.
+This DTB-only candidate was tested as #10's corrected set and returned to
+fastboot; it must not be repeated. The #12 assessment above supersedes this
+candidate and preserves the unresolved boot boundary. Physical tests, record
+capture and stock slot-A restoration remain exclusively the coordinator's
+responsibility; slot B, dtbo, vbmeta and userdata remain outside scope.
 
 ## 2026-10-19 single-boot analysis
 
@@ -78,12 +165,13 @@ The attempt passed `boot.img`
 slot `_a` after about 35s. `Booting OKAY` only means the bootloader accepted
 the image. It does not show that a kernel started.
 
-`fastboot boot` replaces the `boot` payload and nothing else. On a header-v4
-A/B device the kernel is the only thing that payload contributes. The DTB
-blob, the vendor command line and the bootconfig come from the flashed
-`vendor_boot`, and the board overlay comes from the flashed `dtbo`. Both
-were still the stock slot `_a` images, which the bootloader's own selection
-records: `ro.boot.dtb_idx=9` and `ro.boot.dtbo_idx=65`.
+`fastboot boot` supplies only the `boot` payload, not `init_boot` or
+`vendor_boot`. For the observed stock header-v4 layout the generic ramdisk
+comes from `init_boot`. The DTB blob, vendor command line and bootconfig
+come from `vendor_boot`, and the board overlay comes from `dtbo`; those
+partition images stayed stock. Stock-boot properties report
+`ro.boot.dtb_idx=9` and `ro.boot.dtbo_idx=65`, but are not an
+attempt-specific selection record.
 
 Checked against the unpacked stock images:
 
@@ -92,17 +180,17 @@ Checked against the unpacked stock images:
 | DTB index 9 | `vendor_boot_a`, tenth of twenty concatenated DTBs | `Qualcomm Technologies, Inc. Volcano SoC`, `compatible = "qcom,volcano"`, `qcom,msm-id = <0x27c 0x10000>`, `qcom,board-id = <0 0>` |
 | DTBO index 65 | `dtbo_a`, entry 65 of 76 | `Qualcomm Technologies, Inc. Volcano QRD Pro`, the live-FDT compatible list, `qcom,board-id = <0x0b 0>`, `qcom,oem-id = <2>` |
 
-So whatever kernel started ran on the stock DTB plus the stock DTBO overlay.
-The built `boot.img` carried neither a DTB nor a command line, so the command
-line was the stock one. The captured console shows it: it starts with
-`console=ttynull` and ends with `rootwait ro init=/init`, and the vendor part
-of it is exactly `video=vfb:640x400,bpp=32,memsize=3072000 nosoftlockup
-log_buf_len=1M ignore_loglevel printk.devkmsg=on bootconfig`. There is no
-`earlycon`, no `keep_bootcon` and no `panic=` in it. `chosen/stdout-path`
-names the GENI debug UART, but nothing enables it.
+Any attempted hand-off would have used the stock DTB and stock DTBO
+selection; the supplied `boot.img` carried neither a DTB nor a command line.
+The later stock/recovery console starts its command line with `console=ttynull`
+and ends with `rootwait ro init=/init`; its vendor part is
+`video=vfb:640x400,bpp=32,memsize=3072000 nosoftlockup log_buf_len=1M
+ignore_loglevel printk.devkmsg=on bootconfig`. This is consistent with the
+stock vendor partition, not a captured attempted-kernel command line. It
+has no `earlycon`, `keep_bootcon` or `panic=`; `chosen/stdout-path` names
+the GENI debug UART, but nothing enables it in this stock cmdline.
 
-The init path is what keeps the gadget from ever existing. The two stock
-ramdisks were unpacked and listed:
+The two stock ramdisks were unpacked and listed:
 
 | image | ramdisk | contents |
 | --- | --- | --- |
@@ -110,22 +198,16 @@ ramdisks were unpacked and listed:
 | `vendor_boot_a` | 8821389 bytes, lz4 legacy | `first_stage_ramdisk/fstab.qcom` and 324 files under `lib/modules/*.ko`; no `/init` |
 | built `boot.img` | 1032027 bytes, gzip | `/init` (the debug shell), `/bin/busybox` |
 
-Header v4 boots the generic ramdisk from `init_boot`, and `fastboot boot`
-does not replace `init_boot`. The kernel therefore ran the stock Android `/init` from `init_boot_a`, not
-the debug `/init` sitting in the boot ramdisk. The console records that
-hand-off at 0.169s: `Run /init as init process`, then `init: init first
-stage started!`, then `init: Loading module
-/lib/modules/qcom-reboot-reason.ko`. Those modules are the 6.1.84 modules
-from the vendor ramdisk, and the baseline kernel is 6.1.78 built without
-the stock signing key, so stock init cannot load them.
-
-What happens after that load failure is not established. The only console
-captured afterwards is the stock 6.1.84 boot described below, so there is
-no record of whether stock init aborted, retried, or rebooted, and the
-fallback to slot `_a` is observed only from the outside. The part that is
-certain is that the debug initramfs never got control, which is why nothing
-enumerated `18d1:4ee2`. Putting a ramdisk in `boot.img` cannot fix it: on
-this header the generic ramdisk comes from `init_boot`.
+Header v4 gets the generic ramdisk from `init_boot`; `fastboot boot` did
+not replace stock `init_boot_a`. Had the 6.1.78 kernel reached init, it
+would have received stock Android `/init` and 6.1.84 vendor modules rather
+than the debug `/init` in the supplied `boot` ramdisk. Those stock modules
+cannot be assumed compatible with the baseline kernel. The available
+`Run /init as init process` and module-load messages belong to the
+6.1.84 stock/recovery console described below, **not** an established
+6.1.78 hand-off. The test kernel's entry and the reason the gadget never
+enumerated are unresolved. Putting a ramdisk only in `boot.img` cannot
+deliver it as the generic ramdisk in this header-v4 layout.
 
 ## What the pstore file does and does not show
 
@@ -144,8 +226,8 @@ It does establish the capture mechanics. The live FDT reserves ramoops at
 `0x81f20000`, size `0x400000`, with `console-size = <0x200000>` and
 `pmsg-size = <0x200000>`, and the stock kernel logs `ramoops: using
 0x400000@0x81f20000`. The same reservation is what the built kernel needs,
-and the 19:00 attempt shows why timing matters: a later stock boot replaced
-the console that would have recorded the failure.
+and the 19:00 capture shows why timing matters: a later stock boot may
+replace any attempt-specific console, if the attempt wrote one at all.
 
 ## Diagnosability of the baseline kernel
 

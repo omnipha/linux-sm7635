@@ -100,6 +100,11 @@ def avb_descriptors(vbmeta):
         pos += 16 + size
 
 
+def avb_policy(vbmeta):
+    require(len(vbmeta) >= 256 and vbmeta[:4] == b"AVB0", "invalid AVB0 header")
+    return struct.unpack_from(">QII", vbmeta, 112)
+
+
 def avb_hashes(vbmeta):
     hashes = {}
     for tag, body in avb_descriptors(vbmeta):
@@ -161,6 +166,9 @@ check("built kernel gzip", kernel[:2] == b"\x1f\x8b")
 check("stock boot ramdisk empty", u32(stock_boot, 12) == 0)
 check("built boot ramdisk present", u32(built_boot, 12) == len(ramdisk) > 0)
 check("boot kernel size", u32(built_boot, 8) == len(kernel))
+check("built boot has no separate AVB0 region",
+      len(built_boot) == 4096 + (len(kernel) + 4095) // 4096 * 4096 +
+      (len(ramdisk) + 4095) // 4096 * 4096)
 built_cmdline = built_boot[44:1580].split(b"\x00", 1)[0]
 check("boot cmdline diagnosis prefix",
       built_cmdline.startswith(b"console=ttynull ") and b"bootconfig" in built_cmdline)
@@ -168,6 +176,9 @@ stock_boot_end = 4096 + (u32(stock_boot, 8) + 4095) // 4096 * 4096
 check("stock boot has separate 16KiB AVB0 region",
       stock_boot[stock_boot_end:stock_boot_end + 4] == b"AVB0" and
       stock_boot[stock_boot_end + 16384:stock_boot_end + 16388] == b"AVB0")
+check("stock vbmeta_a verification flags and rollback",
+      avb_policy(stock_vbmeta) == (0, 0, 0))
+
 check("stock init kernel empty", u32(stock_init, 8) == 0)
 check("built init kernel empty", u32(built_init, 8) == 0)
 check("built init ramdisk", built_init_ramdisk == ramdisk)
@@ -179,11 +190,22 @@ for name, stock, built in ((b"boot", stock_boot, built_boot),
     label = name.decode()
     original, embedded = avb_footer(stock)
     embedded_hashes = avb_hashes(embedded)
+    check(f"stock {label} embedded verification flags", avb_policy(embedded)[1] == 0)
     check(f"stock {label} embedded hash descriptor", name in embedded_hashes)
     size, salt, digest = embedded_hashes[name]
     if name == b"boot":
         check("stock boot AVB0 region ends at embedded vbmeta",
               stock_boot_end + 16384 == original)
+        boot_record = stock_boot[stock_boot_end:original]
+        boot_record_hashes = avb_hashes(boot_record)
+        check("stock boot separate AVB0 verification flags", avb_policy(boot_record)[1] == 0)
+        check("stock boot separate AVB0 hashes payload", b"boot" in boot_record_hashes and
+              boot_record_hashes[b"boot"][0] == stock_boot_end and
+              hashlib.sha256(boot_record_hashes[b"boot"][1] +
+                             stock_boot[:stock_boot_end]).digest() ==
+              boot_record_hashes[b"boot"][2])
+        check("stock boot AVB0 records have distinct hashed prefixes",
+              boot_record_hashes[b"boot"][0] != size)
     check(f"stock {label} hash matches footer", size == original and
           hashlib.sha256(salt + stock[:size]).digest() == digest)
     if name in (b"init_boot", b"vendor_boot"):
@@ -372,6 +394,7 @@ report=$OUT/bootimg-verify.txt
 {
 	echo 'boot header v4 / vendor page size 4096; stock offsets match'
 	echo 'stock AVB footers and hashed image prefixes match embedded metadata; vbmeta_a init_boot/vendor_boot/dtbo hashes match stock; boot is chained'
+	echo 'stock boot separate 16KiB AVB0 record hashes the shorter kernel-only prefix; stock verification flags and vbmeta_a rollback index are zero'
 	echo 'built images are not authenticated by stock vbmeta_a: no AVB footer, stock hashes do not match; bootloader policy during attempt unknown'
 	echo "stock DTBO entry 65: $model; board-id <$board>; oem-id <$oem>"
 	echo "built DTBO: $built_model; board-id <$built_board>; oem-id <$built_oem>"
