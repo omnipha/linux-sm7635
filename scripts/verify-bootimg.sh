@@ -234,6 +234,9 @@ check("stock boot has separate 16KiB AVB0 region",
 check("stock vbmeta_a verification flags and rollback",
       avb_policy(stock_vbmeta) == (0, 0, 0))
 
+check("stock init header v4", stock_init[:8] == b"ANDROID!" and
+      u32(stock_init, 20) == 1584 and u32(stock_init, 40) == 4 and
+      u32(stock_init, 1580) == 0)
 check("stock init kernel empty", u32(stock_init, 8) == 0)
 check("stock init generic ramdisk nonempty", u32(stock_init, 12) > 0)
 check("built init kernel empty", u32(built_init, 8) == 0)
