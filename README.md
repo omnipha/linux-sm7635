@@ -93,18 +93,23 @@ Images stay under `$WORK/out`. Verification now pins the read-only slot-A
 `boot`, `init_boot`, `vendor_boot`, `dtbo` and `vbmeta` reference hashes, checks
 stock AVB descriptors and the ramdisk table/bootconfig, and applies the actual
 stock DTBO entry 65 to the selected vendor DTB. It does not establish AVB
-acceptance or physical boot. The #10 host-only build retains all 20 stock
+acceptance or physical boot. The #10 build retains all 20 stock
 DTBs (not just the first nine), since the #8 built index 9 cannot resolve the
-stock overlay. Only `vendor_boot.img` differs from the failed #8 set. See
-[BOOT.md](BOOT.md) for the measured failure and next diagnostic gate.
+stock overlay. Only `vendor_boot.img` differs from the failed #8 set. The
+corrected #10 chain was also physically tested and returned to fastboot. The
+#12 host-only verifier checks the separate stock boot AVB0 hash record; it does
+not identify the failed boot boundary or authorize repeating either image set.
+See [BOOT.md](BOOT.md) for the measured outcomes and diagnostic limits.
 
-The first `fastboot boot` of the earlier single `boot.img` was accepted by
-the bootloader and never enumerated the gadget, because a header-v4 boot
-takes its generic ramdisk from `init_boot` and its DTB and command line from
-`vendor_boot`, neither of which that attempt replaced. [BOOT.md](BOOT.md)
-records the evidence and the historical procedure. The later three-image
-attempt returned to fastboot; the physical coordinator alone may authorize
-another bounded test. Nothing in this repository flashes or boots the phone.
+The first `fastboot boot` of the earlier single `boot.img` returned
+`Booting OKAY` but never enumerated the gadget. A header-v4 boot takes its
+generic ramdisk from `init_boot` and its DTB and vendor command line from
+`vendor_boot`, neither of which that attempt replaced. Its later stock
+pstore does not establish whether the attempted kernel entered. [BOOT.md](BOOT.md)
+records the evidence and the historical procedure. Both later three-image
+attempts returned to fastboot; the physical coordinator alone may authorize
+any future bounded test of a new evidence-backed set. Nothing in this
+repository flashes or boots the phone.
 
 ## License
 

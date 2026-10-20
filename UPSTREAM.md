@@ -142,28 +142,26 @@ header fields, not the stock payload:
 | DTB load address | `0x1f00000` |
 | kernel payload | gzip, like stock `boot_a.img` (stock is 13949926 bytes gzipped) |
 
-Stock `boot_a.img` carries a gzipped kernel and an empty ramdisk. The built
-`boot.img` carries the gzipped baseline `Image` plus the debug ramdisk,
-because this is the image a later temporary boot would pass to fastboot.
-Stock `init_boot_a.img` keeps the first-stage ramdisk separate and is not
-replaced. Stock `vendor_boot_a.img` is documented but not rebuilt: the
-built `boot.img` is self-contained, so a new `vendor_boot` is not part of
-this step.
+Stock `boot_a.img` carries a gzipped kernel and an empty ramdisk. The
+original single-boot `boot.img` carried the gzipped baseline `Image` plus
+the debug ramdisk, but it was **not** self-contained on header v4: that
+attempt did not replace the stock generic ramdisk in `init_boot_a` or the
+vendor ramdisk and DTBs in `vendor_boot_a`. The historical three-image
+correction is described below.
 
 ## Boot chain fix (2026-10-19)
 
-The first temporary-boot attempt showed that a header-v4 boot is not
-self-contained. The kernel came from `fastboot boot`, but the generic
-ramdisk came from the stock `init_boot_a` (the 2747936-byte Android
-`/init`), the vendor ramdisk, DTB blob and vendor command line came from
-the stock `vendor_boot_a` (`first_stage_ramdisk/fstab.qcom`, 324 modules,
-no `/init`), and the board overlay from stock `dtbo_a` entry 65. Stock init
-ran and began loading its 6.1.84 modules into the 6.1.78 kernel; the
-captured console ends there, so the exact path from that module load to the
-fallback onto slot `_a` is not established. What is established is that the
-debug initramfs in `boot.img` never executed. [BOOT.md](BOOT.md) has the
-full evidence; the captured pstore console is a stock 6.1.84 boot and does
-not record the failure.
+The first temporary-boot attempt exposed a header-v4 layout mismatch:
+`fastboot boot` supplied `boot` alone; any test-kernel hand-off would have
+received the generic ramdisk from stock `init_boot_a` (the 2747936-byte
+Android `/init`), while the vendor ramdisk, DTB blob and command line
+would have come from stock `vendor_boot_a` (`first_stage_ramdisk/fstab.qcom`,
+324 modules, no `/init`), and the board overlay from stock `dtbo_a` entry
+65. There was no USB gadget; the captured `/init` and stock module-load
+messages are from a later 6.1.84 stock/recovery console, not evidence
+that the 6.1.78 kernel reached init or loaded those modules. The test
+kernel's entry and fallback cause are unresolved. [BOOT.md](BOOT.md) has
+the distinction and the host-only evidence limits.
 
 `scripts/build-bootimg.sh` now also writes `init_boot.img` (header v4,
 empty kernel, the debug ramdisk, matching the stock `init_boot` layout) and
@@ -389,6 +387,25 @@ passes the full verifier, including stock overlay application. The verifier's
 AVB check is structural/hash-only; it does not validate signatures or prove
 that the bootloader accepts an unlocked-device mismatch. All images and
 logs remain outside Git. No physical operation was performed for #10.
+
+### #12 corrected-chain physical result and host-only boundary audit
+
+The corrected #10 image set above was tested once under the separate physical
+coordinator's slot-A approval on 2026-10-20, and returned to fastboot within
+five seconds despite successful writes. Stock rollback was verified and stock
+Android booted. The attempt's host-only recovery pstore contains only a later
+stock 6.1.84 kernel banner; neither rejection nor attempted-kernel hand-off
+can be inferred. The #10 DTBO correction was not the sole cause of the return.
+`BOOT.md` separates these observations from AVB and early-kernel hypotheses
+and specifies the conditional measurement/rollback boundary. The current
+`verify-bootimg.sh` now also checks the separate 16-KiB stock boot AVB0
+record's salted kernel-prefix hash and the stock zero verification flags,
+without claiming signature verification or bootloader acceptance. The host
+verifier passes on the unchanged #10 artifacts; **no new images were built,
+verified for flash, or submitted for another test**. See the host-only
+`$WORK/out/bootimg-verify.txt` report; no raw capture or device data is
+published. A supported attempt-specific read-only verdict is not present in
+the preserved records, so the failure boundary remains unresolved.
 
 ### Recorded hashes (before the sshd update)
 
