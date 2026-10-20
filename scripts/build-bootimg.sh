@@ -42,6 +42,9 @@ for base in volcano volcano6 volcano6i-fp1 volcano6i-fp2 volcano6i-fp3 \
 done
 [ -f "$STOCK_VENDOR" ] ||
 	die "missing stock vendor_boot reference: $STOCK_VENDOR"
+read -r vendor_sha _ < <(sha256sum "$STOCK_VENDOR")
+[ "$vendor_sha" = 237259404601045205715a71b88016744c73729d4513349cfe90c754b0dc1253 ] ||
+	die 'stock vendor_boot is not the verified slot-A baseline'
 
 mkdir -p "$WORK"
 if [ ! -f "$BUSYBOX_DEB" ]; then
@@ -153,72 +156,12 @@ fakeroot -- bash "$stage/archive.sh" "$stage/root" >"$stage/initramfs.cpio"
 gzip -n -9 -c "$stage/initramfs.cpio" >"$OUT/initramfs.cpio.gz"
 gzip -n -9 -c "$OUT/Image" >"$OUT/Image.gz"
 
-python3 - "$OUT" "$STOCK_VENDOR" "$OUT/dtb.img" <<'PY'
+python3 - "$STOCK_VENDOR" "$OUT/dtb.img" <<'PY'
 import pathlib
 import struct
 import sys
 
-out = pathlib.Path(sys.argv[1])
-stock_vendor = pathlib.Path(sys.argv[2]).read_bytes()
-bases = (
-    "volcano", "volcano6", "volcano6i-fp1", "volcano6i-fp2",
-    "volcano6i-fp3", "volcano6i-fp4", "volcano6ip-fp1", "volcano6ip-fp2",
-    "volcano6ip-fp3", "volcano6ip-fp4", "volcano6p",
-)
-
-
-def align4(value):
-    return (value + 3) & ~3
-
-
-def fix_ramoops(blob):
-    off_struct, off_strings = struct.unpack_from(">II", blob, 8)
-    size_strings, size_struct = struct.unpack_from(">II", blob, 32)
-    struct_blob = bytearray(blob[off_struct:off_struct + size_struct])
-    strings = bytearray(blob[off_strings:off_strings + size_strings])
-    pos = 0
-    depth = 0
-    target = None
-    insert = None
-    while pos < len(struct_blob):
-        tag = struct.unpack_from(">I", struct_blob, pos)[0]
-        if tag == 1:
-            end = struct_blob.index(b"\x00", pos + 4)
-            name = bytes(struct_blob[pos + 4:end]).decode()
-            depth += 1
-            pos = align4(end + 1)
-            if name == "ramoops_region":
-                target = depth
-        elif tag == 2:
-            if target == depth and insert is None:
-                insert = pos
-            depth -= 1
-            pos += 4
-        elif tag == 3:
-            length = struct.unpack_from(">I", struct_blob, pos + 4)[0]
-            pos += 12 + align4(length)
-        elif tag == 4:
-            pos += 4
-        elif tag == 9:
-            break
-        else:
-            raise SystemExit(f"invalid DTB tag {tag:#x}")
-    if insert is None:
-        raise SystemExit("DTB has no ramoops_region node")
-    reg_name = len(strings)
-    strings += b"reg\x00"
-    console_name = len(strings)
-    strings += b"console-size\x00"
-    properties = struct.pack(
-        ">IIIIIII", 3, 16, reg_name, 0, 0x81F20000, 0, 0x400000)
-    properties += struct.pack(">IIII", 3, 4, console_name, 0x200000)
-    struct_blob[insert:insert] = properties
-    header = bytearray(blob[:off_struct])
-    struct.pack_into(">I", header, 4, off_struct + len(struct_blob) + len(strings))
-    struct.pack_into(">I", header, 12, off_struct + len(struct_blob))
-    struct.pack_into(">I", header, 32, len(strings))
-    struct.pack_into(">I", header, 36, len(struct_blob))
-    return bytes(header) + struct_blob + strings
+stock_vendor = pathlib.Path(sys.argv[1]).read_bytes()
 
 
 def split_dtbs(blob):
@@ -235,21 +178,17 @@ def split_dtbs(blob):
     return found
 
 
-# The bootloader selects a base DTB by index (ro.boot.dtb_idx=9). Stock
-# vendor_boot puts Volcano at index 9, after nine Cliffs/Pineapple DTBs this
-# tree does not build, so those nine are carried over verbatim from the
-# read-only stock reference to preserve the index.
 page = 4096
 stock_ramdisk_size = struct.unpack_from("<I", stock_vendor, 24)[0]
 stock_dtb_size = struct.unpack_from("<I", stock_vendor, 2100)[0]
 stock_dtb_offset = page + (stock_ramdisk_size + page - 1) // page * page
 stock_blob = stock_vendor[stock_dtb_offset:stock_dtb_offset + stock_dtb_size]
+if len(stock_blob) != stock_dtb_size:
+    raise SystemExit("stock vendor DTB blob is truncated")
 stock_list = split_dtbs(stock_blob)
 if len(stock_list) != 20 or b"Volcano SoC" not in stock_list[9]:
     raise SystemExit("stock vendor DTB layout is unexpected")
-
-fixed = [fix_ramoops((out / f"{name}.dtb").read_bytes()) for name in bases]
-pathlib.Path(sys.argv[3]).write_bytes(b"".join(stock_list[:9] + fixed))
+pathlib.Path(sys.argv[2]).write_bytes(stock_blob)
 PY
 
 printf '%s\n' \

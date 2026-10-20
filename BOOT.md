@@ -1,8 +1,73 @@
 # Temporary boot chain: diagnosis and next attempt
 
-Recorded 2026-10-19. Nothing in this document was flashed or booted. The
-commands in the procedure are the written test plan for the host operator;
-repository work does not run them.
+The 2026-10-19 analysis and historical test plan below preceded the failed
+2026-10-20 full-chain slot-A attempt. Repository work never performs device
+operations. The historical procedure below is not authorization to repeat it.
+
+## 2026-10-20 full-chain attempt and host-only diagnosis (#10)
+
+The authorized physical team confirmed the stock slot-A backups before writing
+all three #8 images; the writes returned OKAY, but the reboot returned to
+fastboot within seconds without USB networking or SSH. Stock slot-A images were
+restored and rechecked on-device; `dtbo_a` was not changed, and stock Android
+booted fully afterward. The host-only attempt records are under
+`~/phone-second-life-data/mb003/pstore/attempt-20261020-0134/`; do not publish
+their contents. The preserved console has one 6.1.84 stock/recovery kernel
+marker and zero 6.1.78 baseline markers. The `nt_kmsg` capture has 16 6.1.84
+markers and zero 6.1.78 markers; these are not 16 distinct attempt boots.
+OrangeFox recovery or subsequent stock boots can overwrite ramoops, so absence
+of a 6.1.78 marker does not establish that the bootloader rejected the images.
+An OrangeFox recovery header or recovery marker is not evidence of the attempted
+kernel either. There is no captured attempt-specific bootloader AVB verdict,
+boot reason or retry counter. The older stock property capture reports locked,
+green and DTB/DTBO indices 9/65, but predates this attempt; it cannot establish
+the verification state during it.
+
+The verified stock `boot_a`, `init_boot_a` and `vendor_boot_a` images each fill
+the partition and have an AVB footer and embedded vbmeta. The #8 images have
+neither footer nor matching stock hash; `vbmeta_a` chains `boot`, hashes
+`init_boot`, `vendor_boot` and the unchanged `dtbo`. On an unlocked device,
+missing footers and hash mismatches alone do not prove the reason for the
+fastboot return. Stock `boot_a` additionally contains a 16,384-byte AVB0
+region between the aligned boot payload and the footer-referenced embedded
+vbmeta; the #8 boot image lacks it. Do not treat the header's zero signature
+size as proof that these records do not matter. No alternate AVB/vbmeta images
+or partition writes are proposed here.
+
+A read-only libfdt application of the actual stock `dtbo_a` entry 65 to the
+#8 `vendor_boot.img` base DTB index 9 fails `FDT_ERR_NOTFOUND`: 32 fixup
+symbols referenced at 82 sites are absent from that built DTB. The same stock
+overlay applies to stock index 9. The separate generated QRD Pro overlay
+applies to the built base, but that overlay was *not* in the flashed chain;
+checking only its model and board ID was insufficient. This is a concrete
+boot-chain incompatibility, not proof of the bootloader's exact failure point.
+
+The host-only correction for #10 copies the SHA-256-pinned stock 20-entry DTB
+blob into `vendor_boot` without modifying it. The stock overlay can then apply
+to index 9, and the stock overlay supplies the ramoops reservation. The
+baseline 6.1.78 kernel, debug ramdisks, vendor command line and bootconfig
+remain unchanged. Only `vendor_boot.img` changes from #8. The verifier checks
+all 20 DTBs byte-for-byte, applies stock DTBO 65, and checks the resulting
+ramoops fields and the stock AVB hash relationship; it does *not* establish
+bootloader acceptance. Images and reports stay under `~/sm7635-build/out/`.
+
+If a future physical coordinator authorizes another bounded attempt, isolate
+one variable at a time: the DTB-only replacement is the first candidate, *not*
+a release or a request to reflash the same #8 set. Before any later stock or
+recovery boot can replace the record, correlate the attempt-specific bootloader
+AVB result, boot reason, active slot and retry status with preserved kernel
+markers, if the physical team can obtain them without additional writes. An
+explicit AVB/slot rejection supports a bootloader-side failure; acceptance
+without a 6.1.78 marker is inconclusive (very early entry or record loss are
+still possible); a 6.1.78 entry establishes kernel hand-off, and its last
+recorded progress distinguishes a pre-init hang from a debug-init/USB failure.
+If evidence shows AVB rejection, stop before altering vbmeta or signing policy;
+if the DTB-compatible set still produces no decisive record, stop rather than
+repeating it or changing multiple variables. Physical tests, record capture
+and stock slot-A restoration remain exclusively the coordinator's responsibility;
+slot B, dtbo, vbmeta and userdata are outside #10.
+
+## 2026-10-19 single-boot analysis
 
 ## Why the 19:00 boot produced no USB gadget
 
@@ -94,14 +159,15 @@ The reservation is the gap. `ramoops_region` in `volcano.dtsi` carries
 fixed address, and no `console-size`. The stock values come from
 `volcano-arca-common-overlay.dtsi`, which `volcano-qrd-pro-overlay`
 includes, and that overlay is applied from `dtbo` rather than from the DTB.
-The built `vendor_boot` supplies its own DTB while the stock `dtbo_a` is
-still applied over it, but the console is only preserved at an address the
-bootloader already keeps across a reboot. The build therefore adds
-`reg = <0x0 0x81f20000 0x0 0x400000>` and `console-size = <0x200000>` to the
-`ramoops_region` node of every DTB it packs, leaving the existing
-`pmsg-size` in place. `scripts/verify-bootimg.sh` checks the unpacked result.
+The #5/#8 build tried to add
+`reg = <0x0 0x81f20000 0x0 0x400000>` and `console-size = <0x200000>`
+to every built DTB, but the unchanged stock `dtbo_a` could not apply to
+built index 9. The #10 build instead retains the verified stock DTB blob;
+`scripts/verify-bootimg.sh` checks the ramoops reservation after applying
+stock overlay 65. That reservation still cannot prove that the attempted
+kernel executed or that a later stock boot did not overwrite its console.
 
-`earlycon` needs no address. The built DTB has `chosen/stdout-path =
+`earlycon` needs no address. The stock index-9 DTB has `chosen/stdout-path =
 "/soc/qcom,qupv3_0_geni_se@ac0000/qcom,qup_uart@a94000:115200n8"` and the
 driver registers `OF_EARLYCON_DECLARE(qcom_geni, "qcom,geni-debug-uart", ...)`,
 so a bare `earlycon` follows the stdout path. No UART test points or
@@ -121,15 +187,12 @@ whichever of `boot` or `init_boot` supplies it.
 | `init_boot.img` | header v4, empty kernel, debug ramdisk, empty command line, matching the stock `init_boot` layout |
 | `vendor_boot.img` | header v4 at the stock offsets, the debug ramdisk as its single PLATFORM vendor ramdisk, the DTB blob, vendor command line `earlycon keep_bootcon loglevel=8 log_buf_len=1M ignore_loglevel printk.devkmsg=on panic=-1 bootconfig` |
 
-The DTB blob keeps the stock layout of twenty concatenated base DTBs and
-replaces the volcano entries with the ones this tree builds. The first nine
-are the stock Cliffs and Pineapple DTBs copied verbatim from the read-only
-`vendor_boot_a` reference: this tree does not build them, and the bootloader
-selects by index, so they have to stay in front. Index 9 is the built
-`volcano.dtb`, which is the index `ro.boot.dtb_idx` selected, and it is
-followed by the remaining ten built volcano variants in stock order. Every
-built entry gets the ramoops reservation above. The board overlay stays
-stock `dtbo_a` entry 65, and no `dtbo.img` is produced.
+At the time of the failed attempt the first nine DTBs were copied verbatim
+from stock, while index 9 and the following ten Volcano DTBs were replaced by
+the pinned 6.1.78 source build. The unchanged stock `dtbo_a` entry 65 cannot
+apply to that index 9; see #10 diagnosis above. The current host-only build
+instead retains all twenty stock DTBs, including index 9, so the unchanged
+stock overlay can supply the ramoops reservation. No `dtbo.img` is produced.
 
 Replacing the vendor ramdisk drops `first_stage_ramdisk/fstab.qcom` and the
 324 stock modules from the chain. The debug init never mounts a block
@@ -140,12 +203,12 @@ what stops stock init from loading 6.1.84 modules into a 6.1.78 kernel.
 
 The standing flash gate does **not** authorize any partition writes. This
 issue does not authorize any physical execution. The three-image chain below
-is historical context, not a procedure to run as part of this issue.
+is superseded historical context, not a procedure to run as part of this issue.
 
 The host `fastboot` is 34.0.5 and its `boot` command downloads a single
-image, so it cannot replace `init_boot` and `vendor_boot`. Both have to be
-flashed for the attempt and restored afterwards. The partitions hold the
-images: `boot` and `vendor_boot` are 96MiB each and `init_boot` is 8MiB.
+image, so it cannot replace `init_boot` and `vendor_boot`. The bounded test
+team wrote and restored all three slot-A images; `boot` and `vendor_boot`
+partitions are 96MiB each and `init_boot` is 8MiB.
 
 The verified backups are `~/phone-second-life-data/mb003/parts/`, both
 slots, recorded in `parts.sha256`. Slot `_a` and slot `_b` are byte
@@ -158,16 +221,8 @@ identical for these four partitions:
 | `vendor_boot_a.img`, `vendor_boot_b.img` | `237259404601045205715a71b88016744c73729d4513349cfe90c754b0dc1253` |
 | `dtbo_a.img`, `dtbo_b.img` | `759813dbfd94f4a4124b08afb2c9ef85f1f9afb7cdca9829be2558ffde13c992` |
 
-Only slot `_a` is written. Slot `_b` is the untouched second copy, and
-`dtbo` is not written at all.
-
-```sh
-cd "$HOME/sm7635-build/out"
-fastboot flash boot_a boot.img
-fastboot flash init_boot_a init_boot.img
-fastboot flash vendor_boot_a vendor_boot.img
-fastboot reboot
-```
+Only slot `_a` was written during the historical attempt. Slot `_b` remained
+untouched and `dtbo` was not written.
 
 The expected USB evidence is the configfs gadget enumerating as
 `18d1:4ee2`, with NCM on `usb0` at `172.16.42.2/24` and ECM on `usb1` at
@@ -184,31 +239,10 @@ generated into RAM on first connection, so it changes on every boot. No
 private key is shipped in the ramdisk or committed. The console shell
 remains a fallback debug path if the gadget or SSH does not work.
 
-If the gadget does not appear, stock Android must not be allowed to boot
-over the ramoops console the way it did after the 19:00 attempt. Hold the
-bootloader key combination, boot OrangeFox from fastboot, and copy the
-records off before anything else starts:
-
-```sh
-fastboot boot "$HOME/phone-second-life-data/mb003/OrangeFox-R12.0_6.1-Unofficial-Asteroids.img"
-adb shell cat /sys/fs/pstore/console-ramoops-0 > ramoops.txt
-```
-
-`/sys/fs/pstore` is root-readable in that recovery. The `nt_kmsg` partition
-(`sde62` in `by-name.txt`) is the other place a console can land; read it
-only, and only from recovery. A console whose first line says `Linux version
-6.1.78` is the baseline kernel and is worth keeping. Copy it to the build
-host and do not commit it.
-
-Restore slot `_a` from the verified backups once the capture is done:
-
-```sh
-cd "$HOME/phone-second-life-data/mb003/parts"
-fastboot flash boot_a boot_a.img
-fastboot flash init_boot_a init_boot_a.img
-fastboot flash vendor_boot_a vendor_boot_a.img
-```
-
-If slot `_a` does not boot after that, slot `_b` still holds the identical
-verified images and can be flashed the same way or selected with
-`fastboot set_active b`.
+The earlier test plan proposed prompt preservation of ramoops before a later
+stock boot could overwrite it; the 2026-10-20 capture instead contains only
+stock/recovery 6.1.84 markers. `nt_kmsg` is another host-only source of
+kernel evidence, not a guaranteed record of the attempted boot. Any future
+physical observation and restoration require the coordinator's separate
+bounded authorization. Slot B, dtbo, vbmeta and userdata are not part of
+this issue.

@@ -89,14 +89,22 @@ function; ECM is the second function because the baseline has
 key can log in; set `PUBKEY` to override the build-time input
 `~/.ssh/id_ed25519.pub`. No private key is embedded. Details, hashes,
 licenses and the vendor_boot layout are in [UPSTREAM.md](UPSTREAM.md).
-Images stay under `$WORK/out`.
+Images stay under `$WORK/out`. Verification now pins the read-only slot-A
+`boot`, `init_boot`, `vendor_boot`, `dtbo` and `vbmeta` reference hashes, checks
+stock AVB descriptors and the ramdisk table/bootconfig, and applies the actual
+stock DTBO entry 65 to the selected vendor DTB. It does not establish AVB
+acceptance or physical boot. The #10 host-only build retains all 20 stock
+DTBs (not just the first nine), since the #8 built index 9 cannot resolve the
+stock overlay. Only `vendor_boot.img` differs from the failed #8 set. See
+[BOOT.md](BOOT.md) for the measured failure and next diagnostic gate.
 
 The first `fastboot boot` of the earlier single `boot.img` was accepted by
 the bootloader and never enumerated the gadget, because a header-v4 boot
 takes its generic ramdisk from `init_boot` and its DTB and command line from
 `vendor_boot`, neither of which that attempt replaced. [BOOT.md](BOOT.md)
-records the evidence and the procedure for the next attempt. The procedure
-is documentation only: nothing in this repository flashes or boots the phone.
+records the evidence and the historical procedure. The later three-image
+attempt returned to fastboot; the physical coordinator alone may authorize
+another bounded test. Nothing in this repository flashes or boots the phone.
 
 ## License
 
