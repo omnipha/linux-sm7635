@@ -5,6 +5,7 @@ VENDOR_COMMIT=d5f5f965fd0b478eaf4eb63fd984c5a4a92135a7
 VENDOR_CACHE=${VENDOR_CACHE:-$HOME/github_repos/omnipha/linux-sm7635.git}
 WORK=${WORK:-$HOME/sm7635-build}
 JOBS=${JOBS:-$(nproc)}
+ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 
 die() { echo "error: $*" >&2; exit 1; }
 need() { command -v "$1" >/dev/null 2>&1 || die "missing tool: $1"; }
@@ -74,6 +75,7 @@ KCONFIG_CONFIG="$OUT/merged.config" scripts/kconfig/merge_config.sh -m -r -y \
 	arch/arm64/configs/vendor/pineapple_GKI.config \
 	arch/arm64/configs/consolidate.fragment \
 	arch/arm64/configs/vendor/pineapple_consolidate.config \
+	"$ROOT/configs/asteroids-stock-cmdline.fragment" \
 	2>&1 | tee -a "$OUT/build.log"
 cp -f "$OUT/merged.config" .config
 make olddefconfig 2>&1 | tee -a "$OUT/build.log"

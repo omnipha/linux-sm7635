@@ -6,6 +6,7 @@ STOCK_VENDOR=${STOCK_VENDOR:-$HOME/phone-second-life-data/mb003/parts/vendor_boo
 STOCK_INIT=${STOCK_INIT:-$HOME/phone-second-life-data/mb003/parts/init_boot_a.img}
 STOCK_DTBO=${STOCK_DTBO:-$HOME/phone-second-life-data/mb003/parts/dtbo_a.img}
 STOCK_VBMETA=${STOCK_VBMETA:-$HOME/phone-second-life-data/mb003/parts/vbmeta_a.img}
+STOCK_CONFIG=${STOCK_CONFIG:-$HOME/phone-second-life-data/mb003/config.gz}
 WORK=${WORK:-$HOME/sm7635-build}
 OUT=$WORK/out
 ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
@@ -28,7 +29,8 @@ printf '%s\n' \
 	die 'stock references differ from verified slot-A backups'
 for artifact in "$OUT/boot.img" "$OUT/init_boot.img" "$OUT/vendor_boot.img" \
 	"$OUT/dtb.img" "$OUT/Image.gz" "$OUT/initramfs.cpio.gz" \
-	"$OUT/volcano-qrd-pro-overlay.dtbo"; do
+	"$OUT/.config" "$OUT/merged.config" \
+	"$OUT/volcano-qrd-pro-overlay.dtbo" "$STOCK_CONFIG"; do
 	[ -f "$artifact" ] || die "missing artifact: $artifact"
 done
 case "$(realpath -m "$OUT")/" in
@@ -51,7 +53,9 @@ python3 - "$STOCK_BOOT" "$STOCK_VENDOR" "$STOCK_INIT" "$STOCK_DTBO" \
 	"$scratch/built-boot/ramdisk" "$scratch/stock-vendor/dtb" \
 	"$scratch/built-vendor/dtb" "$scratch/built-vendor/vendor_ramdisk00" \
 	"$scratch/built-init/ramdisk" "$OUT/volcano-qrd-pro-overlay.dtbo" \
-	"$STOCK_VBMETA" <<'PY'
+	"$STOCK_VBMETA" "$OUT/.config" "$STOCK_CONFIG" \
+	"$ROOT/configs/asteroids-stock-cmdline.fragment" "$OUT/merged.config" <<'PY'
+import gzip
 import hashlib
 import pathlib
 import struct
@@ -60,8 +64,8 @@ import sys
 (stock_boot, stock_vendor, stock_init, stock_dtbo, built_boot, built_vendor,
  built_init, kernel, ramdisk, dtb, stock_kernel, unpacked_kernel,
  unpacked_ramdisk, stock_dtbs, built_dtbs, built_vendor_ramdisk,
- built_init_ramdisk, overlay, stock_vbmeta) = (
-    pathlib.Path(p).read_bytes() for p in sys.argv[1:])
+ built_init_ramdisk, overlay, stock_vbmeta, config, stock_config,
+ fragment, merged_config) = (pathlib.Path(p).read_bytes() for p in sys.argv[1:])
 
 
 def u32(data, offset):
@@ -172,6 +176,47 @@ check("built boot has no separate AVB0 region",
 built_cmdline = built_boot[44:1580].split(b"\x00", 1)[0]
 check("boot cmdline diagnosis prefix",
       built_cmdline.startswith(b"console=ttynull ") and b"bootconfig" in built_cmdline)
+
+
+def config_value(data, symbol):
+    matches = [line for line in data.splitlines() if line.startswith(symbol + b"=")]
+    require(len(matches) == 1, f"expected exactly one {symbol.decode()} setting")
+    return matches[0].split(b"=", 1)[1]
+
+
+check("measured stock config.gz SHA-256",
+      hashlib.sha256(stock_config).hexdigest() ==
+      "90203e06c0608d471f2bd260c3c3075112507408e59c3d7d8bec72706899f478")
+stock_config = gzip.decompress(stock_config)
+stock_cmdline = config_value(stock_config, b"CONFIG_CMDLINE")
+check("stock CONFIG_CMDLINE_EXTEND", config_value(stock_config, b"CONFIG_CMDLINE_EXTEND") == b"y")
+check("override fragment matches measured stock CONFIG_CMDLINE",
+      fragment.strip() == b"CONFIG_CMDLINE=" + stock_cmdline)
+check("merged CONFIG_CMDLINE matches measured stock",
+      config_value(merged_config, b"CONFIG_CMDLINE") == stock_cmdline)
+check("built CONFIG_CMDLINE matches measured stock", config_value(config, b"CONFIG_CMDLINE") ==
+      stock_cmdline)
+check("built .config has no panic_on_taint", b"panic_on_taint" not in config)
+check("built CONFIG_CMDLINE_EXTEND", config_value(config, b"CONFIG_CMDLINE_EXTEND") == b"y")
+image = gzip.decompress(unpacked_kernel)
+start = image.find(b"IKCFG_ST")
+end = image.find(b"IKCFG_ED", start + 8)
+require(start >= 0 and end > start, "unpacked kernel has no embedded IKCONFIG")
+embedded_config = gzip.decompress(image[start + 8:end])
+check("unpacked kernel embedded config matches .config", embedded_config == config)
+kernel_cmdline = config_value(embedded_config, b"CONFIG_CMDLINE")
+check("unpacked kernel config has no panic_on_taint", b"panic_on_taint" not in embedded_config)
+check("unpacked kernel CONFIG_CMDLINE matches measured stock", kernel_cmdline == stock_cmdline)
+for name, cmdline in ((".config", config_value(config, b"CONFIG_CMDLINE")),
+                      ("unpacked kernel", kernel_cmdline),
+                      ("boot image", built_cmdline),
+                      ("init_boot image", built_init[44:1580].split(b"\x00", 1)[0]),
+                      ("vendor_boot image", built_vendor[28:2076].split(b"\x00", 1)[0])):
+    check(f"{name} has no panic_on_taint or removed debug flags",
+          not any(flag in cmdline for flag in (
+              b"panic_on_taint", b"stack_depot_disable=off", b"page_owner=on",
+              b"page_pinner=on", b"no_hash_pointers", b"slub_debug=")))
+
 stock_boot_end = 4096 + (u32(stock_boot, 8) + 4095) // 4096 * 4096
 check("stock boot has separate 16KiB AVB0 region",
       stock_boot[stock_boot_end:stock_boot_end + 4] == b"AVB0" and
@@ -399,6 +444,7 @@ report=$OUT/bootimg-verify.txt
 	echo "stock DTBO entry 65: $model; board-id <$board>; oem-id <$oem>"
 	echo "built DTBO: $built_model; board-id <$built_board>; oem-id <$built_oem>"
 	echo "built vendor DTBs: all 20 byte-identical to stock; DTBO 65 applies to index 9; ramoops reg <$ramoops>; console-size 0x$console_size"
+	echo 'kernel CONFIG_CMDLINE: override, merged config, built config and unpacked kernel match measured stock; no panic_on_taint or removed debug flags in boot chain cmdlines'
 	echo 'vendor cmdline: earlycon keep_bootcon panic=-1 log_buf_len=1M'
 	echo 'initramfs: gzip newc; static arm64 busybox + dropbear 2026.94 sshd; NCM+ECM; authorized_keys; console shell'
 	echo 'unpack verification: passed'
