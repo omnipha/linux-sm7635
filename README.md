@@ -104,8 +104,12 @@ The #14 host-only rebuild changes only the kernel's built-in command line to
 the measured stock A059P value: `boot.img` differs, while `init_boot.img` and
 `vendor_boot.img` retain the #10 hashes. Verification checks the merged config,
 built config and unpacked kernel against the read-only stock `config.gz` and
-rejects `panic_on_taint` and contradictory debug flags. See [BOOT.md](BOOT.md)
-for the new SHA set, measured outcomes and diagnostic limits.
+rejects `panic_on_taint` and contradictory debug flags. The #16 host-only
+packaging change removes only the duplicated generic ramdisk from `boot.img`;
+`init_boot.img` keeps the debug generic ramdisk and `vendor_boot.img` keeps its
+PLATFORM vendor ramdisk, both byte-identical to #14. The verifier rejects
+synthetic duplicate-ramdisk fixtures and pins the other components to #14.
+See [BOOT.md](BOOT.md) for the SHA set, measured outcomes and diagnostic limits.
 
 The first `fastboot boot` of the earlier single `boot.img` returned
 `Booting OKAY` but never enumerated the gadget. A header-v4 boot takes its

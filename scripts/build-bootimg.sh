@@ -207,7 +207,7 @@ mkbootimg --header_version 4 --pagesize 4096 \
 	--ramdisk_offset 0x01000000 --tags_offset 0x00000100 \
 	--dtb_offset 0x0000000001f00000 \
 	--os_version 0.0.0 --os_patch_level 0 \
-	--kernel "$OUT/Image.gz" --ramdisk "$OUT/initramfs.cpio.gz" \
+	--kernel "$OUT/Image.gz" \
 	--cmdline "$BOOT_CMDLINE" \
 	--dtb "$OUT/dtb.img" \
 	--vendor_cmdline "$VENDOR_CMDLINE" \
@@ -236,15 +236,15 @@ if boot[:8] != b"ANDROID!" or struct.unpack_from("<I", boot, 40)[0] != 4:
     raise SystemExit("boot header is not v4")
 if struct.unpack_from("<I", boot, 20)[0] != 1584:
     raise SystemExit("boot header size is not 1584")
-if struct.unpack_from("<II", boot, 8) != (len(kernel), len(ramdisk)):
-    raise SystemExit("kernel/ramdisk sizes do not match")
+if struct.unpack_from("<II", boot, 8) != (len(kernel), 0):
+    raise SystemExit("boot kernel size or empty generic ramdisk mismatch")
 page = 4096
 start = page
 if boot[start:start + len(kernel)] != kernel:
     raise SystemExit("kernel payload does not match")
 start += (len(kernel) + page - 1) // page * page
-if boot[start:start + len(ramdisk)] != ramdisk:
-    raise SystemExit("ramdisk payload does not match")
+if len(boot) != start or any(boot[page + len(kernel):start]):
+    raise SystemExit("boot has data after the kernel")
 if vendor[:8] != b"VNDRBOOT" or struct.unpack_from("<I", vendor, 8)[0] != 4:
     raise SystemExit("vendor boot header is not v4")
 if struct.unpack_from("<III", vendor, 12) != (page, 0x8000, 0x1000000):

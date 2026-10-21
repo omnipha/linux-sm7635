@@ -292,11 +292,14 @@ validated as a single ed25519 public key and packed as root-owned
 `/root/.ssh/authorized_keys` with mode 0600. The build will fail if the
 input is missing or malformed. `initramfs/init` keeps the NCM/ECM gadget
 and starts dropbear bound to `172.16.42.2:22`. There is no password or
-lockscreen authentication path. Both images containing a generic ramdisk
-(`boot.img`, `init_boot.img`) and the vendor ramdisk in `vendor_boot.img`
-are byte-identical. `scripts/verify-bootimg.sh` unpacks the ramdisk, checks
-the binary, license notices, public key, startup bind address and matching
-ramdisks. Built on the host only; no physical boot or SSH measurement.
+lockscreen authentication path. In this historical #8 set, the generic
+ramdisks in `boot.img` and `init_boot.img` and the PLATFORM ramdisk in
+`vendor_boot.img` were byte-identical. The later #16 packaging change keeps
+the generic ramdisk only in `init_boot.img` while preserving the PLATFORM vendor
+ramdisk; see [BOOT.md](BOOT.md). `scripts/verify-bootimg.sh` unpacks the
+init_boot ramdisk and checks the binary, license notices, public key,
+startup bind address and matching vendor ramdisk. Built on the host only;
+no physical boot or SSH measurement.
 Two consecutive builds with the same public key produced identical images;
 `verify-bootimg.sh` passed against the unpacked images and read-only stock
 references. Final hashes (artifacts are outside this repository):

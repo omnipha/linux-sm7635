@@ -36,6 +36,18 @@ done
 case "$(realpath -m "$OUT")/" in
 	"$ROOT"/*) die "verification artifacts must stay outside this repository" ;;
 esac
+printf '%s\n' \
+	'8c00c6f8cd89a6b044a0c7df7c481248786b09e14b12964699ed3ee6da7905d9  '"$OUT/.config" \
+	'cc9ec0d6f2903d6964ba0091c186a32cfbbccc42191a8675764b5c607c329386  '"$OUT/Image" \
+	'0cef9dbfb53d6c2df6532946158180684f3d5de59136c64703dff7460eb0849c  '"$OUT/Image.gz" \
+	'caa3eb8218b9ee3024ec884e2e8619705e91732860628b363b933944cc56f37f  '"$OUT/initramfs.cpio.gz" \
+	'e04c86261f328dddb7d0ef72483e575809bfe63c5c8feab73271e0e5743c87a9  '"$OUT/dtb.img" \
+	'f4b987ee9a6082a22201c763e1d437dcc1dee0c62f2e2e0d8e7a3ffad8078e89  '"$OUT/init_boot.img" \
+	'6078269d48d1aba27688dc9a8694dc2bf89156622680bcd6c99554b444ecfc4d  '"$OUT/vendor_boot.img" | sha256sum -c - ||
+	die 'host artifacts differ from the #14 chain; boot ramdisk is not the only variable'
+python3 "$ROOT/scripts/verify-generic-ramdisk.py" --self-test
+python3 "$ROOT/scripts/verify-generic-ramdisk.py" "$STOCK_BOOT" "$OUT/boot.img" \
+	"$OUT/init_boot.img" "$OUT/Image.gz" "$OUT/initramfs.cpio.gz"
 
 scratch=$(mktemp -d "$WORK/bootimg-verify.XXXXXXXX")
 trap 'rm -rf "$scratch"' EXIT
@@ -50,7 +62,7 @@ python3 - "$STOCK_BOOT" "$STOCK_VENDOR" "$STOCK_INIT" "$STOCK_DTBO" \
 	"$OUT/boot.img" "$OUT/vendor_boot.img" "$OUT/init_boot.img" \
 	"$OUT/Image.gz" "$OUT/initramfs.cpio.gz" "$OUT/dtb.img" \
 	"$scratch/stock-boot/kernel" "$scratch/built-boot/kernel" \
-	"$scratch/built-boot/ramdisk" "$scratch/stock-vendor/dtb" \
+	"$scratch/stock-vendor/dtb" \
 	"$scratch/built-vendor/dtb" "$scratch/built-vendor/vendor_ramdisk00" \
 	"$scratch/built-init/ramdisk" "$OUT/volcano-qrd-pro-overlay.dtbo" \
 	"$STOCK_VBMETA" "$OUT/.config" "$STOCK_CONFIG" \
@@ -63,7 +75,7 @@ import sys
 
 (stock_boot, stock_vendor, stock_init, stock_dtbo, built_boot, built_vendor,
  built_init, kernel, ramdisk, dtb, stock_kernel, unpacked_kernel,
- unpacked_ramdisk, stock_dtbs, built_dtbs, built_vendor_ramdisk,
+ stock_dtbs, built_dtbs, built_vendor_ramdisk,
  built_init_ramdisk, overlay, stock_vbmeta, config, stock_config,
  fragment, merged_config) = (pathlib.Path(p).read_bytes() for p in sys.argv[1:])
 
@@ -164,15 +176,13 @@ for name, offset, value in (
     print(f"{name}: stock={stock} built={built}")
     check(name, stock == built == value)
 check("unpacked kernel", unpacked_kernel == kernel)
-check("unpacked ramdisk", unpacked_ramdisk == ramdisk)
 check("stock kernel gzip", stock_kernel[:2] == b"\x1f\x8b")
 check("built kernel gzip", kernel[:2] == b"\x1f\x8b")
 check("stock boot ramdisk empty", u32(stock_boot, 12) == 0)
-check("built boot ramdisk present", u32(built_boot, 12) == len(ramdisk) > 0)
+check("built boot ramdisk empty", u32(built_boot, 12) == 0)
 check("boot kernel size", u32(built_boot, 8) == len(kernel))
 check("built boot has no separate AVB0 region",
-      len(built_boot) == 4096 + (len(kernel) + 4095) // 4096 * 4096 +
-      (len(ramdisk) + 4095) // 4096 * 4096)
+       len(built_boot) == 4096 + (len(kernel) + 4095) // 4096 * 4096)
 built_cmdline = built_boot[44:1580].split(b"\x00", 1)[0]
 check("boot cmdline diagnosis prefix",
       built_cmdline.startswith(b"console=ttynull ") and b"bootconfig" in built_cmdline)
@@ -224,8 +234,13 @@ check("stock boot has separate 16KiB AVB0 region",
 check("stock vbmeta_a verification flags and rollback",
       avb_policy(stock_vbmeta) == (0, 0, 0))
 
+check("stock init header v4", stock_init[:8] == b"ANDROID!" and
+      u32(stock_init, 20) == 1584 and u32(stock_init, 40) == 4 and
+      u32(stock_init, 1580) == 0)
 check("stock init kernel empty", u32(stock_init, 8) == 0)
+check("stock init generic ramdisk nonempty", u32(stock_init, 12) > 0)
 check("built init kernel empty", u32(built_init, 8) == 0)
+check("built init ramdisk size", u32(built_init, 12) == len(ramdisk) > 0)
 check("built init ramdisk", built_init_ramdisk == ramdisk)
 
 root_hashes = avb_hashes(stock_vbmeta)
@@ -392,12 +407,12 @@ pmsg_size=$(fdtget -t x "$scratch/stock-board.dtb" /reserved-memory/ramoops_regi
 	die 'stock DTBO overlay did not provide the stock ramoops reservation'
 
 mkdir -p "$scratch/ramdisk"
-gzip -dc "$scratch/built-boot/ramdisk" | cpio -itv --quiet >"$scratch/ramdisk-list.txt"
+gzip -dc "$scratch/built-init/ramdisk" | cpio -itv --quiet >"$scratch/ramdisk-list.txt"
 for device in 'dev/console' 'dev/null' 'dev/kmsg' 'dev/ptmx'; do
 	grep -q "^c.* $device$" "$scratch/ramdisk-list.txt" || die "missing device node: $device"
 done
 grep -q 'bin/busybox' "$scratch/ramdisk-list.txt" || die "initramfs has no busybox"
-gzip -dc "$scratch/built-boot/ramdisk" | \
+gzip -dc "$scratch/built-init/ramdisk" | \
 	(cd "$scratch/ramdisk" && cpio -id --quiet --no-absolute-filenames \
 		init bin/busybox bin/dropbear root/.ssh/authorized_keys \
 		usr/share/doc/dropbear/LICENSE \
@@ -430,14 +445,12 @@ grep -q 'LibTomCrypt is public domain' \
 	die "LibTomCrypt license is missing"
 grep -q 'public domain' "$scratch/ramdisk/usr/share/doc/dropbear/LibTomMath-LICENSE" ||
 	die "LibTomMath license is missing"
-cmp -s "$scratch/built-boot/ramdisk" "$scratch/built-vendor/vendor_ramdisk00" ||
-	die "boot and vendor ramdisks differ"
-cmp -s "$scratch/built-boot/ramdisk" "$scratch/built-init/ramdisk" ||
-	die "boot and init ramdisks differ"
+cmp -s "$scratch/built-init/ramdisk" "$scratch/built-vendor/vendor_ramdisk00" ||
+	die "init and vendor ramdisks differ"
 
 report=$OUT/bootimg-verify.txt
 {
-	echo 'boot header v4 / vendor page size 4096; stock offsets match'
+	echo 'boot header v4 / vendor page size 4096; stock offsets match; stock and built boot generic ramdisk size zero; debug generic ramdisk only in init_boot'
 	echo 'stock AVB footers and hashed image prefixes match embedded metadata; vbmeta_a init_boot/vendor_boot/dtbo hashes match stock; boot is chained'
 	echo 'stock boot separate 16KiB AVB0 record hashes the shorter kernel-only prefix; stock verification flags and vbmeta_a rollback index are zero'
 	echo 'built images are not authenticated by stock vbmeta_a: no AVB footer, stock hashes do not match; bootloader policy during attempt unknown'
