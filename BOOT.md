@@ -87,6 +87,17 @@ bootconfig = `10,935,145` bytes). Therefore:
    That proves every tested chain failed **either** before kernel hand-off (in
    XBL/ABL) **or** before the test kernel could initialize and write to that
    `ramoops` reservation.
+3. Host xHCI USB enumeration timing (`journalctl -k` on the build/test host)
+   across all five failed reboots (`0134` at 01:34:16, `0640` at 06:44:34,
+   `1156` at 12:22:09, `1717` normal at 17:53:57, `1717` stage-6 recovery at
+   17:59:24) shows a **single** reset cycle (`USB disconnect` at `t = 0s`,
+   full-speed `t = +1..2s`, high-speed `18d1:d00d` fastboot at `t = +4.0s`),
+   matching the `4.0–5.0s` timing of a direct `adb reboot bootloader` entry into
+   ABL (`0640` 06:44:12 -> 06:44:17, `1156` 12:21:35 -> 12:21:39, `1717`
+   17:53:22 -> 17:53:27) with no intermediate second reset. This is strongly
+   consistent with synchronous ABL rejection into fastboot within the same boot
+   cycle, though an immediate post-jump reset before `ramoops` cannot be ruled
+   out by USB timing alone.
 
 | tested slot-A chain | `boot_a` / `init_boot_a` / `vendor_boot_a` SHA-256 prefixes | single variable changed | observed normal + recovery result |
 | --- | --- | --- | --- |
@@ -112,7 +123,9 @@ not used because it wedged fastboot on `0332`/`0535`). Host-only evidence
 - **Regime 2 — Pre-`ramoops` kernel failure:**
   ABL hands off to the 6.1.78 `Image.gz` in `boot_a`, which resets before
   `ramoops` initializes at `0x81f20000`. The preserved pre-attempt Android
-  console and ~4s return are consistent with this; no 6.1.78 marker is
+  console and ~4s return do not rule this out, but the absence of a second
+  host USB reset is less consistent with a kernel-triggered restart (which
+  normally produces a second disconnect/re-enumeration). No 6.1.78 marker is
   required for this regime. `~0.068s` is stock kernel's observed probe time,
   not a measured upper bound for the test kernel.
 - **Regime 3 — Later kernel/init/USB failure:**
