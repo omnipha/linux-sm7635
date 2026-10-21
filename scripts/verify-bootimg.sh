@@ -30,21 +30,28 @@ printf '%s\n' \
 for artifact in "$OUT/boot.img" "$OUT/init_boot.img" "$OUT/vendor_boot.img" \
 	"$OUT/dtb.img" "$OUT/Image.gz" "$OUT/initramfs.cpio.gz" \
 	"$OUT/.config" "$OUT/merged.config" \
-	"$OUT/volcano-qrd-pro-overlay.dtbo" "$STOCK_CONFIG"; do
+	"$OUT/volcano-qrd-pro-overlay.dtbo" "$STOCK_CONFIG" \
+	"$ROOT/configs/asteroids-volcano-usb-builtin.fragment"; do
 	[ -f "$artifact" ] || die "missing artifact: $artifact"
 done
 case "$(realpath -m "$OUT")/" in
 	"$ROOT"/*) die "verification artifacts must stay outside this repository" ;;
 esac
 printf '%s\n' \
-	'8c00c6f8cd89a6b044a0c7df7c481248786b09e14b12964699ed3ee6da7905d9  '"$OUT/.config" \
-	'cc9ec0d6f2903d6964ba0091c186a32cfbbccc42191a8675764b5c607c329386  '"$OUT/Image" \
-	'0cef9dbfb53d6c2df6532946158180684f3d5de59136c64703dff7460eb0849c  '"$OUT/Image.gz" \
 	'caa3eb8218b9ee3024ec884e2e8619705e91732860628b363b933944cc56f37f  '"$OUT/initramfs.cpio.gz" \
 	'e04c86261f328dddb7d0ef72483e575809bfe63c5c8feab73271e0e5743c87a9  '"$OUT/dtb.img" \
 	'f4b987ee9a6082a22201c763e1d437dcc1dee0c62f2e2e0d8e7a3ffad8078e89  '"$OUT/init_boot.img" \
 	'6078269d48d1aba27688dc9a8694dc2bf89156622680bcd6c99554b444ecfc4d  '"$OUT/vendor_boot.img" | sha256sum -c - ||
-	die 'host artifacts differ from the #14 chain; boot ramdisk is not the only variable'
+	die 'init_boot/vendor_boot/DTB/ramdisk differ from the verified #16 chain'
+[ "$(sha256sum "$OUT/boot.img" | cut -d ' ' -f 1)" != \
+	'1fdc25705bbc93a6a7a57082e7054a02f5a29a59690d5958567921ad4350acc7' ] ||
+	die 'boot.img repeats the #16 baseline instead of changing the kernel'
+python3 "$ROOT/scripts/verify-volcano-usb.py" --self-test
+python3 "$ROOT/scripts/verify-volcano-usb.py" config \
+	"$OUT/.config" "$ROOT/configs/asteroids-volcano-usb-builtin.fragment"
+[ "$(sha256sum "$OUT/Image" | cut -d ' ' -f 1)" != \
+	'cc9ec0d6f2903d6964ba0091c186a32cfbbccc42191a8675764b5c607c329386' ] ||
+	die 'Image repeats the #16 baseline instead of changing the kernel'
 python3 "$ROOT/scripts/verify-generic-ramdisk.py" --self-test
 python3 "$ROOT/scripts/verify-generic-ramdisk.py" "$STOCK_BOOT" "$OUT/boot.img" \
 	"$OUT/init_boot.img" "$OUT/Image.gz" "$OUT/initramfs.cpio.gz"
@@ -405,6 +412,10 @@ pmsg_size=$(fdtget -t x "$scratch/stock-board.dtb" /reserved-memory/ramoops_regi
 [ "$ramoops" = '0 81f20000 0 400000' ] &&
 	[ "$console_size" = '200000' ] && [ "$pmsg_size" = '200000' ] ||
 	die 'stock DTBO overlay did not provide the stock ramoops reservation'
+python3 "$ROOT/scripts/verify-volcano-usb.py" board "$OUT/.config" \
+	"$ROOT/configs/asteroids-volcano-usb-builtin.fragment" \
+	"$scratch/built-boot/kernel" "$scratch/stock-board.dtb" \
+	"$scratch/built-init/ramdisk"
 
 mkdir -p "$scratch/ramdisk"
 gzip -dc "$scratch/built-init/ramdisk" | cpio -itv --quiet >"$scratch/ramdisk-list.txt"
@@ -458,6 +469,7 @@ report=$OUT/bootimg-verify.txt
 	echo "built DTBO: $built_model; board-id <$built_board>; oem-id <$built_oem>"
 	echo "built vendor DTBs: all 20 byte-identical to stock; DTBO 65 applies to index 9; ramoops reg <$ramoops>; console-size 0x$console_size"
 	echo 'kernel CONFIG_CMDLINE: override, merged config, built config and unpacked kernel match measured stock; no panic_on_taint or removed debug flags in boot chain cmdlines'
+	echo 'Volcano USB reachability: /soc/ssusb@a600000 (qcom,dwc-usb3-msm), child dwc3@a600000 and all 22 DT phandle suppliers resolve to built-in (=y) drivers'
 	echo 'vendor cmdline: earlycon keep_bootcon panic=-1 log_buf_len=1M'
 	echo 'initramfs: gzip newc; static arm64 busybox + dropbear 2026.94 sshd; NCM+ECM; authorized_keys; console shell'
 	echo 'unpack verification: passed'
