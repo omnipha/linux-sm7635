@@ -112,20 +112,14 @@ def main():
         pathlib.Path(name).read_bytes() for name in sys.argv[1:])
     check_empty_boot(stock)
     boot_end = check_built(boot, init_boot, kernel, ramdisk)
-    former = bytearray(boot)
-    struct.pack_into("<I", former, 12, len(ramdisk))
-    former += ramdisk + bytes(-len(ramdisk) % PAGE)
-    require(hashlib.sha256(former).hexdigest() == OLD_BOOT_SHA256,
-            "reconstructed #14 boot differs beyond the generic ramdisk field/payload/layout")
-    expect_rejection("verified #14 duplicated ramdisk", "boot generic ramdisk must be empty",
-                     former, init_boot, kernel, ramdisk)
     require(hashlib.sha256(boot).hexdigest() not in (
-        OLD_BOOT_SHA256, "5e866c5416791d873b8da1a9d4ac3da63ac4dd05cf36a85aa65da1a084eb7efb"),
-        "boot image repeats a failed SHA")
+        OLD_BOOT_SHA256, "5e866c5416791d873b8da1a9d4ac3da63ac4dd05cf36a85aa65da1a084eb7efb",
+        "1fdc25705bbc93a6a7a57082e7054a02f5a29a59690d5958567921ad4350acc7"),
+        "boot image repeats an old SHA")
     print(f"stock boot ramdisk_size=0; built boot ramdisk_size=0, kernel at {PAGE}, "
           f"end={boot_end}; init_boot ramdisk_size={len(ramdisk)} at {PAGE}, kernel_size=0")
-    print(f"#14 boot recreated exactly: {len(former)} bytes, SHA-256 {OLD_BOOT_SHA256}")
-    print(f"new boot: {len(boot)} bytes, SHA-256 {hashlib.sha256(boot).hexdigest()}")
+    print(f"#14 reconstruction not applicable to Path B: Image alone changed; "
+          f"new boot: {len(boot)} bytes, SHA-256 {hashlib.sha256(boot).hexdigest()}")
 
 
 if __name__ == "__main__":

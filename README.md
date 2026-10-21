@@ -49,13 +49,15 @@ WORK="$HOME/sm7635-build" scripts/compare-baseline.sh
 
 The build script checks out the vendor commit from the local cache (no network
 fetch) into `$WORK/src`, merges `gki_defconfig`, `pineapple_GKI.config`,
-`consolidate.fragment`, `pineapple_consolidate.config` and the final additive
-`configs/asteroids-stock-cmdline.fragment` override with the vendor's
+`consolidate.fragment`, `pineapple_consolidate.config`, the additive
+`configs/asteroids-stock-cmdline.fragment` override and the additive
+`configs/asteroids-volcano-usb-builtin.fragment` closure with the vendor's
 `scripts/kconfig/merge_config.sh -m -r -y`, then `make olddefconfig`,
 `make -j8 Image dtbs` (`ARCH=arm64 LLVM=-17 LLVM_IAS=1 HOSTCC=gcc`).
 All artifacts and logs stay under `$WORK/out`, **outside this repo**. The
-script makes a local cast-only fix for a const-qualifier warning in vendor
-`tools/lib/bpf/libbpf.c` (required by host GCC 15 and clang 17 with `-Werror`).
+script makes local build-only fixes for a const-qualifier warning in vendor
+`tools/lib/bpf/libbpf.c` and out-of-directory `TRACE_INCLUDE_PATH` defines in
+eight vendor trace headers (required by host GCC 15 and clang 17).
 It uses Ubuntu clang 17.0.6 (23ubuntu7), not the device's Android clang
 17.0.2 build 10087095/r487747c: it is reproducible with the listed toolchain,
 not a bit-for-bit reproduction of the stock kernel. One build at a time.
@@ -109,6 +111,10 @@ packaging change removes only the duplicated generic ramdisk from `boot.img`;
 `init_boot.img` keeps the debug generic ramdisk and `vendor_boot.img` keeps its
 PLATFORM vendor ramdisk, both byte-identical to #14. The verifier rejects
 synthetic duplicate-ramdisk fixtures and pins the other components to #14.
+The #18 Path B build now adds the built-in Volcano USB glue and supplier closure
+without changing either debug ramdisk, DTB or `init_boot`/`vendor_boot` image.
+The host verifier checks the merged board DT-to-driver binding, embedded kernel
+config and zero-module initramfs; it does not establish physical boot or SSH.
 See [BOOT.md](BOOT.md) for the SHA set, measured outcomes and diagnostic limits.
 
 The first `fastboot boot` of the earlier single `boot.img` returned

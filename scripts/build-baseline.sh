@@ -60,6 +60,24 @@ if after not in source:
     if source.count(before) != 1:
         raise SystemExit('libbpf.c pattern not found or ambiguous')
     path.write_text(source.replace(before, after))
+for directory, name in (("drivers/clk/qcom", "trace.h"),
+                        ("drivers/clk/qcom", "trace-gdsc.h"),
+                        ("drivers/interconnect/qcom", "trace.h"),
+                        ("drivers/soc/qcom", "trace-crm.h"),
+                        ("drivers/soc/qcom", "trace-rpmh.h"),
+                        ("drivers/soc/qcom", "trace_secure_buffer.h"),
+                        ("drivers/soc/qcom/mem_buf", "trace-mem-buf.h"),
+                        ("drivers/virt/gunyah", "gh_proxy_sched_trace.h")):
+    path = pathlib.Path(sys.argv[1]).parents[3] / directory / name
+    lines = path.read_text().splitlines()
+    target = f"#define TRACE_INCLUDE_PATH ../../{directory}"
+    matches = [index for index, line in enumerate(lines)
+               if line.startswith("#define TRACE_INCLUDE_PATH ")]
+    if len(matches) != 1:
+        raise SystemExit(f"{directory}/{name} trace include pattern not found or ambiguous")
+    if lines[matches[0]] != target:
+        lines[matches[0]] = target
+        path.write_text("\n".join(lines) + "\n")
 PY
 }
 
@@ -76,10 +94,13 @@ KCONFIG_CONFIG="$OUT/merged.config" scripts/kconfig/merge_config.sh -m -r -y \
 	arch/arm64/configs/consolidate.fragment \
 	arch/arm64/configs/vendor/pineapple_consolidate.config \
 	"$ROOT/configs/asteroids-stock-cmdline.fragment" \
+	"$ROOT/configs/asteroids-volcano-usb-builtin.fragment" \
 	2>&1 | tee -a "$OUT/build.log"
 cp -f "$OUT/merged.config" .config
 make olddefconfig 2>&1 | tee -a "$OUT/build.log"
 cp -f .config "$OUT/.config"
+python3 "$ROOT/scripts/verify-volcano-usb.py" config \
+	"$OUT/.config" "$ROOT/configs/asteroids-volcano-usb-builtin.fragment"
 host_tools_fixup
 
 make -j"$JOBS" Image dtbs 2>&1 | tee -a "$OUT/build.log"
