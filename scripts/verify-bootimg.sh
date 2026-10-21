@@ -6,6 +6,8 @@ STOCK_VENDOR=${STOCK_VENDOR:-$HOME/phone-second-life-data/mb003/parts/vendor_boo
 STOCK_INIT=${STOCK_INIT:-$HOME/phone-second-life-data/mb003/parts/init_boot_a.img}
 STOCK_DTBO=${STOCK_DTBO:-$HOME/phone-second-life-data/mb003/parts/dtbo_a.img}
 STOCK_VBMETA=${STOCK_VBMETA:-$HOME/phone-second-life-data/mb003/parts/vbmeta_a.img}
+STOCK_RECOVERY=${STOCK_RECOVERY:-$HOME/phone-second-life-data/mb003/parts/recovery_a.img}
+STOCK_RECOVERY_B=${STOCK_RECOVERY_B:-$HOME/phone-second-life-data/mb003/parts/recovery_b.img}
 STOCK_CONFIG=${STOCK_CONFIG:-$HOME/phone-second-life-data/mb003/config.gz}
 WORK=${WORK:-$HOME/sm7635-build}
 OUT=$WORK/out
@@ -17,7 +19,8 @@ for tool in unpack_bootimg python3 cpio gzip sha256sum file mktemp fdtget dtc \
 	fdtoverlay qemu-aarch64; do
 	need "$tool"
 done
-for reference in "$STOCK_BOOT" "$STOCK_VENDOR" "$STOCK_INIT" "$STOCK_DTBO" "$STOCK_VBMETA"; do
+for reference in "$STOCK_BOOT" "$STOCK_VENDOR" "$STOCK_INIT" "$STOCK_DTBO" "$STOCK_VBMETA" \
+	"$STOCK_RECOVERY" "$STOCK_RECOVERY_B"; do
 	[ -f "$reference" ] || die "missing stock reference: $reference"
 done
 printf '%s\n' \
@@ -25,8 +28,10 @@ printf '%s\n' \
 	'baa33fd43c3da1d9f3358ced9249c42abecc704fc5707a5241ea69e77c1e3193  '"$STOCK_INIT" \
 	'237259404601045205715a71b88016744c73729d4513349cfe90c754b0dc1253  '"$STOCK_VENDOR" \
 	'759813dbfd94f4a4124b08afb2c9ef85f1f9afb7cdca9829be2558ffde13c992  '"$STOCK_DTBO" \
-	'cc1926d2aa8e9c12df6a469111bf87f1e61e70022b84626fabcd014ae33cdffe  '"$STOCK_VBMETA" | sha256sum -c - ||
-	die 'stock references differ from verified slot-A backups'
+	'cc1926d2aa8e9c12df6a469111bf87f1e61e70022b84626fabcd014ae33cdffe  '"$STOCK_VBMETA" \
+	'0c6767698ebb069064b450b109cde6a1172b478e30000fe852e7d9bc19dbae9e  '"$STOCK_RECOVERY" \
+	'6065f68502838b3cb20a51eb6a6aa1b250f3a58553246d9c4259593a3769874b  '"$STOCK_RECOVERY_B" | sha256sum -c - ||
+	die 'stock references differ from verified slot-A/B backups'
 for artifact in "$OUT/boot.img" "$OUT/init_boot.img" "$OUT/vendor_boot.img" \
 	"$OUT/dtb.img" "$OUT/Image.gz" "$OUT/initramfs.cpio.gz" \
 	"$OUT/.config" "$OUT/merged.config" \
@@ -53,6 +58,9 @@ python3 "$ROOT/scripts/verify-volcano-usb.py" config \
 	'cc9ec0d6f2903d6964ba0091c186a32cfbbccc42191a8675764b5c607c329386' ] ||
 	die 'Image repeats the #16 baseline instead of changing the kernel'
 python3 "$ROOT/scripts/verify-generic-ramdisk.py" --self-test
+python3 "$ROOT/scripts/verify-recovery-boundary.py" --self-test
+python3 "$ROOT/scripts/verify-recovery-boundary.py" "$STOCK_BOOT" "$STOCK_INIT" \
+	"$STOCK_VENDOR" "$STOCK_RECOVERY" "$STOCK_RECOVERY_B" "$STOCK_VBMETA"
 python3 "$ROOT/scripts/verify-generic-ramdisk.py" "$STOCK_BOOT" "$OUT/boot.img" \
 	"$OUT/init_boot.img" "$OUT/Image.gz" "$OUT/initramfs.cpio.gz"
 
@@ -469,11 +477,13 @@ report=$OUT/bootimg-verify.txt
 	echo "built DTBO: $built_model; board-id <$built_board>; oem-id <$built_oem>"
 	echo "built vendor DTBs: all 20 byte-identical to stock; DTBO 65 applies to index 9; ramoops reg <$ramoops>; console-size 0x$console_size"
 	echo 'kernel CONFIG_CMDLINE: override, merged config, built config and unpacked kernel match measured stock; no panic_on_taint or removed debug flags in boot chain cmdlines'
+	echo 'recovery boundary: recovery_a and recovery_b are header-v4 kernel_size=0 LZ4 ramdisks chained in vbmeta_a at rollback location 1; recovery also consumes boot_a, init_boot_a and vendor_boot_a'
 	echo 'Volcano USB reachability: /soc/ssusb@a600000 (qcom,dwc-usb3-msm), child dwc3@a600000 and all 22 DT phandle suppliers resolve to built-in (=y) drivers'
 	echo 'vendor cmdline: earlycon keep_bootcon panic=-1 log_buf_len=1M'
 	echo 'initramfs: gzip newc; static arm64 busybox + dropbear 2026.94 sshd; NCM+ECM; authorized_keys; console shell'
 	echo 'unpack verification: passed'
 	(cd "$OUT" && sha256sum boot.img init_boot.img vendor_boot.img dtb.img \
 		Image.gz initramfs.cpio.gz Image)
-	sha256sum "$STOCK_BOOT" "$STOCK_INIT" "$STOCK_VENDOR" "$STOCK_DTBO" "$STOCK_VBMETA"
+	sha256sum "$STOCK_BOOT" "$STOCK_INIT" "$STOCK_VENDOR" "$STOCK_DTBO" \
+		"$STOCK_VBMETA" "$STOCK_RECOVERY" "$STOCK_RECOVERY_B"
 } | tee "$report"

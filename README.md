@@ -99,9 +99,12 @@ stock DTBO entry 65 to the selected vendor DTB. It does not establish AVB
 acceptance or physical boot. The #10 build retains all 20 stock
 DTBs (not just the first nine), since the #8 built index 9 cannot resolve the
 stock overlay. Only `vendor_boot.img` differs from the failed #8 set. The
-corrected #10 chain was also physically tested and returned to fastboot. The
-#12 host-only verifier checks the separate stock boot AVB0 hash record; it does
-not identify the failed boot boundary or authorize repeating either image set.
+corrected #10 chain was also physically tested and returned to fastboot. The #12 host-only verifier checks the separate stock boot AVB0 hash record and
+`recovery_a`/`recovery_b` header-v4/AVB relationships (`scripts/verify-recovery-boundary.py`);
+it records the `attempt-20261021-1717` stage-6 recovery fallback and `ramoops`
+provenance, states the plain non-discrimination finding between ABL rejection
+and pre-`ramoops` kernel failure, and does not authorize repeating any failed
+image set.
 The #14 host-only rebuild changes only the kernel's built-in command line to
 the measured stock A059P value: `boot.img` differs, while `init_boot.img` and
 `vendor_boot.img` retain the #10 hashes. Verification checks the merged config,
@@ -122,9 +125,9 @@ The first `fastboot boot` of the earlier single `boot.img` returned
 generic ramdisk from `init_boot` and its DTB and vendor command line from
 `vendor_boot`, neither of which that attempt replaced. Its later stock
 pstore does not establish whether the attempted kernel entered. [BOOT.md](BOOT.md)
-records the evidence and the historical procedure. Both later three-image
-attempts returned to fastboot; the physical coordinator alone may authorize
-any future bounded test of a new evidence-backed set. Nothing in this
+records the evidence and the historical procedure. All four three-image attempts returned to fastboot, including #18's
+recovery-path attempt before stock rollback; the physical coordinator alone
+may authorize any future bounded test of a new evidence-backed set. Nothing in this
 repository flashes or boots the phone.
 
 ## License
