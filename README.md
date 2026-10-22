@@ -160,6 +160,12 @@ from offset 13,971,456 onward. It does not call `avbtool` and does not sign.
 `scripts/verify-avb0-window-erase.py`, run by `scripts/verify-bootimg.sh`,
 requires the 100,663,296-byte image, the unchanged prefix, the zero window and
 the byte-identical signed tail. It is a host control, not a boot result.
+The #38 host-only control, `scripts/build-avbf-footer-erase.sh`, copies that
+verified #36 image and zeroes exactly its terminal 64-byte `AVBf` footer. It
+does not call `avbtool` and does not sign. `scripts/verify-avbf-footer-erase.py`,
+run by `scripts/verify-bootimg.sh`, requires the unchanged bytes before offset
+100,663,232, 64 zero bytes at the end and the fixed 100,663,296-byte size. It
+is a host control, not a boot result.
 
 The first `fastboot boot` of the earlier single `boot.img` returned
 `Booting OKAY` but never enumerated the gadget. A header-v4 boot takes its
