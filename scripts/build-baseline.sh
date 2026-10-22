@@ -95,6 +95,7 @@ KCONFIG_CONFIG="$OUT/merged.config" scripts/kconfig/merge_config.sh -m -r -y \
 	arch/arm64/configs/vendor/pineapple_consolidate.config \
 	"$ROOT/configs/asteroids-stock-cmdline.fragment" \
 	"$ROOT/configs/asteroids-volcano-usb-builtin.fragment" \
+	"$ROOT/configs/asteroids-debug-marker.fragment" \
 	2>&1 | tee -a "$OUT/build.log"
 cp -f "$OUT/merged.config" .config
 make olddefconfig 2>&1 | tee -a "$OUT/build.log"

@@ -42,6 +42,10 @@ for option in CONFIG_USB_GADGET CONFIG_CONFIGFS_FS CONFIG_USB_CONFIGFS \
 	CONFIG_PSTORE_CONSOLE CONFIG_SERIAL_EARLYCON CONFIG_SERIAL_QCOM_GENI; do
 	grep -qx "$option=y" "$OUT/.config" || die "baseline kernel requires $option=y"
 done
+grep -qx 'CONFIG_PANIC_TIMEOUT=-1' "$OUT/.config" ||
+	die "baseline kernel requires CONFIG_PANIC_TIMEOUT=-1"
+grep -q 'CONFIG_CMDLINE=.* sm7635-boot-marker"' "$OUT/.config" ||
+	die "baseline kernel built-in command line is missing sm7635-boot-marker"
 python3 "$ROOT/scripts/verify-volcano-usb.py" config \
 	"$OUT/.config" "$ROOT/configs/asteroids-volcano-usb-builtin.fragment"
 [ -f "$ROOT/initramfs/init" ] || die "missing initramfs/init"

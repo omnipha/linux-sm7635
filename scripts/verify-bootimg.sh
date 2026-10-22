@@ -36,7 +36,9 @@ for artifact in "$OUT/boot.img" "$OUT/init_boot.img" "$OUT/vendor_boot.img" \
 	"$OUT/dtb.img" "$OUT/Image.gz" "$OUT/initramfs.cpio.gz" \
 	"$OUT/.config" "$OUT/merged.config" \
 	"$OUT/volcano-qrd-pro-overlay.dtbo" "$STOCK_CONFIG" \
-	"$ROOT/configs/asteroids-volcano-usb-builtin.fragment"; do
+	"$ROOT/configs/asteroids-volcano-usb-builtin.fragment" \
+	"$ROOT/configs/asteroids-debug-marker.fragment" \
+	"$WORK/src/fs/pstore/Kconfig"; do
 	[ -f "$artifact" ] || die "missing artifact: $artifact"
 done
 case "$(realpath -m "$OUT")/" in
@@ -48,15 +50,23 @@ printf '%s\n' \
 	'f4b987ee9a6082a22201c763e1d437dcc1dee0c62f2e2e0d8e7a3ffad8078e89  '"$OUT/init_boot.img" \
 	'6078269d48d1aba27688dc9a8694dc2bf89156622680bcd6c99554b444ecfc4d  '"$OUT/vendor_boot.img" | sha256sum -c - ||
 	die 'init_boot/vendor_boot/DTB/ramdisk differ from the verified #16 chain'
-[ "$(sha256sum "$OUT/boot.img" | cut -d ' ' -f 1)" != \
-	'1fdc25705bbc93a6a7a57082e7054a02f5a29a59690d5958567921ad4350acc7' ] ||
-	die 'boot.img repeats the #16 baseline instead of changing the kernel'
+for old_boot in \
+	'5e866c5416791d873b8da1a9d4ac3da63ac4dd05cf36a85aa65da1a084eb7efb' \
+	'84f7f5eab84f5043898ec742cddd943ad6432a71c24ced800532b78b7a3d724a' \
+	'1fdc25705bbc93a6a7a57082e7054a02f5a29a59690d5958567921ad4350acc7' \
+	'116b1662760757d5a2652a55766c28f259c967c91f5de8b4c7168fc46ed174ce'; do
+	[ "$(sha256sum "$OUT/boot.img" | cut -d ' ' -f 1)" != "$old_boot" ] ||
+		die "boot.img repeats old baseline $old_boot instead of changing the kernel"
+done
 python3 "$ROOT/scripts/verify-volcano-usb.py" --self-test
 python3 "$ROOT/scripts/verify-volcano-usb.py" config \
 	"$OUT/.config" "$ROOT/configs/asteroids-volcano-usb-builtin.fragment"
-[ "$(sha256sum "$OUT/Image" | cut -d ' ' -f 1)" != \
-	'cc9ec0d6f2903d6964ba0091c186a32cfbbccc42191a8675764b5c607c329386' ] ||
-	die 'Image repeats the #16 baseline instead of changing the kernel'
+for old_image in \
+	'cc9ec0d6f2903d6964ba0091c186a32cfbbccc42191a8675764b5c607c329386' \
+	'a6e51840a47a9ef88bec6b027c8e808868567658f0e3f0d911205fe8c1048b29'; do
+	[ "$(sha256sum "$OUT/Image" | cut -d ' ' -f 1)" != "$old_image" ] ||
+		die "Image repeats old baseline $old_image instead of changing the kernel"
+done
 python3 "$ROOT/scripts/verify-generic-ramdisk.py" --self-test
 python3 "$ROOT/scripts/verify-recovery-boundary.py" --self-test
 python3 "$ROOT/scripts/verify-recovery-boundary.py" "$STOCK_BOOT" "$STOCK_INIT" \
@@ -81,7 +91,8 @@ python3 - "$STOCK_BOOT" "$STOCK_VENDOR" "$STOCK_INIT" "$STOCK_DTBO" \
 	"$scratch/built-vendor/dtb" "$scratch/built-vendor/vendor_ramdisk00" \
 	"$scratch/built-init/ramdisk" "$OUT/volcano-qrd-pro-overlay.dtbo" \
 	"$STOCK_VBMETA" "$OUT/.config" "$STOCK_CONFIG" \
-	"$ROOT/configs/asteroids-stock-cmdline.fragment" "$OUT/merged.config" <<'PY'
+	"$ROOT/configs/asteroids-stock-cmdline.fragment" "$OUT/merged.config" \
+	"$ROOT/configs/asteroids-debug-marker.fragment" "$WORK/src/fs/pstore/Kconfig" <<'PY'
 import gzip
 import hashlib
 import pathlib
@@ -92,7 +103,8 @@ import sys
  built_init, kernel, ramdisk, dtb, stock_kernel, unpacked_kernel,
  stock_dtbs, built_dtbs, built_vendor_ramdisk,
  built_init_ramdisk, overlay, stock_vbmeta, config, stock_config,
- fragment, merged_config) = (pathlib.Path(p).read_bytes() for p in sys.argv[1:])
+  fragment, merged_config, marker_fragment, pstore_kconfig) = (
+    pathlib.Path(p).read_bytes() for p in sys.argv[1:])
 
 
 def u32(data, offset):
@@ -201,6 +213,10 @@ check("built boot has no separate AVB0 region",
 built_cmdline = built_boot[44:1580].split(b"\x00", 1)[0]
 check("boot cmdline diagnosis prefix",
       built_cmdline.startswith(b"console=ttynull ") and b"bootconfig" in built_cmdline)
+check("boot image header cmdline is unchanged #18 value without the marker",
+      built_cmdline == b"console=ttynull stack_depot_disable=on cgroup_disable=pressure "
+      b"kasan.page_alloc.sample=10 kasan.stacktrace=off kvm-arm.mode=protected "
+      b"bootconfig ioremap_guard loglevel=6")
 
 
 def config_value(data, symbol):
@@ -217,12 +233,45 @@ stock_cmdline = config_value(stock_config, b"CONFIG_CMDLINE")
 check("stock CONFIG_CMDLINE_EXTEND", config_value(stock_config, b"CONFIG_CMDLINE_EXTEND") == b"y")
 check("override fragment matches measured stock CONFIG_CMDLINE",
       fragment.strip() == b"CONFIG_CMDLINE=" + stock_cmdline)
-check("merged CONFIG_CMDLINE matches measured stock",
-      config_value(merged_config, b"CONFIG_CMDLINE") == stock_cmdline)
-check("built CONFIG_CMDLINE matches measured stock", config_value(config, b"CONFIG_CMDLINE") ==
-      stock_cmdline)
+MARKER = b"sm7635-boot-marker"
+marked_cmdline = stock_cmdline[:-1] + b" " + MARKER + b'"'
+marker_lines = marker_fragment.strip().splitlines()
+check("debug marker fragment is exactly the marked stock cmdline and panic timeout",
+      marker_lines == [b"CONFIG_CMDLINE=" + marked_cmdline, b"CONFIG_PANIC_TIMEOUT=-1"])
+check("marker token appears once and is unmistakable",
+      stock_cmdline.count(MARKER) == 0 and marked_cmdline.count(MARKER) == 1 and
+      marked_cmdline.endswith(b" " + MARKER + b'"'))
+check("merged CONFIG_CMDLINE is measured stock plus marker",
+      config_value(merged_config, b"CONFIG_CMDLINE") == marked_cmdline)
+check("merged CONFIG_PANIC_TIMEOUT=-1",
+      config_value(merged_config, b"CONFIG_PANIC_TIMEOUT") == b"-1")
+check("built CONFIG_CMDLINE is measured stock plus marker", config_value(config, b"CONFIG_CMDLINE") ==
+      marked_cmdline)
+check("built CONFIG_PANIC_TIMEOUT=-1", config_value(config, b"CONFIG_PANIC_TIMEOUT") == b"-1")
+check("stock config already has CONFIG_PANIC_TIMEOUT=-1",
+      config_value(stock_config, b"CONFIG_PANIC_TIMEOUT") == b"-1")
 check("built .config has no panic_on_taint", b"panic_on_taint" not in config)
 check("built CONFIG_CMDLINE_EXTEND", config_value(config, b"CONFIG_CMDLINE_EXTEND") == b"y")
+for symbol in (b"CONFIG_PSTORE", b"CONFIG_PSTORE_CONSOLE", b"CONFIG_PSTORE_RAM"):
+    check(f"built {symbol.decode()}=y", config_value(config, symbol) == b"y")
+console_size_defined = any(
+    line.split()[:2] == [b"config", b"PSTORE_CONSOLE_SIZE"]
+    for line in pstore_kconfig.splitlines() if line.strip())
+if console_size_defined:
+    check("fragment requests 2 MiB CONFIG_PSTORE_CONSOLE_SIZE",
+          b"CONFIG_PSTORE_CONSOLE_SIZE=2097152" in marker_lines)
+    check("built CONFIG_PSTORE_CONSOLE_SIZE is 2 MiB",
+          config_value(config, b"CONFIG_PSTORE_CONSOLE_SIZE") == b"2097152")
+    pstore_mode = "CONFIG_PSTORE_CONSOLE_SIZE=2097152"
+else:
+    check("issue exception: CONFIG_PSTORE_CONSOLE_SIZE absent from pinned fs/pstore/Kconfig",
+          b"PSTORE_CONSOLE_SIZE" not in pstore_kconfig.replace(b"PSTORE_BLK_CONSOLE_SIZE", b""))
+    check("issue exception: no synthesized CONFIG_PSTORE_CONSOLE_SIZE in fragment or .config",
+          b"CONFIG_PSTORE_CONSOLE_SIZE" not in marker_fragment and
+          b"CONFIG_PSTORE_CONSOLE_SIZE" not in config and
+          b"CONFIG_PSTORE_CONSOLE_SIZE" not in stock_config)
+    pstore_mode = "issue exception (stock DT console-size 0x200000)"
+print(f"pstore console size handling: {pstore_mode}")
 image = gzip.decompress(unpacked_kernel)
 start = image.find(b"IKCFG_ST")
 end = image.find(b"IKCFG_ED", start + 8)
@@ -231,7 +280,19 @@ embedded_config = gzip.decompress(image[start + 8:end])
 check("unpacked kernel embedded config matches .config", embedded_config == config)
 kernel_cmdline = config_value(embedded_config, b"CONFIG_CMDLINE")
 check("unpacked kernel config has no panic_on_taint", b"panic_on_taint" not in embedded_config)
-check("unpacked kernel CONFIG_CMDLINE matches measured stock", kernel_cmdline == stock_cmdline)
+check("unpacked kernel CONFIG_CMDLINE is measured stock plus marker", kernel_cmdline == marked_cmdline)
+check("unpacked kernel embedded config has CONFIG_PANIC_TIMEOUT=-1",
+      config_value(embedded_config, b"CONFIG_PANIC_TIMEOUT") == b"-1")
+check("unpacked kernel embedded config has no synthesized CONFIG_PSTORE_CONSOLE_SIZE"
+      if not console_size_defined else "unpacked kernel embedded config has 2 MiB console size",
+      (b"CONFIG_PSTORE_CONSOLE_SIZE" not in embedded_config) if not console_size_defined
+      else config_value(embedded_config, b"CONFIG_PSTORE_CONSOLE_SIZE") == b"2097152")
+check("unpacked kernel image carries the marked built-in command line string",
+      marked_cmdline[1:-1] + b"\x00" in image and image.count(MARKER) >= 2)
+check("unpacked kernel effective built-in command line begins with measured stock tokens "
+      "and ends with the marker",
+      marked_cmdline[1:-1].startswith(stock_cmdline[1:-1]) and
+      marked_cmdline[1:-1].endswith(b" " + MARKER))
 for name, cmdline in ((".config", config_value(config, b"CONFIG_CMDLINE")),
                       ("unpacked kernel", kernel_cmdline),
                       ("boot image", built_cmdline),
@@ -476,7 +537,8 @@ report=$OUT/bootimg-verify.txt
 	echo "stock DTBO entry 65: $model; board-id <$board>; oem-id <$oem>"
 	echo "built DTBO: $built_model; board-id <$built_board>; oem-id <$built_oem>"
 	echo "built vendor DTBs: all 20 byte-identical to stock; DTBO 65 applies to index 9; ramoops reg <$ramoops>; console-size 0x$console_size"
-	echo 'kernel CONFIG_CMDLINE: override, merged config, built config and unpacked kernel match measured stock; no panic_on_taint or removed debug flags in boot chain cmdlines'
+	echo 'kernel CONFIG_CMDLINE: stock override + asteroids-debug-marker.fragment appends sm7635-boot-marker; merged config, built config, embedded IKCONFIG and Image carry the marker; no panic_on_taint or removed debug flags in boot chain cmdlines'
+	echo 'pstore / panic: CONFIG_PSTORE=y, CONFIG_PSTORE_CONSOLE=y, CONFIG_PSTORE_RAM=y, CONFIG_PANIC_TIMEOUT=-1; CONFIG_PSTORE_CONSOLE_SIZE absent from pinned 6.1.78 Kconfig (issue exception: 2 MiB console-size 0x200000 verified from stock DTBO 65 ramoops_region)'
 	echo 'recovery boundary: recovery_a and recovery_b are header-v4 kernel_size=0 LZ4 ramdisks chained in vbmeta_a at rollback location 1; recovery also consumes boot_a, init_boot_a and vendor_boot_a'
 	echo 'Volcano USB reachability: /soc/ssusb@a600000 (qcom,dwc-usb3-msm), child dwc3@a600000 and all 22 DT phandle suppliers resolve to built-in (=y) drivers'
 	echo 'vendor cmdline: earlycon keep_bootcon panic=-1 log_buf_len=1M'

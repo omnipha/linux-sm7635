@@ -114,7 +114,8 @@ def main():
     boot_end = check_built(boot, init_boot, kernel, ramdisk)
     require(hashlib.sha256(boot).hexdigest() not in (
         OLD_BOOT_SHA256, "5e866c5416791d873b8da1a9d4ac3da63ac4dd05cf36a85aa65da1a084eb7efb",
-        "1fdc25705bbc93a6a7a57082e7054a02f5a29a59690d5958567921ad4350acc7"),
+        "1fdc25705bbc93a6a7a57082e7054a02f5a29a59690d5958567921ad4350acc7",
+        "116b1662760757d5a2652a55766c28f259c967c91f5de8b4c7168fc46ed174ce"),
         "boot image repeats an old SHA")
     print(f"stock boot ramdisk_size=0; built boot ramdisk_size=0, kernel at {PAGE}, "
           f"end={boot_end}; init_boot ramdisk_size={len(ramdisk)} at {PAGE}, kernel_size=0")
