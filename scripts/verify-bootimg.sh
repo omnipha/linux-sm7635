@@ -33,6 +33,7 @@ printf '%s\n' \
 	'6065f68502838b3cb20a51eb6a6aa1b250f3a58553246d9c4259593a3769874b  '"$STOCK_RECOVERY_B" | sha256sum -c - ||
 	die 'stock references differ from verified slot-A/B backups'
 for artifact in "$OUT/boot.img" "$OUT/boot-stock-kernel.img" "$OUT/boot-full-footer.img" \
+	"$OUT/boot-hash-boundary.img" \
 	"$OUT/init_boot.img" "$OUT/vendor_boot.img" \
 	"$OUT/dtb.img" "$OUT/Image.gz" "$OUT/initramfs.cpio.gz" \
 	"$OUT/.config" "$OUT/merged.config" \
@@ -77,6 +78,9 @@ python3 "$ROOT/scripts/verify-generic-ramdisk.py" "$STOCK_BOOT" "$OUT/boot.img" 
 python3 "$ROOT/scripts/verify-stock-kernel-control.py" --self-test
 python3 "$ROOT/scripts/verify-stock-kernel-control.py" \
 	"$OUT/boot-stock-kernel.img" "$OUT/boot.img" "$STOCK_BOOT"
+python3 "$ROOT/scripts/verify-hash-boundary-control.py" --self-test
+python3 "$ROOT/scripts/verify-hash-boundary-control.py" \
+	"$OUT/boot-hash-boundary.img" "$STOCK_BOOT"
 python3 "$ROOT/scripts/verify-post-flash-avb.py" --self-test
 python3 "$ROOT/scripts/verify-post-flash-avb.py" \
 	"$STOCK_BOOT" "$STOCK_INIT" "$STOCK_VENDOR" \
@@ -556,7 +560,8 @@ report=$OUT/bootimg-verify.txt
 	echo 'vendor cmdline: earlycon keep_bootcon panic=-1 log_buf_len=1M'
 	echo 'initramfs: gzip newc; static arm64 busybox + dropbear 2026.94 sshd; NCM+ECM; authorized_keys; console shell'
 	echo 'unpack verification: passed'
-	(cd "$OUT" && sha256sum boot.img boot-stock-kernel.img boot-full-footer.img init_boot.img \
+	(cd "$OUT" && sha256sum boot.img boot-stock-kernel.img boot-full-footer.img \
+		boot-hash-boundary.img init_boot.img \
 		vendor_boot.img dtb.img \
 		Image.gz initramfs.cpio.gz Image)
 	sha256sum "$STOCK_BOOT" "$STOCK_INIT" "$STOCK_VENDOR" "$STOCK_DTBO" \
