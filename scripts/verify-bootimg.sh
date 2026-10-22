@@ -37,6 +37,7 @@ for artifact in "$OUT/boot.img" "$OUT/boot-stock-kernel.img" "$OUT/boot-full-foo
 	"$OUT/boot-blank-tail.img" \
 	"$OUT/boot-avb0-window-erase.img" \
 	"$OUT/boot-avbf-footer-erase.img" \
+	"$OUT/init_boot-debug-ramdisk.img" \
 	"$OUT/boot-hash-boundary.img" \
 	"$OUT/boot-image-size.img" \
 	"$OUT/init_boot.img" "$OUT/vendor_boot.img" \
@@ -113,6 +114,10 @@ python3 "$ROOT/scripts/verify-avbf-footer-erase.py" --self-test \
 python3 "$ROOT/scripts/verify-avbf-footer-erase.py" \
 	"$OUT/boot-avbf-footer-erase.img" "$OUT/boot-avb0-window-erase.img" \
 	"$STOCK_BOOT"
+python3 "$ROOT/scripts/verify-init-boot-debug-ramdisk.py" --self-test \
+	"$OUT/init_boot-debug-ramdisk.img" "$STOCK_INIT" "$OUT/initramfs.cpio.gz"
+python3 "$ROOT/scripts/verify-init-boot-debug-ramdisk.py" \
+	"$OUT/init_boot-debug-ramdisk.img" "$STOCK_INIT" "$OUT/initramfs.cpio.gz"
 python3 "$ROOT/scripts/verify-post-flash-avb.py" --self-test
 python3 "$ROOT/scripts/verify-post-flash-avb.py" \
 	"$STOCK_BOOT" "$STOCK_INIT" "$STOCK_VENDOR" \
@@ -583,6 +588,7 @@ report=$OUT/bootimg-verify.txt
 	echo 'blank-tail control: 13955072-byte 13a48ff9 prefix byte-identical; 86708224 zero bytes; 100663296-byte image; no AVB0 block and no AVBf footer; differs from 6891dc51 only in the tail; host-only, not a boot result'
 	echo 'avb0-window-erase control: 13955072-byte 13a48ff9 prefix byte-identical; bytes [13955072, 13971456) zero; signed vbmeta and footer from offset 13971456 byte-identical to stock boot_a; 100663296-byte image; host-only, not a boot result'
 	echo 'avbf-footer-erase control: bytes before offset 100663232 byte-identical to e7fd2022; final 64 AVBf bytes zero; signed vbmeta block and erased AVB0 window unchanged; 100663296-byte image; host-only, not a boot result'
+	echo 'init_boot debug-ramdisk control: stock baa33fd4 prefix except ramdisk-size field 2113581 -> 1672600; gzip newc cpio caa3eb82 at offset 4096; 445032-byte zero gap; signed tail from offset 2121728 through terminal AVBf unchanged; 8388608-byte image; host-only, not a boot result'
 	echo 'stock AVB footers and hashed image prefixes match embedded metadata; vbmeta_a init_boot/vendor_boot/dtbo hashes match stock; boot is chained'
 	echo 'stock boot separate 16KiB AVB0 record hashes the shorter kernel-only prefix; stock verification flags and vbmeta_a rollback index are zero'
 	echo 'built images are not authenticated by stock vbmeta_a: no AVB footer, stock hashes do not match; bootloader policy during attempt unknown'
@@ -599,7 +605,7 @@ report=$OUT/bootimg-verify.txt
 	echo 'unpack verification: passed'
 	(cd "$OUT" && sha256sum boot.img boot-stock-kernel.img boot-full-footer.img \
 		boot-stock-full-footer.img boot-blank-tail.img boot-avb0-window-erase.img \
-		boot-avbf-footer-erase.img \
+		boot-avbf-footer-erase.img init_boot-debug-ramdisk.img \
 		boot-hash-boundary.img boot-image-size.img init_boot.img \
 		vendor_boot.img dtb.img \
 		Image.gz initramfs.cpio.gz Image)

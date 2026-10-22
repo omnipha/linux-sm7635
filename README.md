@@ -166,6 +166,15 @@ does not call `avbtool` and does not sign. `scripts/verify-avbf-footer-erase.py`
 run by `scripts/verify-bootimg.sh`, requires the unchanged bytes before offset
 100,663,232, 64 zero bytes at the end and the fixed 100,663,296-byte size. It
 is a host control, not a boot result.
+The #40 host-only control, `scripts/build-init-boot-debug-ramdisk.sh`, copies
+the verified stock slot-A `init_boot_a` and replaces only its generic ramdisk
+with the existing verified debug gzip newc cpio, updating the ramdisk-size
+field and zeroing the gap before the stock signed tail. It does not call
+`avbtool` and does not sign. `scripts/verify-init-boot-debug-ramdisk.py`, run
+by `scripts/verify-bootimg.sh`, requires the unchanged prefix apart from that
+one field, the gzip newc payload, the empty kernel, the unchanged signed tail
+from offset 2,121,728 and the fixed 8,388,608-byte size. It is a host control,
+not a boot result.
 
 The first `fastboot boot` of the earlier single `boot.img` returned
 `Booting OKAY` but never enumerated the gadget. A header-v4 boot takes its
