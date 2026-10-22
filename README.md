@@ -126,6 +126,13 @@ console reservation is the stock DT `ramoops_region` value checked by the
 verifier rather than a new Kconfig assignment. Only `Image`, `Image.gz` and
 `boot.img` differ from #18. See [BOOT.md](BOOT.md) for the SHA set, measured
 outcomes and the kernel-entry measurement contract.
+The #23 host-only control, `scripts/build-stock-kernel-control.sh`, copies the
+verified #21 `boot.img` and swaps in only the unmodified gzip kernel payload
+from the read-only stock slot-A `boot_a` reference (new kernel size and image
+length only). `scripts/verify-stock-kernel-control.py`, run by
+`scripts/verify-bootimg.sh`, proves the payload byte-identity and the #21
+layout invariants. It is not a physical result and does not replace the #21
+marker image.
 
 The first `fastboot boot` of the earlier single `boot.img` returned
 `Booting OKAY` but never enumerated the gadget. A header-v4 boot takes its
