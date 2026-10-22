@@ -133,6 +133,14 @@ length only). `scripts/verify-stock-kernel-control.py`, run by
 `scripts/verify-bootimg.sh`, proves the payload byte-identity and the #21
 layout invariants. It is not a physical result and does not replace the #21
 marker image.
+The #25 host-only step, `scripts/verify-post-flash-avb.py`, models a fastboot
+flash as an overlay on the SHA-pinned stock partition and classifies the
+resulting footer, footer-referenced vbmeta and separate boot AVB0 record. It
+predicts invalid chained metadata for every earlier debug `boot.img` and intact
+metadata for the #23 control, stock `boot_a`, `init_boot` and `vendor_boot`.
+`scripts/build-full-boot-footer.sh` then makes one full-partition-size copy of
+the #21 `boot.img` with an unsigned `avbtool` hash footer. This is a libavb
+model, not an ABL verdict; see [BOOT.md](BOOT.md).
 
 The first `fastboot boot` of the earlier single `boot.img` returned
 `Booting OKAY` but never enumerated the gadget. A header-v4 boot takes its

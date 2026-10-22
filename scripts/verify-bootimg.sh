@@ -32,7 +32,8 @@ printf '%s\n' \
 	'0c6767698ebb069064b450b109cde6a1172b478e30000fe852e7d9bc19dbae9e  '"$STOCK_RECOVERY" \
 	'6065f68502838b3cb20a51eb6a6aa1b250f3a58553246d9c4259593a3769874b  '"$STOCK_RECOVERY_B" | sha256sum -c - ||
 	die 'stock references differ from verified slot-A/B backups'
-for artifact in "$OUT/boot.img" "$OUT/boot-stock-kernel.img" "$OUT/init_boot.img" "$OUT/vendor_boot.img" \
+for artifact in "$OUT/boot.img" "$OUT/boot-stock-kernel.img" "$OUT/boot-full-footer.img" \
+	"$OUT/init_boot.img" "$OUT/vendor_boot.img" \
 	"$OUT/dtb.img" "$OUT/Image.gz" "$OUT/initramfs.cpio.gz" \
 	"$OUT/.config" "$OUT/merged.config" \
 	"$OUT/volcano-qrd-pro-overlay.dtbo" "$STOCK_CONFIG" \
@@ -76,6 +77,12 @@ python3 "$ROOT/scripts/verify-generic-ramdisk.py" "$STOCK_BOOT" "$OUT/boot.img" 
 python3 "$ROOT/scripts/verify-stock-kernel-control.py" --self-test
 python3 "$ROOT/scripts/verify-stock-kernel-control.py" \
 	"$OUT/boot-stock-kernel.img" "$OUT/boot.img" "$STOCK_BOOT"
+python3 "$ROOT/scripts/verify-post-flash-avb.py" --self-test
+python3 "$ROOT/scripts/verify-post-flash-avb.py" \
+	"$STOCK_BOOT" "$STOCK_INIT" "$STOCK_VENDOR" \
+	"$HOME/phone-second-life-data/mb003/pstore/attempt-20261021-1536/boot.img" \
+	"$OUT/initramfs.cpio.gz" "$OUT/boot.img" "$OUT/boot-stock-kernel.img" \
+	"$OUT/init_boot.img" "$OUT/vendor_boot.img" "$OUT/boot-full-footer.img"
 
 scratch=$(mktemp -d "$WORK/bootimg-verify.XXXXXXXX")
 trap 'rm -rf "$scratch"' EXIT
@@ -538,6 +545,7 @@ report=$OUT/bootimg-verify.txt
 	echo 'stock AVB footers and hashed image prefixes match embedded metadata; vbmeta_a init_boot/vendor_boot/dtbo hashes match stock; boot is chained'
 	echo 'stock boot separate 16KiB AVB0 record hashes the shorter kernel-only prefix; stock verification flags and vbmeta_a rollback index are zero'
 	echo 'built images are not authenticated by stock vbmeta_a: no AVB footer, stock hashes do not match; bootloader policy during attempt unknown'
+	echo 'post-flash model: libavb model, not an observed ABL verdict; see BOOT.md for the per-SHA metadata table'
 	echo "stock DTBO entry 65: $model; board-id <$board>; oem-id <$oem>"
 	echo "built DTBO: $built_model; board-id <$built_board>; oem-id <$built_oem>"
 	echo "built vendor DTBs: all 20 byte-identical to stock; DTBO 65 applies to index 9; ramoops reg <$ramoops>; console-size 0x$console_size"
@@ -548,7 +556,8 @@ report=$OUT/bootimg-verify.txt
 	echo 'vendor cmdline: earlycon keep_bootcon panic=-1 log_buf_len=1M'
 	echo 'initramfs: gzip newc; static arm64 busybox + dropbear 2026.94 sshd; NCM+ECM; authorized_keys; console shell'
 	echo 'unpack verification: passed'
-	(cd "$OUT" && sha256sum boot.img boot-stock-kernel.img init_boot.img vendor_boot.img dtb.img \
+	(cd "$OUT" && sha256sum boot.img boot-stock-kernel.img boot-full-footer.img init_boot.img \
+		vendor_boot.img dtb.img \
 		Image.gz initramfs.cpio.gz Image)
 	sha256sum "$STOCK_BOOT" "$STOCK_INIT" "$STOCK_VENDOR" "$STOCK_DTBO" \
 		"$STOCK_VBMETA" "$STOCK_RECOVERY" "$STOCK_RECOVERY_B"
