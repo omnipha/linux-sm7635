@@ -52,7 +52,8 @@ fetch) into `$WORK/src`, merges `gki_defconfig`, `pineapple_GKI.config`,
 `consolidate.fragment`, `pineapple_consolidate.config`, the additive
 `configs/asteroids-stock-cmdline.fragment` override and the additive
 `configs/asteroids-volcano-usb-builtin.fragment` closure with the vendor's
-`scripts/kconfig/merge_config.sh -m -r -y`, then `make olddefconfig`,
+	`configs/asteroids-debug-marker.fragment` override with the vendor's
+	`scripts/kconfig/merge_config.sh -m -r -y`, then `make olddefconfig`,
 `make -j8 Image dtbs` (`ARCH=arm64 LLVM=-17 LLVM_IAS=1 HOSTCC=gcc`).
 All artifacts and logs stay under `$WORK/out`, **outside this repo**. The
 script makes local build-only fixes for a const-qualifier warning in vendor
@@ -118,7 +119,13 @@ The #18 Path B build now adds the built-in Volcano USB glue and supplier closure
 without changing either debug ramdisk, DTB or `init_boot`/`vendor_boot` image.
 The host verifier checks the merged board DT-to-driver binding, embedded kernel
 config and zero-module initramfs; it does not establish physical boot or SSH.
-See [BOOT.md](BOOT.md) for the SHA set, measured outcomes and diagnostic limits.
+The #21 host-only rebuild changes only the kernel's built-in command line,
+appending one `sm7635-boot-marker` token and keeping `CONFIG_PANIC_TIMEOUT=-1`.
+Pinned vendor 6.1.78 has no `CONFIG_PSTORE_CONSOLE_SIZE` symbol, so the 2 MiB
+console reservation is the stock DT `ramoops_region` value checked by the
+verifier rather than a new Kconfig assignment. Only `Image`, `Image.gz` and
+`boot.img` differ from #18. See [BOOT.md](BOOT.md) for the SHA set, measured
+outcomes and the kernel-entry measurement contract.
 
 The first `fastboot boot` of the earlier single `boot.img` returned
 `Booting OKAY` but never enumerated the gadget. A header-v4 boot takes its
