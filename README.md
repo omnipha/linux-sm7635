@@ -141,6 +141,13 @@ metadata for the #23 control, stock `boot_a`, `init_boot` and `vendor_boot`.
 `scripts/build-full-boot-footer.sh` then makes one full-partition-size copy of
 the #21 `boot.img` with an unsigned `avbtool` hash footer. This is a libavb
 model, not an ABL verdict; see [BOOT.md](BOOT.md).
+The #32 host-only control, `scripts/build-stock-full-footer.sh`, starts from
+the verified #23 `boot-stock-kernel.img` and applies that same unsigned footer
+invocation. `scripts/verify-stock-full-footer.py`, run by
+`scripts/verify-bootimg.sh`, requires the unchanged 13,955,072-byte prefix, the
+448-byte `AVB0` block at that offset with algorithm `NONE`, and a difference
+from the #25 image only in the kernel payload and resulting hash descriptor.
+It is a host control, not a boot result.
 
 The first `fastboot boot` of the earlier single `boot.img` returned
 `Booting OKAY` but never enumerated the gadget. A header-v4 boot takes its
