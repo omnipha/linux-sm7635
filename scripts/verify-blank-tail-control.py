@@ -33,10 +33,14 @@ def sha256(data):
     return hashlib.sha256(data).hexdigest()
 
 
+def reject_prior_sha(digest_hex, prior_boots=PRIOR_BOOTS):
+    require(digest_hex not in prior_boots, "candidate SHA-256 repeats a prior image")
+
+
 def check_candidate(candidate, control, footer_image, check_digests=True,
                     prior_boots=PRIOR_BOOTS, expected=CANDIDATE_SHA256):
     digest_hex = sha256(candidate)
-    require(digest_hex not in prior_boots, "candidate SHA-256 repeats a prior image")
+    reject_prior_sha(digest_hex, prior_boots)
     if check_digests:
         require(sha256(control) == CONTROL_SHA256, "source is not the verified 13a48ff9 control")
         require(sha256(footer_image) == FOOTER_SHA256,
@@ -102,10 +106,17 @@ def self_test(candidate, control, footer_image):
     else:
         raise ValueError("repeated prior SHA fixture was accepted")
     for repeated in REQUIRED_PRIOR:
-        require(any(prior.startswith(repeated) for prior in PRIOR_BOOTS),
-                f"prior SHA {repeated} is not rejected")
+        prior = next((digest for digest in PRIOR_BOOTS if digest.startswith(repeated)), None)
+        require(prior is not None, f"missing prior SHA {repeated}")
+        try:
+            reject_prior_sha(prior)
+        except ValueError as exc:
+            require(str(exc) == "candidate SHA-256 repeats a prior image",
+                    f"{repeated}: unexpected failure: {exc}")
+            print(f"expected repeated {repeated} SHA failure: {exc}")
+        else:
+            raise ValueError(f"repeated {repeated} SHA was accepted")
     require(CANDIDATE_SHA256 not in PRIOR_BOOTS, "candidate SHA-256 is listed as a prior image")
-    print("prior image list: " + ", ".join(REQUIRED_PRIOR) + " rejected")
 
 
 def main():
