@@ -32,7 +32,7 @@ printf '%s\n' \
 	'0c6767698ebb069064b450b109cde6a1172b478e30000fe852e7d9bc19dbae9e  '"$STOCK_RECOVERY" \
 	'6065f68502838b3cb20a51eb6a6aa1b250f3a58553246d9c4259593a3769874b  '"$STOCK_RECOVERY_B" | sha256sum -c - ||
 	die 'stock references differ from verified slot-A/B backups'
-for artifact in "$OUT/boot.img" "$OUT/init_boot.img" "$OUT/vendor_boot.img" \
+for artifact in "$OUT/boot.img" "$OUT/boot-stock-kernel.img" "$OUT/init_boot.img" "$OUT/vendor_boot.img" \
 	"$OUT/dtb.img" "$OUT/Image.gz" "$OUT/initramfs.cpio.gz" \
 	"$OUT/.config" "$OUT/merged.config" \
 	"$OUT/volcano-qrd-pro-overlay.dtbo" "$STOCK_CONFIG" \
@@ -73,6 +73,9 @@ python3 "$ROOT/scripts/verify-recovery-boundary.py" "$STOCK_BOOT" "$STOCK_INIT" 
 	"$STOCK_VENDOR" "$STOCK_RECOVERY" "$STOCK_RECOVERY_B" "$STOCK_VBMETA"
 python3 "$ROOT/scripts/verify-generic-ramdisk.py" "$STOCK_BOOT" "$OUT/boot.img" \
 	"$OUT/init_boot.img" "$OUT/Image.gz" "$OUT/initramfs.cpio.gz"
+python3 "$ROOT/scripts/verify-stock-kernel-control.py" --self-test
+python3 "$ROOT/scripts/verify-stock-kernel-control.py" \
+	"$OUT/boot-stock-kernel.img" "$OUT/boot.img" "$STOCK_BOOT"
 
 scratch=$(mktemp -d "$WORK/bootimg-verify.XXXXXXXX")
 trap 'rm -rf "$scratch"' EXIT
@@ -531,6 +534,7 @@ cmp -s "$scratch/built-init/ramdisk" "$scratch/built-vendor/vendor_ramdisk00" ||
 report=$OUT/bootimg-verify.txt
 {
 	echo 'boot header v4 / vendor page size 4096; stock offsets match; stock and built boot generic ramdisk size zero; debug generic ramdisk only in init_boot'
+	echo 'control: verified #21 header page except kernel-size field; stock slot-A gzip kernel payload byte-identical; 4096-aligned image length without AVB; shared arm64 Image header fields; unique SHA'
 	echo 'stock AVB footers and hashed image prefixes match embedded metadata; vbmeta_a init_boot/vendor_boot/dtbo hashes match stock; boot is chained'
 	echo 'stock boot separate 16KiB AVB0 record hashes the shorter kernel-only prefix; stock verification flags and vbmeta_a rollback index are zero'
 	echo 'built images are not authenticated by stock vbmeta_a: no AVB footer, stock hashes do not match; bootloader policy during attempt unknown'
@@ -544,7 +548,7 @@ report=$OUT/bootimg-verify.txt
 	echo 'vendor cmdline: earlycon keep_bootcon panic=-1 log_buf_len=1M'
 	echo 'initramfs: gzip newc; static arm64 busybox + dropbear 2026.94 sshd; NCM+ECM; authorized_keys; console shell'
 	echo 'unpack verification: passed'
-	(cd "$OUT" && sha256sum boot.img init_boot.img vendor_boot.img dtb.img \
+	(cd "$OUT" && sha256sum boot.img boot-stock-kernel.img init_boot.img vendor_boot.img dtb.img \
 		Image.gz initramfs.cpio.gz Image)
 	sha256sum "$STOCK_BOOT" "$STOCK_INIT" "$STOCK_VENDOR" "$STOCK_DTBO" \
 		"$STOCK_VBMETA" "$STOCK_RECOVERY" "$STOCK_RECOVERY_B"
