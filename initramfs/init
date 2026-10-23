@@ -163,6 +163,7 @@ pdr_interface.ko
 pmic_glink.ko
 ucsi_glink.ko
 wcd_usbss_i2c.ko
+eud.ko
 dwc3-msm.ko
 '
 log 'module load begin'
@@ -200,6 +201,23 @@ for candidate in /sys/class/udc/*; do
 	[ -e "$candidate" ] && UDC_NAMES="$UDC_NAMES ${candidate##*/}"
 done
 log "udc names:${UDC_NAMES:- none}"
+if [ -e /sys/bus/platform/drivers/msm-eud/88e0000.qcom,msm-eud ]; then
+	log 'eud bound'
+else
+	log 'eud not bound'
+fi
+if [ -e /sys/bus/platform/drivers/msm-dwc3/a600000.ssusb ]; then
+	log 'a600000.ssusb bound'
+else
+	log 'a600000.ssusb not bound'
+fi
+if [ -r /sys/kernel/debug/devices_deferred ]; then
+	while read -r line; do
+		case "$line" in
+		a600000.ssusb*) log "a600000.ssusb deferred: $line" ;;
+		esac
+	done </sys/kernel/debug/devices_deferred
+fi
 
 if [ -z "$UDC" ]; then
 	log 'no UDC; USB gadget not bound'

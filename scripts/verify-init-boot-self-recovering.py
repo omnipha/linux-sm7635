@@ -71,7 +71,7 @@ def check_candidate(candidate, stock, source, boot, vendor_boot, recovery, confi
     builder.check_init(init, order)
     builder.check_helper(helper_entries[0]["data"] if len(helper_entries) == 1 else None)
     require(helper_entries[0]["mode"] & 0o170777 == 0o100755, HELPER_MSG)
-    require(init == (HERE.parent / "initramfs" / "init").read_bytes() and
+    require(init == (HERE.parent / "initramfs" / "init-47-self-recovering").read_bytes() and
             helper_entries[0]["data"] == helper_input, FIXED_MSG)
     _, source_entries, _ = vendor.source_cpio(source)
     names = [entry["name"] for entry in entries if entry["name"] != builder.HELPER_NAME]
