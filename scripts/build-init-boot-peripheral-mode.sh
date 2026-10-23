@@ -30,7 +30,7 @@ esac
 [ "$OUT" != "$WORK" ] || die "output directory must not be the work directory"
 for reference in "$STOCK_INIT" "$STOCK_BOOT" "$STOCK_VENDOR" "$STOCK_RECOVERY" \
 	"$STOCK_CONFIG" "$KERNEL_SOURCE" "$DECOMPRESSOR_SOURCE" "$PSTORE" \
-	"$ROOT/initramfs/init" "$ROOT/initramfs/init-49-eud-softdep" \
+	"$ROOT/initramfs/init-51-peripheral-mode" "$ROOT/initramfs/init-49-eud-softdep" \
 	"$ROOT/initramfs/restart2.c" "$OUT/initramfs.cpio.gz"; do
 	[ -f "$reference" ] || die "missing input: $reference"
 done
@@ -40,7 +40,8 @@ done
 	die "debug gzip is not $GZIP_SIZE bytes"
 read -r gzip_sha _ < <(sha256sum "$OUT/initramfs.cpio.gz")
 [ "$gzip_sha" = "$GZIP_SHA256" ] || die "debug gzip is not the verified caa3eb82 archive"
-bash -n "$ROOT/initramfs/init" || die "initramfs/init is not valid shell"
+bash -n "$ROOT/initramfs/init-51-peripheral-mode" ||
+	die "initramfs/init-51-peripheral-mode is not valid shell"
 bash -n "$ROOT/initramfs/init-49-eud-softdep" ||
 	die "initramfs/init-49-eud-softdep is not valid shell"
 python3 "$ROOT/scripts/vendor-module-closure.py" "$STOCK_VENDOR"
