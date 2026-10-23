@@ -48,7 +48,7 @@ grep -q 'CONFIG_CMDLINE=.* sm7635-boot-marker"' "$OUT/.config" ||
 	die "baseline kernel built-in command line is missing sm7635-boot-marker"
 python3 "$ROOT/scripts/verify-volcano-usb.py" config \
 	"$OUT/.config" "$ROOT/configs/asteroids-volcano-usb-builtin.fragment"
-[ -f "$ROOT/initramfs/init" ] || die "missing initramfs/init"
+[ -f "$ROOT/initramfs/init-44-vendor-modules" ] || die "missing initramfs/init-44-vendor-modules"
 for base in volcano volcano6 volcano6i-fp1 volcano6i-fp2 volcano6i-fp3 \
 	volcano6i-fp4 volcano6p volcano6ip-fp1 volcano6ip-fp2 volcano6ip-fp3 \
 	volcano6ip-fp4; do
@@ -148,7 +148,7 @@ install -m 0644 "$dropbear_build/libtomcrypt/LICENSE" \
 install -m 0644 "$dropbear_build/libtommath/LICENSE" \
 	"$stage/root/usr/share/doc/dropbear/LibTomMath-LICENSE"
 
-install -m 0755 "$ROOT/initramfs/init" "$stage/root/init"
+install -m 0755 "$ROOT/initramfs/init-44-vendor-modules" "$stage/root/init"
 for applet in sh ip sleep mount mkdir mknod ln hostname setsid cttyhack; do
 	ln -s busybox "$stage/root/bin/$applet"
 done

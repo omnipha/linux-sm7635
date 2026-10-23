@@ -40,6 +40,8 @@ for artifact in "$OUT/boot.img" "$OUT/boot-stock-kernel.img" "$OUT/boot-full-foo
 	"$OUT/init_boot-debug-ramdisk.img" \
 	"$OUT/init_boot-lz4-debug-ramdisk.img" \
 	"$OUT/init_boot-vendor-modules.img" \
+	"$OUT/init_boot-self-recovering.img" \
+	"$OUT/restart2" \
 	"$OUT/boot-hash-boundary.img" \
 	"$OUT/boot-image-size.img" \
 	"$OUT/init_boot.img" "$OUT/vendor_boot.img" \
@@ -140,6 +142,16 @@ python3 "$ROOT/scripts/verify-init-boot-vendor-modules.py" \
 	"$STOCK_BOOT" "$STOCK_VENDOR" "$STOCK_RECOVERY" "$STOCK_CONFIG" \
 	"$WORK/src/init/initramfs.c" "$WORK/src/lib/decompress_unlz4.c" \
 	"$PSTORE_CONSOLE"
+python3 "$ROOT/scripts/verify-init-boot-self-recovering.py" --self-test \
+	"$OUT/init_boot-self-recovering.img" "$STOCK_INIT" "$OUT/initramfs.cpio.gz" \
+	"$STOCK_BOOT" "$STOCK_VENDOR" "$STOCK_RECOVERY" "$STOCK_CONFIG" \
+	"$WORK/src/init/initramfs.c" "$WORK/src/lib/decompress_unlz4.c" \
+	"$PSTORE_CONSOLE" "$OUT/restart2"
+python3 "$ROOT/scripts/verify-init-boot-self-recovering.py" \
+	"$OUT/init_boot-self-recovering.img" "$STOCK_INIT" "$OUT/initramfs.cpio.gz" \
+	"$STOCK_BOOT" "$STOCK_VENDOR" "$STOCK_RECOVERY" "$STOCK_CONFIG" \
+	"$WORK/src/init/initramfs.c" "$WORK/src/lib/decompress_unlz4.c" \
+	"$PSTORE_CONSOLE" "$OUT/restart2"
 python3 "$ROOT/scripts/verify-post-flash-avb.py" --self-test
 python3 "$ROOT/scripts/verify-post-flash-avb.py" \
 	"$STOCK_BOOT" "$STOCK_INIT" "$STOCK_VENDOR" \
@@ -613,6 +625,7 @@ report=$OUT/bootimg-verify.txt
 	echo 'init_boot debug-ramdisk control: stock baa33fd4 prefix except ramdisk-size field 2113581 -> 1672600; gzip newc cpio caa3eb82 at offset 4096; 445032-byte zero gap; signed tail from offset 2121728 through terminal AVBf unchanged; 8388608-byte image; host-only, not a boot result'
 	echo 'init_boot lz4-debug-ramdisk control: stock baa33fd4 prefix except ramdisk-size field 2113581 -> 1927750; one Android LZ4 legacy frame (02214c18, one 1927742-byte block, LZ4 HC level 12) of the cpio inside caa3eb82 at offset 4096; 189882-byte zero gap; signed tail from offset 2121728 through terminal AVBf unchanged; 8388608-byte image; host-only, not a boot result'
 	echo 'init_boot vendor-modules control: same stock baa33fd4 prefix and signed tail; ramdisk is one LZ4 HC-12 block of the caa3eb82 cpio whose init is replaced with the 126-module vendor closure loader; debug cpio carries zero .ko; unchanged stock vendor_boot_a contributes lib/modules in the concatenated initrd; negative fixtures reject a tail change, a header change, a kernel size, a block change, modern LZ4 magic, a wrong ramdisk size, a nonzero gap, a short image, a removed load path, a planted .ko and every repeated prior SHA; host-only, not a boot result'
+	echo 'init_boot self-recovering control: same stock baa33fd4 prefix and signed tail; ramdisk is one LZ4 HC-12 block of the caa3eb82 cpio whose init is the 126-module vendor closure loader plus a pre-insmod loading marker, a qcom-reboot-reason bind check and an independent 150 s self-recovery timer; the only added file is the static arm64 RESTART2 helper bin/restart2; debug cpio carries zero .ko; negative fixtures reject a missing or loop-nested timer, a marker that does not precede insmod, a removed bind check, a changed module list, a missing, dynamic or altered helper, a planted .ko, a modified tail and every repeated prior SHA including cdb9458f, 3932504a, f4a00ce3 and baa33fd4; host-only, not a boot result'
 	echo 'stock AVB footers and hashed image prefixes match embedded metadata; vbmeta_a init_boot/vendor_boot/dtbo hashes match stock; boot is chained'
 	echo 'stock boot separate 16KiB AVB0 record hashes the shorter kernel-only prefix; stock verification flags and vbmeta_a rollback index are zero'
 	echo 'built images are not authenticated by stock vbmeta_a: no AVB footer, stock hashes do not match; bootloader policy during attempt unknown'
@@ -631,6 +644,7 @@ report=$OUT/bootimg-verify.txt
 		boot-stock-full-footer.img boot-blank-tail.img boot-avb0-window-erase.img \
 		boot-avbf-footer-erase.img init_boot-debug-ramdisk.img \
 		init_boot-lz4-debug-ramdisk.img init_boot-vendor-modules.img \
+		init_boot-self-recovering.img restart2 \
 		boot-hash-boundary.img boot-image-size.img init_boot.img \
 		vendor_boot.img dtb.img \
 		Image.gz initramfs.cpio.gz Image)

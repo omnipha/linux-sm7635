@@ -80,7 +80,8 @@ def check_candidate(candidate, stock, source, boot, vendor, recovery, config, ke
     _, source_entries, _ = builder.source_cpio(source)
     require([entry["name"] for entry in entries] ==
             [entry["name"] for entry in source_entries] and
-            init_entries[0]["data"] == (HERE.parent / "initramfs" / "init").read_bytes() and
+            init_entries[0]["data"] ==
+            (HERE.parent / "initramfs" / "init-44-vendor-modules").read_bytes() and
             all(entry["data"] == source_entries[index]["data"]
                 for index, entry in enumerate(entries) if entry["name"] != "init"),
             SOURCE_MSG)
