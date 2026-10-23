@@ -210,6 +210,14 @@ read-only `a600000.dwc3`, `devices_deferred` and `dmesg` logging. Modules, the
 `scripts/verify-init-boot-peripheral-mode.py`, run by `scripts/verify-bootimg.sh`,
 fails closed with negative fixtures. It is a host control, not a boot result; see
 [BOOT.md](BOOT.md).
+The #55 host-only attempt, `scripts/build-stock-config-baseline.sh`, builds the
+own `6.1.78` kernel from the read-only captured stock `config.gz`, disabling
+only the debug options enabled in the current own build but absent from stock
+(`configs/asteroids-stock-config-debug-off.fragment`), keeping the existing USB,
+pstore, panic and `sm7635-boot-marker` fragments. The resulting gzip payload
+(14,782,792 bytes) misses the signed-tail bound of 13,967,360 bytes, so the
+build fails closed, packages no image and records no control SHA. It is a
+negative host result, not a boot result; see [BOOT.md](BOOT.md).
 The #53 host-only control, `scripts/build-init-boot-static-address.sh`, starts
 from the frozen #51 init (`initramfs/init-51-peripheral-mode`, so `9f89fe8d…`
 still rebuilds) and stops discarding the two `ip link set` and two `ip addr add`
