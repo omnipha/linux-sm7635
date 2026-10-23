@@ -25,6 +25,15 @@ printf 'root:x:0:\n' >/etc/group
 printf '/bin/sh\n' >/etc/shells
 hostname omnipha-usb
 log 'starting'
+{
+	sleep 150
+	if [ ! -e /run/keep ]; then
+		log 'self-recovery -> bootloader'
+		/bin/restart2 bootloader
+		log 'self-recovery RESTART2 failed; falling back to reboot -f'
+		reboot -f
+	fi
+} &
 mkdir -p /sys/kernel/debug
 mount -t debugfs debugfs /sys/kernel/debug 2>/dev/null || true
 
@@ -158,6 +167,7 @@ dwc3-msm.ko
 '
 log 'module load begin'
 for module in $VENDOR_MODULES; do
+	log "loading $module"
 	if err=$(insmod "/lib/modules/$module" 2>&1); then
 		log "module $module loaded"
 	else
@@ -165,6 +175,11 @@ for module in $VENDOR_MODULES; do
 	fi
 done
 log 'module load end'
+if [ -n "$(find /sys/bus/platform/drivers/qcom-reboot-reason -mindepth 1 -maxdepth 1 -type l ! -name module 2>/dev/null)" ]; then
+	log 'qcom-reboot-reason bound'
+else
+	log 'qcom-reboot-reason not bound'
+fi
 
 UDC=""
 i=0

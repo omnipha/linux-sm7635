@@ -235,7 +235,7 @@ and `gzip -n -9`:
 
 | path | source |
 | --- | --- |
-| `/init` | `initramfs/init`, mode 0755 |
+| `/init` | `initramfs/init-44-vendor-modules` (frozen #44 init), mode 0755 |
 | `/bin/busybox` | Ubuntu resolute `busybox-static` 1:1.37.0-7ubuntu1 arm64, static |
 | `/bin/{sh,ip,…}` | symlinks to `busybox` for the applets `/init` uses |
 | `/sbin/init` | symlink to `../bin/busybox` |

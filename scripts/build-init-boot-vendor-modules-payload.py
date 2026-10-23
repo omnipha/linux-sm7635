@@ -179,7 +179,7 @@ def prepare(paths):
                                                kernel, decompressor, pstore, library)
     order, outside = modules.compute_order(files)
     check_stock(stock, library)
-    init_bytes = (HERE.parent / "initramfs" / "init").read_bytes()
+    init_bytes = (HERE.parent / "initramfs" / "init-44-vendor-modules").read_bytes()
     cpio = candidate_cpio(source, init_bytes, files, recovery_entries, order)
     frame = encode_frame(cpio, library)
     return stock, source, cpio, frame, order, outside, library

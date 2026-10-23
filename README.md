@@ -182,6 +182,13 @@ stock vendor closure from the unchanged `vendor_boot_a` ramdisk before the UDC
 wait. No `.ko` enters `init_boot`. `scripts/verify-init-boot-vendor-modules.py`,
 run by `scripts/verify-bootimg.sh`, fails closed with negative fixtures. It is a
 host control, not a boot result; see [BOOT.md](BOOT.md).
+The #47 host-only control, `scripts/build-init-boot-self-recovering.sh`, keeps
+that closure, UDC wait and gadget path and adds only a pre-`insmod` loading
+marker, a `qcom-reboot-reason` bind check and an independent 150 s self-recovery
+timer that calls one static arm64 RESTART2 helper. No module, gadget function or
+network path is added. `scripts/verify-init-boot-self-recovering.py`, run by
+`scripts/verify-bootimg.sh`, fails closed with negative fixtures. It is a host
+control, not a boot result; see [BOOT.md](BOOT.md).
 The #40 host-only control, `scripts/build-init-boot-debug-ramdisk.sh`, copies
 the verified stock slot-A `init_boot_a` and replaces only its generic ramdisk
 with the existing verified debug gzip newc cpio, updating the ramdisk-size
