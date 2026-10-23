@@ -42,6 +42,7 @@ for artifact in "$OUT/boot.img" "$OUT/boot-stock-kernel.img" "$OUT/boot-full-foo
 	"$OUT/init_boot-vendor-modules.img" \
 	"$OUT/init_boot-self-recovering.img" \
 	"$OUT/init_boot-eud-softdep.img" \
+	"$OUT/init_boot-peripheral-mode.img" \
 	"$OUT/restart2" \
 	"$OUT/boot-hash-boundary.img" \
 	"$OUT/boot-image-size.img" \
@@ -160,6 +161,16 @@ python3 "$ROOT/scripts/verify-init-boot-eud-softdep.py" --self-test \
 	"$PSTORE_CONSOLE" "$OUT/restart2"
 python3 "$ROOT/scripts/verify-init-boot-eud-softdep.py" \
 	"$OUT/init_boot-eud-softdep.img" "$STOCK_INIT" "$OUT/initramfs.cpio.gz" \
+	"$STOCK_BOOT" "$STOCK_VENDOR" "$STOCK_RECOVERY" "$STOCK_CONFIG" \
+	"$WORK/src/init/initramfs.c" "$WORK/src/lib/decompress_unlz4.c" \
+	"$PSTORE_CONSOLE" "$OUT/restart2"
+python3 "$ROOT/scripts/verify-init-boot-peripheral-mode.py" --self-test \
+	"$OUT/init_boot-peripheral-mode.img" "$STOCK_INIT" "$OUT/initramfs.cpio.gz" \
+	"$STOCK_BOOT" "$STOCK_VENDOR" "$STOCK_RECOVERY" "$STOCK_CONFIG" \
+	"$WORK/src/init/initramfs.c" "$WORK/src/lib/decompress_unlz4.c" \
+	"$PSTORE_CONSOLE" "$OUT/restart2"
+python3 "$ROOT/scripts/verify-init-boot-peripheral-mode.py" \
+	"$OUT/init_boot-peripheral-mode.img" "$STOCK_INIT" "$OUT/initramfs.cpio.gz" \
 	"$STOCK_BOOT" "$STOCK_VENDOR" "$STOCK_RECOVERY" "$STOCK_CONFIG" \
 	"$WORK/src/init/initramfs.c" "$WORK/src/lib/decompress_unlz4.c" \
 	"$PSTORE_CONSOLE" "$OUT/restart2"
@@ -638,6 +649,7 @@ report=$OUT/bootimg-verify.txt
 	echo 'init_boot vendor-modules control: same stock baa33fd4 prefix and signed tail; ramdisk is one LZ4 HC-12 block of the caa3eb82 cpio whose init is replaced with the 126-module vendor closure loader; debug cpio carries zero .ko; unchanged stock vendor_boot_a contributes lib/modules in the concatenated initrd; negative fixtures reject a tail change, a header change, a kernel size, a block change, modern LZ4 magic, a wrong ramdisk size, a nonzero gap, a short image, a removed load path, a planted .ko and every repeated prior SHA; host-only, not a boot result'
 	echo 'init_boot self-recovering control: same stock baa33fd4 prefix and signed tail; ramdisk is one LZ4 HC-12 block of the caa3eb82 cpio whose init is the 126-module vendor closure loader plus a pre-insmod loading marker, a qcom-reboot-reason bind check and an independent 150 s self-recovery timer; the only added file is the static arm64 RESTART2 helper bin/restart2; debug cpio carries zero .ko; negative fixtures reject a missing or loop-nested timer, a marker that does not precede insmod, a removed bind check, a changed module list, a missing, dynamic or altered helper, a planted .ko, a modified tail and every repeated prior SHA including cdb9458f, 3932504a, f4a00ce3 and baa33fd4; host-only, not a boot result'
 	echo 'init_boot eud-softdep control: same stock baa33fd4 prefix and signed tail as the self-recovering control; ramdisk is one LZ4 HC-12 block of the caa3eb82 cpio whose init is the #47 init with exactly one added insmod of the stock eud.ko after its modules.dep prerequisites and immediately before dwc3-msm.ko, the other 126 modules in their old order, the unchanged 150 s timer, /run/keep escape and bin/restart2 helper, and read-only logging of EUD bind, a600000.ssusb bind or deferred state and UDC names; debug cpio carries zero .ko; negative fixtures reject missing, duplicated or misordered eud.ko, an unresolved softdep target, a changed dwc3 softdep edge, an out-of-closure or non-arm64 eud.ko, a changed old module order, a removed timer, bad envelope or tail, a planted .ko and every repeated prior SHA including 8f8b7331; host-only, not a boot result'
+	echo 'init_boot peripheral-mode control: same stock baa33fd4 prefix and signed tail as the eud-softdep control; ramdisk is one LZ4 HC-12 block of the caa3eb82 cpio whose init is the frozen #49 init plus exactly one step after the module phase and before the UDC wait: it discovers the msm-dwc3 device a600000.ssusb under /sys/bus/platform/devices/ without a hardcoded SoC path, logs that the mode attribute exists with its current value, writes peripheral once and logs the write result and readback, keeps the unchanged 40x0.25s UDC wait, and moves the EUD/glue bind checks after it with capped read-only logging of the a600000.dwc3 child, udc names, a600000.* devices_deferred entries and dmesg msm-dwc3/dwc3/phy/repeater lines (64-line caps); the 127-module list and order, 150 s /run/keep timer, bin/restart2 helper, key-only sshd and NCM/ECM path are unchanged and the debug cpio carries zero .ko; negative fixtures reject a missing or duplicated write, a write before the module phase or before eud.ko/dwc3-msm.ko, a value other than peripheral, a hardcoded SoC path, a removed or moved timer, a changed module order, a planted .ko, a bad envelope or tail and every repeated prior SHA including 88c93077; host-only, not a boot result'
 	echo 'stock AVB footers and hashed image prefixes match embedded metadata; vbmeta_a init_boot/vendor_boot/dtbo hashes match stock; boot is chained'
 	echo 'stock boot separate 16KiB AVB0 record hashes the shorter kernel-only prefix; stock verification flags and vbmeta_a rollback index are zero'
 	echo 'built images are not authenticated by stock vbmeta_a: no AVB footer, stock hashes do not match; bootloader policy during attempt unknown'
@@ -656,7 +668,8 @@ report=$OUT/bootimg-verify.txt
 		boot-stock-full-footer.img boot-blank-tail.img boot-avb0-window-erase.img \
 		boot-avbf-footer-erase.img init_boot-debug-ramdisk.img \
 		init_boot-lz4-debug-ramdisk.img init_boot-vendor-modules.img \
-		init_boot-self-recovering.img init_boot-eud-softdep.img restart2 \
+		init_boot-self-recovering.img init_boot-eud-softdep.img \
+		init_boot-peripheral-mode.img restart2 \
 		boot-hash-boundary.img boot-image-size.img init_boot.img \
 		vendor_boot.img dtb.img \
 		Image.gz initramfs.cpio.gz Image)

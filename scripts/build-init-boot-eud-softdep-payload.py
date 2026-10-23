@@ -19,6 +19,7 @@ MEASURED_VENDOR = "cdb9458f515bce3f1059f89cab0d7a78945f20e73f3cb7b34645c15646aab
 MEASURED_RECOVERING = "8f8b733150abc89f5e1769a85bac25583bafd9c8028986c6ae50ba7034c056dd"
 PRIOR_IMAGES = (*vendor.PRIOR_IMAGES, MEASURED_VENDOR, MEASURED_RECOVERING)
 SOURCE_SHA256 = "6806922e9e5138df25ee13e5f11d4fad555479830436e283b040b6e666133f96"
+INIT_SOURCE = "init-49-eud-softdep"
 HELPER_NAME = "bin/restart2"
 HELPER_SHA256 = "fbe1472929510910b7fbb570d98ad939a2f39fd13786d000bb67ed46434b29f7"
 HELPER_SIZE = 872
@@ -164,9 +165,10 @@ def check_init(init, order):
     require(init == expected_init(baseline), BASELINE_MSG)
 
 
-def candidate_cpio(source, init, helper, vendor_files, recovery_entries, order):
+def candidate_cpio(source, init, helper, vendor_files, recovery_entries, order,
+                   init_check=None):
     _, entries, trailer = vendor.source_cpio(source)
-    check_init(init, order)
+    (init_check or check_init)(init, order)
     check_helper(helper)
     require(not any(entry["name"] == HELPER_NAME for entry in entries), SOURCE_MSG)
     changed = []
@@ -217,7 +219,7 @@ def prepare(paths):
         boot, vendor_boot, stock, recovery, config, kernel, decompressor, pstore, library)
     order, outside = modules.compute_eud_order(vendor_files)
     vendor.check_stock(stock, library)
-    init = (HERE.parent / "initramfs" / "init").read_bytes()
+    init = (HERE.parent / "initramfs" / INIT_SOURCE).read_bytes()
     cpio = candidate_cpio(source, init, helper, vendor_files, recovery_entries, order)
     return stock, cpio, vendor.encode_frame(cpio, library), order, outside
 
