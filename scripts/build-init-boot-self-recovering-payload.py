@@ -184,7 +184,7 @@ def prepare(paths):
         boot, vendor_boot, stock, recovery, config, kernel, decompressor, pstore, library)
     order, outside = modules.compute_order(vendor_files)
     vendor.check_stock(stock, library)
-    init = (HERE.parent / "initramfs" / "init").read_bytes()
+    init = (HERE.parent / "initramfs" / "init-47-self-recovering").read_bytes()
     cpio = candidate_cpio(source, init, helper, vendor_files, recovery_entries, order)
     return stock, cpio, vendor.encode_frame(cpio, library), order, outside
 

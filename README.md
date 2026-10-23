@@ -189,6 +189,16 @@ timer that calls one static arm64 RESTART2 helper. No module, gadget function or
 network path is added. `scripts/verify-init-boot-self-recovering.py`, run by
 `scripts/verify-bootimg.sh`, fails closed with negative fixtures. It is a host
 control, not a boot result; see [BOOT.md](BOOT.md).
+The #49 host-only control, `scripts/build-init-boot-eud-softdep.sh`, keeps the
+#47 image and adds exactly one `insmod` of the stock `eud.ko`, placed after its
+`modules.dep` prerequisites and immediately before `dwc3-msm.ko`, plus read-only
+logging of the EUD and `a600000.ssusb` bind state. The 150 s timer, `/run/keep`
+escape, helper and gadget path are unchanged.
+`scripts/verify-init-boot-eud-softdep.py`, run by `scripts/verify-bootimg.sh`,
+rejects a missing or misordered EUD, an unresolved softdep target, a changed old
+module order, a removed timer, a bad envelope or tail and every repeated SHA
+including `8f8b7331`. It is a host control, not a boot result; see
+[BOOT.md](BOOT.md).
 The #40 host-only control, `scripts/build-init-boot-debug-ramdisk.sh`, copies
 the verified stock slot-A `init_boot_a` and replaces only its generic ramdisk
 with the existing verified debug gzip newc cpio, updating the ramdisk-size

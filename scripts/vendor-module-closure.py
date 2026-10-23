@@ -21,6 +21,8 @@ CLOSURE_SIZE = 126
 OUTSIDE_LOAD = 16
 DWC3_CLOSURE = 34
 ORDER_SHA256 = "57068a564c5cc1b37a93673ce7d59dd5607ffe4451bb1e261f3feb39db24be08"
+EUD_ORDER_SHA256 = "4f0e151da8a68339d34d7596d73e77f95415faa79b741aaa425572c1fa7caf69"
+UNAVAILABLE_SOFTDEPS = {"qcom_tlmm_vm_irqchip", "phy_msm_snps_hs"}
 MEASURED_INITRD_KIB = {"stock": 10680, "lz4-debug": 57716}
 LZ4_LEGACY_MAGIC = 0x184C2102
 LZ4_CHUNK = 8 * 1024 * 1024
@@ -309,6 +311,45 @@ def compute_order(files):
     require(sha256(render_list(order).encode()) == ORDER_SHA256,
             "computed load order differs from the verified closure")
     return order, outside
+
+
+def compute_eud_order(files):
+    eud = "eud.ko"
+    require(f"{MODULE_DIR}/{eud}" in files, "eud.ko is not a single recovery-only addition")
+    old, outside = compute_order(files)
+    available, deps, softdeps, load, recovery = read_lists(files)
+    require(eud in available and eud in recovery and eud not in load and eud not in old,
+            "eud.ko is not a single recovery-only addition")
+    data = files[f"{MODULE_DIR}/{eud}"]["data"]
+    require(data[:6] == b"\x7fELF\x02\x01" and struct.unpack_from("<H", data, 18)[0] == 183,
+            "eud.ko is not an aarch64 ELF")
+    require(set(deps[eud]) <= set(old), "eud.ko has prerequisites outside the old closure")
+    require(softdeps.get("dwc3_msm") ==
+            ["phy_generic", "phy_msm_snps_hs", "phy_msm_ssusb_qmp", "eud"],
+            "dwc3_msm pre-softdep is not the verified EUD edge")
+    names = {module_key(item): item for item in available}
+    require(len(names) == len(available), "vendor modules have ambiguous softdep names")
+    closure = set(old) | {eud}
+    order = old.copy()
+    order.insert(old.index("dwc3-msm.ko"), eud)
+    position = {item: index for index, item in enumerate(order)}
+    for item in order:
+        require(all(dependency in closure and position[dependency] < position[item]
+                    for dependency in deps[item]),
+                f"modules.dep prerequisite of {item} is missing or misordered")
+        for target in softdeps.get(module_key(item), []):
+            if target in names:
+                predecessor = names[target]
+                require(predecessor in closure and position[predecessor] < position[item],
+                        f"softdep target {target} of {item} is missing or misordered")
+            else:
+                require(target in UNAVAILABLE_SOFTDEPS,
+                        f"unresolved softdep target {target} of {item}")
+    require(order[:position[eud]] + order[position[eud] + 1:] == old and
+            len(order) == CLOSURE_SIZE + 1 and len(outside) == OUTSIDE_LOAD and
+            sha256(render_list(order).encode()) == EUD_ORDER_SHA256,
+            "EUD order differs from the verified single-insertion closure")
+    return order, outside + [eud]
 
 
 def render_list(order):
