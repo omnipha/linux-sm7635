@@ -1,0 +1,267 @@
+#!/bin/busybox sh
+set -u
+export PATH=/bin:/sbin
+export HOME=/root
+
+log() { printf 'usb-init: %s\n' "$*" >/dev/kmsg 2>/dev/null || true; }
+
+mkdir -p /proc /sys /dev /dev/pts /run /bin /sbin /root /etc /tmp
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+if ! mount -t devtmpfs devtmpfs /dev 2>/dev/null; then
+	mount -t tmpfs devtmpfs /dev
+fi
+mount -t configfs configfs /sys/kernel/config
+mount -t devpts devpts /dev/pts
+
+[ -e /dev/null ] || mknod /dev/null c 1 3
+[ -e /dev/zero ] || mknod /dev/zero c 1 5
+[ -e /dev/console ] || mknod /dev/console c 5 1
+[ -e /dev/kmsg ] || mknod /dev/kmsg c 1 11
+[ -e /dev/ptmx ] || mknod /dev/ptmx c 5 2
+
+printf 'root:x:0:0:root:/root:/bin/sh\n' >/etc/passwd
+printf 'root:x:0:\n' >/etc/group
+printf '/bin/sh\n' >/etc/shells
+hostname omnipha-usb
+log 'starting'
+{
+	sleep 150
+	if [ ! -e /run/keep ]; then
+		log 'self-recovery -> bootloader'
+		/bin/restart2 bootloader
+		log 'self-recovery RESTART2 failed; falling back to reboot -f'
+		reboot -f
+	fi
+} &
+mkdir -p /sys/kernel/debug
+mount -t debugfs debugfs /sys/kernel/debug 2>/dev/null || true
+
+VENDOR_MODULES='
+gh_arm_drv.ko
+phy-qcom-ufs.ko
+phy-qcom-ufs-qmp-v4-pineapple.ko
+phy-qcom-ufs-qrbtc-sdm845.ko
+phy-qcom-ufs-qmp-v4-crow.ko
+cmd-db.ko
+qcom_cpu_vendor_hooks.ko
+tmecom-intf.ko
+hwkm.ko
+gic_intr_routing.ko
+qcom_cpucp.ko
+debug_symbol.ko
+proxy-consumer.ko
+debug-regulator.ko
+gdsc-regulator.ko
+stub-regulator.ko
+msm_dma_iommu_mapping.ko
+iommu-logger.ko
+qti-regmap-debugfs.ko
+qcom-i2c-pmic.ko
+qcom-spmi-pmic.ko
+spmi-pmic-arb.ko
+rtc-pm8xxx.ko
+qcom-reboot-reason.ko
+cpu_hotplug.ko
+qcom-cpufreq-hw.ko
+sched-walt.ko
+thermal_pause.ko
+cqhci.ko
+qcom_scmi_vendor.ko
+qcom_scmi_client.ko
+qcom-ipcc.ko
+qcom_hwspinlock.ko
+smem.ko
+socinfo.ko
+gh_dbl.ko
+gh_msgq.ko
+gh_rm_drv.ko
+qcom-scm.ko
+mdt_loader.ko
+secure_buffer.ko
+mem_buf_dev.ko
+mem_buf_msgq.ko
+crypto-qti.ko
+gh_cpusys_vm_mem_access.ko
+qcom_iommu_util.ko
+arm_smmu.ko
+qcom_dma_heaps.ko
+mem_buf.ko
+minidump.ko
+qcom_ipc_logging.ko
+qcom-pdc.ko
+pinctrl-msm.ko
+pinctrl-pineapple.ko
+pinctrl-cliffs.ko
+pinctrl-volcano.ko
+qcom_aoss.ko
+crm.ko
+clk-qcom.ko
+clk-dummy.ko
+dispcc-pineapple.ko
+dispcc-volcano.ko
+gcc-cliffs.ko
+gcc-pineapple.ko
+gcc-volcano.ko
+camcc-cliffs.ko
+camcc-pineapple.ko
+gpucc-pineapple.ko
+videocc-pineapple.ko
+tcsrcc-pineapple.ko
+qcom_rpmh.ko
+clk-rpmh.ko
+dcc_v2.ko
+qcom_wdt_core.ko
+memory_dump_v2.ko
+pmic-pon-log.ko
+qcom_va_minidump.ko
+qcom_logbuf_vendor_hooks.ko
+qcom_logbuf_boot_log.ko
+dcvs_fp.ko
+qcom-dcvs.ko
+rpmh-regulator.ko
+bcl_pmic5.ko
+thermal_minidump.ko
+qcom_tsens.ko
+sdhci-msm.ko
+ufshcd-crypto-qti.ko
+msm_qmp.ko
+gh_virt_wdt.ko
+gunyah_loader.ko
+gunyah_qcom.ko
+qcom_llcc_pmu.ko
+qcom-pmu-lib.ko
+nvmem_qfprom.ko
+nvmem_qcom-spmi-sdam.ko
+icc-bcm-voter.ko
+qnoc-qos.ko
+icc-debug.ko
+icc-rpmh.ko
+qnoc-cliffs.ko
+qnoc-volcano.ko
+qnoc-pineapple.ko
+icc-test.ko
+nothing_writeback_kmsg.ko
+nothing_error_report.ko
+ufs_qcom.ko
+nothing_secure_element.ko
+nothing_virtual_ntc.ko
+qrtr.ko
+qrtr-gunyah.ko
+qmi_helpers.ko
+phy-generic.ko
+phy-msm-ssusb-qmp.ko
+repeater.ko
+phy-msm-snps-eusb2.ko
+repeater-qti-pmic-eusb2.ko
+redriver.ko
+qcom_glink.ko
+qcom_glink_smem.ko
+qcom_smd.ko
+rproc_qcom_common.ko
+pdr_interface.ko
+pmic_glink.ko
+ucsi_glink.ko
+wcd_usbss_i2c.ko
+eud.ko
+dwc3-msm.ko
+'
+log 'module load begin'
+for module in $VENDOR_MODULES; do
+	log "loading $module"
+	if err=$(insmod "/lib/modules/$module" 2>&1); then
+		log "module $module loaded"
+	else
+		log "module $module failed: $err"
+	fi
+done
+log 'module load end'
+if [ -n "$(find /sys/bus/platform/drivers/qcom-reboot-reason -mindepth 1 -maxdepth 1 -type l ! -name module 2>/dev/null)" ]; then
+	log 'qcom-reboot-reason bound'
+else
+	log 'qcom-reboot-reason not bound'
+fi
+
+UDC=""
+i=0
+while [ "$i" -lt 40 ]; do
+	for candidate in /sys/class/udc/*; do
+		if [ -e "$candidate" ]; then
+			UDC=${candidate##*/}
+			break
+		fi
+	done
+	[ -n "$UDC" ] && break
+	sleep 0.25
+	i=$((i + 1))
+done
+
+UDC_NAMES=""
+for candidate in /sys/class/udc/*; do
+	[ -e "$candidate" ] && UDC_NAMES="$UDC_NAMES ${candidate##*/}"
+done
+log "udc names:${UDC_NAMES:- none}"
+if [ -e /sys/bus/platform/drivers/msm-eud/88e0000.qcom,msm-eud ]; then
+	log 'eud bound'
+else
+	log 'eud not bound'
+fi
+if [ -e /sys/bus/platform/drivers/msm-dwc3/a600000.ssusb ]; then
+	log 'a600000.ssusb bound'
+else
+	log 'a600000.ssusb not bound'
+fi
+if [ -r /sys/kernel/debug/devices_deferred ]; then
+	while read -r line; do
+		case "$line" in
+		a600000.ssusb*) log "a600000.ssusb deferred: $line" ;;
+		esac
+	done </sys/kernel/debug/devices_deferred
+fi
+
+if [ -z "$UDC" ]; then
+	log 'no UDC; USB gadget not bound'
+	n=0
+	if [ -r /sys/kernel/debug/devices_deferred ]; then
+		while read -r line && [ "$n" -lt 64 ]; do
+			log "deferred probe pending: $line"
+			n=$((n + 1))
+		done </sys/kernel/debug/devices_deferred
+	else
+		log 'deferred probe list unavailable'
+	fi
+	log "deferred probe pending count logged: $n"
+else
+	G=/sys/kernel/config/usb_gadget/g1
+	mkdir -p "$G/strings/0x409" "$G/configs/c.1/strings/0x409"
+	printf '0x18D1' >"$G/idVendor"
+	printf '0x4EE2' >"$G/idProduct"
+	printf '0x0100' >"$G/bcdDevice"
+	printf '0x0200' >"$G/bcdUSB"
+	printf 'omnipha' >"$G/strings/0x409/manufacturer"
+	printf 'SM7635 USB debug' >"$G/strings/0x409/product"
+	printf 'sm7635' >"$G/strings/0x409/serialnumber"
+	printf 'NCM+ECM' >"$G/configs/c.1/strings/0x409/configuration"
+	printf '250' >"$G/configs/c.1/MaxPower"
+	mkdir -p "$G/functions/ncm.usb0" "$G/functions/ecm.usb0"
+	ln -s "$G/functions/ncm.usb0" "$G/configs/c.1/"
+	ln -s "$G/functions/ecm.usb0" "$G/configs/c.1/"
+	if err=$({ printf '%s' "$UDC" >"$G/UDC"; } 2>&1); then
+		log "gadget bound to $UDC"
+		ip link set usb0 up 2>/dev/null || true
+		ip addr add 172.16.42.2/24 dev usb0 2>/dev/null || true
+		ip link set usb1 up 2>/dev/null || true
+		ip addr add 172.16.43.2/24 dev usb1 2>/dev/null || true
+	else
+		log "gadget bind failed for $UDC: $err"
+	fi
+fi
+
+mkdir -p /etc/dropbear /var/run
+if /bin/dropbear -R -p 172.16.42.2:22 >/dev/console 2>&1; then
+	log 'sshd listening at 172.16.42.2:22 (public key only)'
+else
+	log 'sshd failed to start'
+fi
+log 'console ready'
+setsid cttyhack /bin/sh

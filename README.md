@@ -199,6 +199,17 @@ rejects a missing or misordered EUD, an unresolved softdep target, a changed old
 module order, a removed timer, a bad envelope or tail and every repeated SHA
 including `8f8b7331`. It is a host control, not a boot result; see
 [BOOT.md](BOOT.md).
+The #51 host-only control, `scripts/build-init-boot-peripheral-mode.sh`, starts
+from the frozen #49 init (`initramfs/init-49-eud-softdep`, so `88c93077…` still
+rebuilds) and adds exactly one step after the module phase: it finds
+`a600000.ssusb` under `/sys/bus/platform/devices/`, logs the `mode` attribute and
+its value, writes `peripheral` once and logs the result and readback, before the
+unchanged bounded UDC wait. EUD/glue bind checks move after the wait with capped
+read-only `a600000.dwc3`, `devices_deferred` and `dmesg` logging. Modules, the
+150 s timer, helper, sshd and NCM/ECM path are unchanged.
+`scripts/verify-init-boot-peripheral-mode.py`, run by `scripts/verify-bootimg.sh`,
+fails closed with negative fixtures. It is a host control, not a boot result; see
+[BOOT.md](BOOT.md).
 The #40 host-only control, `scripts/build-init-boot-debug-ramdisk.sh`, copies
 the verified stock slot-A `init_boot_a` and replaces only its generic ramdisk
 with the existing verified debug gzip newc cpio, updating the ramdisk-size
