@@ -311,10 +311,45 @@ else
 	ln -s "$G/functions/ecm.usb0" "$G/configs/c.1/"
 	if err=$({ printf '%s' "$UDC" >"$G/UDC"; } 2>&1); then
 		log "gadget bound to $UDC"
-		ip link set usb0 up 2>/dev/null || true
-		ip addr add 172.16.42.2/24 dev usb0 2>/dev/null || true
-		ip link set usb1 up 2>/dev/null || true
-		ip addr add 172.16.43.2/24 dev usb1 2>/dev/null || true
+		if err=$(ip link set usb0 up 2>&1); then
+			log 'usb0 link up: ok'
+		else
+			log "usb0 link up failed: $err"
+		fi
+		if err=$(ip addr add 172.16.42.2/24 dev usb0 2>&1); then
+			log 'usb0 address 172.16.42.2/24: added'
+		else
+			log "usb0 address 172.16.42.2/24 failed: $err"
+		fi
+		if err=$(ip link set usb1 up 2>&1); then
+			log 'usb1 link up: ok'
+		else
+			log "usb1 link up failed: $err"
+		fi
+		if err=$(ip addr add 172.16.43.2/24 dev usb1 2>&1); then
+			log 'usb1 address 172.16.43.2/24: added'
+		else
+			log "usb1 address 172.16.43.2/24 failed: $err"
+		fi
+		{
+			echo '== ip addr show dev usb0'
+			ip addr show dev usb0 2>&1
+			echo '== ip addr show dev usb1'
+			ip addr show dev usb1 2>&1
+			echo '== ip route'
+			ip route 2>&1
+		} | {
+			an=0
+			at=0
+			while IFS= read -r line; do
+				at=$((at + 1))
+				if [ "$an" -lt 32 ]; then
+					log "net: $line"
+					an=$((an + 1))
+				fi
+			done
+			log "net lines logged: $an of $at (cap 32)"
+		}
 	else
 		log "gadget bind failed for $UDC: $err"
 	fi
@@ -326,5 +361,47 @@ if /bin/dropbear -R -p 172.16.42.2:22 >/dev/console 2>&1; then
 else
 	log 'sshd failed to start'
 fi
+if command -v ss >/dev/null 2>&1; then
+	LISTEN_TOOL='ss -ltn'
+	LISTEN_OUT=$(ss -ltn 2>&1)
+elif LISTEN_OUT=$(/bin/busybox netstat -ltn 2>&1); then
+	LISTEN_TOOL='netstat -ltn'
+else
+	LISTEN_TOOL='dropbear process and /proc/net/tcp'
+	LISTEN_OUT=$(
+		/bin/busybox ps 2>&1 | while IFS= read -r line; do
+			case "$line" in
+			*dropbear*) echo "ps: $line" ;;
+			esac
+		done
+		while IFS= read -r line; do
+			case "$line" in
+			*022A10AC:0016\ 00000000:0000\ 0A\ *) echo "tcp: $line" ;;
+			esac
+		done </proc/net/tcp
+	)
+fi
+log "listener check via $LISTEN_TOOL for 172.16.42.2:22"
+printf '%s\n' "$LISTEN_OUT" | {
+	ln=0
+	lt=0
+	found=0
+	while IFS= read -r line; do
+		lt=$((lt + 1))
+		case "$line" in
+		*172.16.42.2:22* | *022A10AC:0016*) found=1 ;;
+		esac
+		if [ "$ln" -lt 64 ]; then
+			log "listen: $line"
+			ln=$((ln + 1))
+		fi
+	done
+	log "listener lines logged: $ln of $lt (cap 64)"
+	if [ "$found" -eq 1 ]; then
+		log 'listener 172.16.42.2:22: present'
+	else
+		log 'listener 172.16.42.2:22: not found'
+	fi
+}
 log 'console ready'
 setsid cttyhack /bin/sh

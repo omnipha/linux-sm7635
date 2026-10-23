@@ -210,6 +210,20 @@ read-only `a600000.dwc3`, `devices_deferred` and `dmesg` logging. Modules, the
 `scripts/verify-init-boot-peripheral-mode.py`, run by `scripts/verify-bootimg.sh`,
 fails closed with negative fixtures. It is a host control, not a boot result; see
 [BOOT.md](BOOT.md).
+The #53 host-only control, `scripts/build-init-boot-static-address.sh`, starts
+from the frozen #51 init (`initramfs/init-51-peripheral-mode`, so `9f89fe8d…`
+still rebuilds) and stops discarding the two `ip link set` and two `ip addr add`
+results in the gadget branch. It logs each result, then read-only `ip addr` and
+`ip route` output capped at 32 lines, and one bounded read-only listener check
+for `172.16.42.2:22` capped at 64 lines. The 127-module order, the single
+`peripheral` write, the 40 × 0.25 s UDC wait, the 150 s `/run/keep` timer,
+`bin/restart2`, the NCM+ECM functions and the key-only sshd are unchanged.
+`scripts/verify-init-boot-static-address.py`, run by `scripts/verify-bootimg.sh`,
+rejects a missing or duplicated address log, a discarded address result, a
+removed, moved or lengthened timer, a changed module order, a second role write,
+a changed gadget function, a planted `.ko`, a bad envelope or tail and every
+repeated SHA including `9f89fe8d`. It is a host control, not a boot result; see
+[BOOT.md](BOOT.md).
 The #40 host-only control, `scripts/build-init-boot-debug-ramdisk.sh`, copies
 the verified stock slot-A `init_boot_a` and replaces only its generic ramdisk
 with the existing verified debug gzip newc cpio, updating the ramdisk-size
