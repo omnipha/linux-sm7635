@@ -76,7 +76,7 @@ Artifacts stay under `$WORK/out` and are not committed:
 | --- | ---: | --- |
 | `Image-diagnostic-ext4` | 34,986,496 | `7be448b91b618cbe1dbda9659dfeeb2d554f702091c39453bfa44497c280377e` |
 | `Image-diagnostic-ext4.gz` | 13,806,454 | `d259b744465eb48b2c42ddcedcf89f6d2608638c6b04f3c2c534fa27b66d7738` |
-| `.config-diagnostic-ext4` | 225429 | `c6d8a4e86301d314adc8724b7b3d985d81b9cff2074e0e917ed976a46df3ebd9` |
+| `.config-diagnostic-ext4` | 225,429 | `c6d8a4e86301d314adc8724b7b3d985d81b9cff2074e0e917ed976a46df3ebd9` |
 | `boot-diagnostic-ext4.img` | 100,663,296 | `0ca048d554857b469aadf6a55e6fd70cc1cb51cd72eff8f6f98e451bb595f72b` |
 | `init_boot-kernel-banner.img` | 8,388,608 | `cafcabb67a1d79f7877b59a1daff25d92fd8fc6ecb5d5128f44ab8cc17af541c` |
 
