@@ -44,6 +44,11 @@ for artifact in "$OUT/boot.img" "$OUT/boot-stock-kernel.img" "$OUT/boot-full-foo
 	"$OUT/init_boot-eud-softdep.img" \
 	"$OUT/init_boot-peripheral-mode.img" \
 	"$OUT/init_boot-static-address.img" \
+	"$OUT/init_boot-kernel-banner.img" \
+	"$OUT/boot-diagnostic-ext4.img" \
+	"$OUT/Image-diagnostic-ext4.gz" \
+	"$OUT/.config-diagnostic-ext4" \
+	"$OUT/.config-diagnostic-kallsyms-nls" \
 	"$OUT/restart2" \
 	"$OUT/boot-hash-boundary.img" \
 	"$OUT/boot-image-size.img" \
@@ -182,6 +187,26 @@ python3 "$ROOT/scripts/verify-init-boot-static-address.py" --self-test \
 	"$PSTORE_CONSOLE" "$OUT/restart2"
 python3 "$ROOT/scripts/verify-init-boot-static-address.py" \
 	"$OUT/init_boot-static-address.img" "$STOCK_INIT" "$OUT/initramfs.cpio.gz" \
+	"$STOCK_BOOT" "$STOCK_VENDOR" "$STOCK_RECOVERY" "$STOCK_CONFIG" \
+	"$WORK/src/init/initramfs.c" "$WORK/src/lib/decompress_unlz4.c" \
+	"$PSTORE_CONSOLE" "$OUT/restart2"
+python3 "$ROOT/scripts/verify-diagnostic-signed-tail.py" --self-test \
+	"$OUT/boot-diagnostic-ext4.img" "$STOCK_BOOT" "$OUT/Image-diagnostic-ext4.gz" \
+	"$OUT/Image-diagnostic-ext4" "$OUT/.config-diagnostic-ext4" \
+	"$OUT/.config-diagnostic-kallsyms-nls" \
+	"$ROOT/configs/asteroids-volcano-usb-builtin.fragment"
+python3 "$ROOT/scripts/verify-diagnostic-signed-tail.py" \
+	"$OUT/boot-diagnostic-ext4.img" "$STOCK_BOOT" "$OUT/Image-diagnostic-ext4.gz" \
+	"$OUT/Image-diagnostic-ext4" "$OUT/.config-diagnostic-ext4" \
+	"$OUT/.config-diagnostic-kallsyms-nls" \
+	"$ROOT/configs/asteroids-volcano-usb-builtin.fragment"
+python3 "$ROOT/scripts/verify-init-boot-kernel-banner.py" --self-test \
+	"$OUT/init_boot-kernel-banner.img" "$STOCK_INIT" "$OUT/initramfs.cpio.gz" \
+	"$STOCK_BOOT" "$STOCK_VENDOR" "$STOCK_RECOVERY" "$STOCK_CONFIG" \
+	"$WORK/src/init/initramfs.c" "$WORK/src/lib/decompress_unlz4.c" \
+	"$PSTORE_CONSOLE" "$OUT/restart2"
+python3 "$ROOT/scripts/verify-init-boot-kernel-banner.py" \
+	"$OUT/init_boot-kernel-banner.img" "$STOCK_INIT" "$OUT/initramfs.cpio.gz" \
 	"$STOCK_BOOT" "$STOCK_VENDOR" "$STOCK_RECOVERY" "$STOCK_CONFIG" \
 	"$WORK/src/init/initramfs.c" "$WORK/src/lib/decompress_unlz4.c" \
 	"$PSTORE_CONSOLE" "$OUT/restart2"
@@ -603,6 +628,28 @@ python3 "$ROOT/scripts/verify-volcano-usb.py" board "$OUT/.config" \
 	"$ROOT/configs/asteroids-volcano-usb-builtin.fragment" \
 	"$scratch/built-boot/kernel" "$scratch/stock-board.dtb" \
 	"$scratch/built-init/ramdisk"
+unpack_bootimg --boot_img "$OUT/boot-diagnostic-ext4.img" --out "$scratch/diagnostic-boot" >/dev/null
+unpack_bootimg --boot_img "$OUT/init_boot-kernel-banner.img" --out "$scratch/diagnostic-init" >/dev/null
+python3 -B - "$ROOT/scripts" "$scratch/diagnostic-init/ramdisk" \
+	"$scratch/diagnostic-init/ramdisk.cpio.gz" <<'PY'
+import gzip
+import importlib.util
+import pathlib
+import sys
+
+root, source, output = sys.argv[1:]
+spec = importlib.util.spec_from_file_location(
+    "vendor_checker", pathlib.Path(root) / "verify-init-boot-vendor-modules.py")
+checker = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(checker)
+frame = pathlib.Path(source).read_bytes()
+cpio = checker.decode_frame(frame, checker.base.lz4())
+pathlib.Path(output).write_bytes(gzip.compress(cpio, mtime=0))
+PY
+python3 "$ROOT/scripts/verify-volcano-usb.py" board "$OUT/.config-diagnostic-ext4" \
+	"$ROOT/configs/asteroids-volcano-usb-builtin.fragment" \
+	"$scratch/diagnostic-boot/kernel" "$scratch/stock-board.dtb" \
+	"$scratch/diagnostic-init/ramdisk.cpio.gz"
 
 mkdir -p "$scratch/ramdisk"
 gzip -dc "$scratch/built-init/ramdisk" | cpio -itv --quiet >"$scratch/ramdisk-list.txt"
@@ -662,6 +709,8 @@ report=$OUT/bootimg-verify.txt
 	echo 'init_boot eud-softdep control: same stock baa33fd4 prefix and signed tail as the self-recovering control; ramdisk is one LZ4 HC-12 block of the caa3eb82 cpio whose init is the #47 init with exactly one added insmod of the stock eud.ko after its modules.dep prerequisites and immediately before dwc3-msm.ko, the other 126 modules in their old order, the unchanged 150 s timer, /run/keep escape and bin/restart2 helper, and read-only logging of EUD bind, a600000.ssusb bind or deferred state and UDC names; debug cpio carries zero .ko; negative fixtures reject missing, duplicated or misordered eud.ko, an unresolved softdep target, a changed dwc3 softdep edge, an out-of-closure or non-arm64 eud.ko, a changed old module order, a removed timer, bad envelope or tail, a planted .ko and every repeated prior SHA including 8f8b7331; host-only, not a boot result'
 	echo 'init_boot peripheral-mode control: same stock baa33fd4 prefix and signed tail as the eud-softdep control; ramdisk is one LZ4 HC-12 block of the caa3eb82 cpio whose init is the frozen #49 init plus exactly one step after the module phase and before the UDC wait: it discovers the msm-dwc3 device a600000.ssusb under /sys/bus/platform/devices/ without a hardcoded SoC path, logs that the mode attribute exists with its current value, writes peripheral once and logs the write result and readback, keeps the unchanged 40x0.25s UDC wait, and moves the EUD/glue bind checks after it with capped read-only logging of the a600000.dwc3 child, udc names, a600000.* devices_deferred entries and dmesg msm-dwc3/dwc3/phy/repeater lines (64-line caps); the 127-module list and order, 150 s /run/keep timer, bin/restart2 helper, key-only sshd and NCM/ECM path are unchanged and the debug cpio carries zero .ko; negative fixtures reject a missing or duplicated write, a write before the module phase or before eud.ko/dwc3-msm.ko, a value other than peripheral, a hardcoded SoC path, a removed or moved timer, a changed module order, a planted .ko, a bad envelope or tail and every repeated prior SHA including 88c93077; host-only, not a boot result'
 	echo 'init_boot static-address control: same stock baa33fd4 prefix and signed tail as the peripheral-mode control; ramdisk is one LZ4 HC-12 block of the caa3eb82 cpio whose init is the frozen #51 init (initramfs/init-51-peripheral-mode, so 9f89fe8d still rebuilds) with the four discarded usb0/usb1 link and address commands replaced by commands that log their result, read-only ip addr show dev usb0, dev usb1 and ip route output capped at 32 lines, and one bounded read-only listener check (ss or netstat, else dropbear process and /proc/net/tcp) for 172.16.42.2:22 capped at 64 lines; the 127-module order, single peripheral write, 40x0.25s UDC wait, 150 s /run/keep timer, bin/restart2 helper, NCM+ECM functions and key-only sshd are unchanged and the debug cpio carries zero .ko; negative fixtures reject a missing or duplicated address log, a discarded address or link result, missing or lengthened network and listener diagnostics, a removed, moved or lengthened timer, a changed module order, a second role write, a changed gadget function, a planted .ko, a bad envelope or tail and every repeated prior SHA including 9f89fe8d; host-only, not a boot result'
+echo 'init_boot kernel-banner control: same stock baa33fd4 prefix and signed tail as the static-address control; ramdisk is one LZ4 HC-12 block of the caa3eb82 cpio whose init is the frozen #53 init plus exactly one log line after starting reporting uname -r and /proc/version; the 127-module order, single peripheral write, 40x0.25s UDC wait, 150 s /run/keep timer, bin/restart2 helper, NCM+ECM functions and key-only sshd are unchanged and the debug cpio carries zero .ko; negative fixtures reject a removed, duplicated, moved or reworded banner line, a second diagnostic line, a changed module order, a second role write, a changed gadget function, a removed address log, a removed or lengthened timer, a planted .ko, a bad envelope or tail and every repeated prior SHA including 995aaca3, 9f89fe8d and 37535dd1; host-only, not a boot result'
+echo 'diagnostic signed-tail boot control: stock boot_a 197aff11 with only the kernel-size field 13949926 -> 13806454 and the gzip payload replaced by the EXT4_FS-off own 6.1.78 kernel; zero padding fills to offset 13955072; stock AVB0 at 13955072, vbmeta at 13971456 and terminal AVBf unchanged; 100663296-byte image; negative fixtures reject a header, payload, padding, AVB0, vbmeta or footer byte change, an F2FS_FS config change and every repeated prior SHA including 37535dd1, 55fa78ca, 5a513998, dc990b95 and 13a48ff9; host-only, not a boot result'
 	echo 'stock AVB footers and hashed image prefixes match embedded metadata; vbmeta_a init_boot/vendor_boot/dtbo hashes match stock; boot is chained'
 	echo 'stock boot separate 16KiB AVB0 record hashes the shorter kernel-only prefix; stock verification flags and vbmeta_a rollback index are zero'
 	echo 'built images are not authenticated by stock vbmeta_a: no AVB footer, stock hashes do not match; bootloader policy during attempt unknown'
@@ -681,7 +730,9 @@ report=$OUT/bootimg-verify.txt
 		boot-avbf-footer-erase.img init_boot-debug-ramdisk.img \
 		init_boot-lz4-debug-ramdisk.img init_boot-vendor-modules.img \
 		init_boot-self-recovering.img init_boot-eud-softdep.img \
-		init_boot-peripheral-mode.img init_boot-static-address.img restart2 \
+		init_boot-peripheral-mode.img init_boot-static-address.img \
+		init_boot-kernel-banner.img boot-diagnostic-ext4.img \
+		Image-diagnostic-ext4.gz restart2 \
 		boot-hash-boundary.img boot-image-size.img init_boot.img \
 		vendor_boot.img dtb.img \
 		Image.gz initramfs.cpio.gz Image)
