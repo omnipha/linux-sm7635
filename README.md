@@ -176,6 +176,12 @@ sign. `scripts/verify-init-boot-lz4-debug-ramdisk.py`, run by
 ramdisk-size field, the single LZ4 block, the empty kernel, the unchanged
 signed tail from offset 2,121,728 and the fixed 8,388,608-byte size. It is a
 host control, not a boot result.
+The #44 host-only control, `scripts/build-init-boot-vendor-modules.sh`, reuses
+the #42 LZ4 HC-12 envelope with a debug cpio whose `/init` `insmod`s the 126-module
+stock vendor closure from the unchanged `vendor_boot_a` ramdisk before the UDC
+wait. No `.ko` enters `init_boot`. `scripts/verify-init-boot-vendor-modules.py`,
+run by `scripts/verify-bootimg.sh`, fails closed with negative fixtures. It is a
+host control, not a boot result; see [BOOT.md](BOOT.md).
 The #40 host-only control, `scripts/build-init-boot-debug-ramdisk.sh`, copies
 the verified stock slot-A `init_boot_a` and replaces only its generic ramdisk
 with the existing verified debug gzip newc cpio, updating the ramdisk-size
