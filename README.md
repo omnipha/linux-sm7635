@@ -294,6 +294,20 @@ recovery-path attempt before stock rollback; the physical coordinator alone
 may authorize any future bounded test of a new evidence-backed set. Nothing in this
 repository flashes or boots the phone.
 
+## WPSS supplier init_boot (2026-10-24, #75)
+
+`scripts/build-init-boot-wpss-supplier.sh` packages exactly one host-only
+init_boot from the measured #71 init. A single bounded phase before the first
+`qca_cld3_qca6750.ko` load insmods stock `/lib/modules/smp2p.ko`, then
+`pinctrl-spmi-gpio.ko`, then `qti-fixed-regulator.ko`, guarded against repeats,
+and logs each result plus WPSS, regulator and icnss2 bind state. The existing
+12 s bind gate, read-only mounts, WLAN closure, 150 s timer and USB/key-only SSH
+path are unchanged. `scripts/verify-init-boot-wpss-supplier.py` fails closed
+with negative fixtures and rejects the measured `e5b99b7c` SHA; it is wired
+into `scripts/verify-bootimg.sh`. The reproducible image and the one
+physical-outcome contract are recorded in [BOOT.md](BOOT.md). No physical boot
+or WLAN success is claimed.
+
 ## Run-29 live WLAN diagnosis (2026-10-24, #73)
 
 The run-29 coordinator session over key-only SSH on the measured

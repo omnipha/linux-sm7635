@@ -49,6 +49,7 @@ for artifact in "$OUT/boot.img" "$OUT/boot-stock-kernel.img" "$OUT/boot-full-foo
 	"$OUT/init_boot-wlan-closure.img" \
 	"$OUT/init_boot-wlan-rfkill.img" \
 	"$OUT/init_boot-ipci-defer.img" \
+	"$OUT/init_boot-wpss-supplier.img" \
 	"$OUT/boot-diagnostic-ext4.img" \
 	"$OUT/boot-diagnostic-initcall-debug.img" \
 	"$OUT/Image-diagnostic-ext4.gz" \
@@ -266,6 +267,16 @@ python3 "$ROOT/scripts/verify-init-boot-ipci-defer.py" --self-test \
 	"$PSTORE_CONSOLE" "$OUT/restart2"
 python3 "$ROOT/scripts/verify-init-boot-ipci-defer.py" \
 	"$OUT/init_boot-ipci-defer.img" "$STOCK_INIT" "$OUT/initramfs.cpio.gz" \
+	"$STOCK_BOOT" "$STOCK_VENDOR" "$STOCK_RECOVERY" "$STOCK_CONFIG" \
+	"$WORK/src/init/initramfs.c" "$WORK/src/lib/decompress_unlz4.c" \
+	"$PSTORE_CONSOLE" "$OUT/restart2"
+python3 "$ROOT/scripts/verify-init-boot-wpss-supplier.py" --self-test \
+	"$OUT/init_boot-wpss-supplier.img" "$STOCK_INIT" "$OUT/initramfs.cpio.gz" \
+	"$STOCK_BOOT" "$STOCK_VENDOR" "$STOCK_RECOVERY" "$STOCK_CONFIG" \
+	"$WORK/src/init/initramfs.c" "$WORK/src/lib/decompress_unlz4.c" \
+	"$PSTORE_CONSOLE" "$OUT/restart2"
+python3 "$ROOT/scripts/verify-init-boot-wpss-supplier.py" \
+	"$OUT/init_boot-wpss-supplier.img" "$STOCK_INIT" "$OUT/initramfs.cpio.gz" \
 	"$STOCK_BOOT" "$STOCK_VENDOR" "$STOCK_RECOVERY" "$STOCK_CONFIG" \
 	"$WORK/src/init/initramfs.c" "$WORK/src/lib/decompress_unlz4.c" \
 	"$PSTORE_CONSOLE" "$OUT/restart2"
@@ -797,6 +808,7 @@ echo 'init_boot initcall-debug control: same stock prefix and signed tail as the
 echo 'init_boot wlan-rfkill control: same stock baa33fd4 prefix and signed tail as the wlan-closure control; ramdisk is one LZ4 HC-12 block of the debug cpio whose init is the frozen run-24 #53 init plus the corrected wlan-init phase before console ready: the run-27 measurement showed vendor_a and system_dlkm_a failing because loop nodes were created with minor equal to the loop index while the stock cmdline sets loop.max_part=7, so loop9 and loop10 aliased loop1 partitions; this image derives each loop node major:minor from /sys/block/loopN/dev, probes the extent fstype (erofs magic at byte 1024, else ext4 magic at byte 1080, else skip) instead of assuming it, mounts system_dlkm_a, vendor_a and vendor_dlkm_a read-only from their verified super extents on the single by-name super device /dev/block/sda6 (no second super loop), probes and mounts the by-name modem_a partition (/dev/block/sde6, the measured stock source of /vendor/firmware_mnt/image/qca6750/bdwlan.elf) read-only vfat only after its FAT signature matches and logs the firmware file presence, then insmods the same 21-module closure with rfkill.ko (the measured system_dlkm provider, SHA-256 773ddddb) before cfg80211.ko and logs per-module results, the fstype, the mount results, a wlan0 interface check and capped wlan dmesg; the 127-module order, single peripheral write, 40x0.25s UDC wait, 150 s /run/keep timer, bin/restart2 helper, NCM+ECM functions and key-only sshd are unchanged and the debug cpio carries zero .ko; negative fixtures reject the run-27 loop-minor regression, an assumed fstype, a removed system_dlkm mount, a second guessed super loop, rfkill loaded from vendor_dlkm, rfkill absent from the verified system_dlkm, a false vendor_a by-name claim, cfg80211 before rfkill, rfkill removed from the closure, a removed or unprobed modem_a firmware mount, a moved firmware path, a planted .ko, a removed or lengthened timer, removed or duplicated wlan-init markers, a bad envelope or tail and every repeated prior SHA including 2faab7e2, 995aaca3, be946562 and 86402ac6; host-only, not a boot result'
 echo 'init_boot wlan-closure control: same stock baa33fd4 prefix and signed tail as the static-address control; ramdisk is one LZ4 HC-12 block of the debug cpio whose init is the frozen run-24 #53 init plus one wlan-init phase before console ready: it verifies /dev/block/sda6 (9,663,676,416 bytes) and the pinned super LP metadata and erofs first pages by SHA-256, mounts vendor_dlkm_a, vendor_a and system_dlkm_a read-only (erofs, ext4 ro,noload fallback) through read-only loop devices, then insmods the 21-module dependency-ordered stock WLAN closure (the 20-module vendor_dlkm closure of qcom_q6v5_pas, icnss2, qca_cld3_qca6750, cnss_plat_ipc_qmi_svc and qrtr-smd, plus rfkill.ko from system_dlkm) with a 2 s per-module timeout and per-module wlan-init result lines capped at 64, and logs wlan0 presence, an iw-dev availability check, dmesg lines matching icnss2/cnss_plat/qca_cld3/bdwlan capped at 64 and firmware load names capped at 64; the 127-module order, single peripheral write, 40x0.25s UDC wait, 150 s /run/keep timer, bin/restart2 helper, NCM+ECM functions and key-only sshd are unchanged and the debug cpio carries zero .ko; negative fixtures reject a wrong WLAN module order, a planted .ko, a removed mount, a writable mount flag, a removed or lengthened timer, a changed sshd, a changed address, a changed gadget function, a second role write, a changed old module order, removed or duplicated wlan-init markers, a bad envelope or tail and every repeated prior SHA including 995aaca3, be946562 and 86402ac6; host-only, not a boot result'
 	echo 'init_boot ipci-defer control: same stock baa33fd4 prefix and signed tail as wlan-rfkill; unchanged corrected read-only mounts and 21-module closure; only the final qca_cld3 insmod waits at most 12 s for icnss2 platform bind and logs WPSS and icnss2 bind state before the one stock insmod; the 127-module order, USB, key-only SSH and 150 s timer are unchanged; zero .ko in cpio; negative fixtures reject a missing, duplicated, retargeted, unbounded or moved gate, earlier mount/module regressions, a planted .ko, a changed timer or image envelope/tail and all prior measured SHA including 9291c369; host-only, not a boot result'
+	echo 'init_boot wpss-supplier control: the measured #71 init with one bounded supplier phase inside the final qca_cld3 branch: smp2p.ko, pinctrl-spmi-gpio.ko and qti-fixed-regulator.ko from the pinned stock /lib/modules paths, already-loaded guard, bounded insmod, per-module result and WPSS/regulator/icnss2 bind logs before the unchanged 12 s bind gate and single WLAN insmod; the 127-module order, mounts, USB, key-only SSH and 150 s timer are unchanged; zero .ko in cpio; negative fixtures reject missing, duplicated, reordered or unbounded supplier loads, rmmod, WLAN/remoteproc reloads, modem control, gate and timer regressions, image envelope/tail damage and all measured SHA including e5b99b7c; host-only, not a boot result'
 	echo 'stock AVB footers and hashed image prefixes match embedded metadata; vbmeta_a init_boot/vendor_boot/dtbo hashes match stock; boot is chained'
 	echo 'stock boot separate 16KiB AVB0 record hashes the shorter kernel-only prefix; stock verification flags and vbmeta_a rollback index are zero'
 	echo 'built images are not authenticated by stock vbmeta_a: no AVB footer, stock hashes do not match; bootloader policy during attempt unknown'
@@ -819,7 +831,7 @@ echo 'init_boot wlan-closure control: same stock baa33fd4 prefix and signed tail
 		init_boot-peripheral-mode.img init_boot-static-address.img \
 		init_boot-kernel-banner.img init_boot-initcall-debug.img \
 		init_boot-wlan-closure.img init_boot-wlan-rfkill.img \
-		init_boot-ipci-defer.img \
+		init_boot-ipci-defer.img init_boot-wpss-supplier.img \
 		boot-diagnostic-ext4.img boot-diagnostic-initcall-debug.img \
 		Image-diagnostic-ext4.gz Image-diagnostic-initcall-debug.gz restart2 \
 		boot-hash-boundary.img boot-image-size.img init_boot.img \
