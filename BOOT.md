@@ -1,3 +1,99 @@
+## Live-session init_boot: modem start deferred to key-only SSH (#79, host-only, 2026-10-24)
+
+**Host result:** one session init_boot candidate built and verified; no physical
+boot, `wlan0` result or modem result is claimed. The measured #77 image
+(`560c98e5`) and the measured #75 image (`5a61de0e`) must not be reflashed. This
+issue performed no device access, flash, USB, modem control, kernel rebuild,
+DTBO/vbmeta/slot-B change or userdata work.
+
+### Facts, separated from the hypothesis
+
+Run 31 (#77, merged PR #78) measured in pstore, without SSH, that the #75
+supplier phase completed exactly as in run 30 (`smp2p.ko`, `pinctrl-spmi-gpio.ko`,
+`qti-fixed-regulator.ko` loaded; WPSS, the regulator and `icnss2` all bound by
+~1.568 s; the ipci gate reported `icnss2` bound after 0 s) and that the one
+guarded `remoteproc2` (`4080000.remoteproc-mss`) start was accepted, with the
+modem remoteproc reporting `running` at 2.55 s. `qca_cld3` v5.2.1.94A began
+loading at 2.604 s and the init logged `wlan0 absent` at 2.610 s — about 60 ms
+after the module load, before the probe could have completed; run 30 only
+checked `wlan0` at 63 s and 73 s, so that early reading is not a WLAN verdict.
+At 42.6 s the modem firmware itself reported `Dog_hal_common.c:178: DOG detects
+stalled initialization, triage with IMAGE OWNER`; `qcom_q6v5_pas` raised a fatal
+error with remoteproc recovery disabled, the kernel panicked on the remoteproc
+crash and the hypervisor watchdog bit, dropping the device into Qualcomm
+crash/download mode `05c6:900e`. The host had not pinned `172.16.42.1/24` in
+time, so no SSH was measured and no live log exists. Stock `init_boot_a` was
+then restored and verified.
+
+The **one discriminating variable** in this image is the session marker and
+nothing else. The decoded `/init` is the exact measured #75 init plus one log
+line, `session #79: modem start deferred to key-only SSH live diagnosis`,
+placed immediately after the armed 150 s self-recovery timer and before the
+module phase. The #77 auto-start is **not** present: no remoteproc is started,
+stopped or written by the boot init, because that auto-start is the known cause
+of the ~42 s panic. The three-module supplier phase and order, the 12 s bounded
+WPSS/icnss2 bind gate, the corrected read-only super and firmware mounts, the
+single stock WLAN load, the 21-module WLAN closure and the 127-module vendor
+closure, the peripheral/UDC path and the USB key-only SSH path are unchanged.
+The timer is armed before any risky step and is not extended; the init never
+creates `/run/keep` — only the SSH worker may, and only after key-only SSH and
+the host link are verified. If SSH never comes up, the timer attempts
+`RESTART2 bootloader` at 150 s. No `rmmod` and no module reload is added.
+
+### Open questions and predicted outcomes
+
+Two questions stay open and unmeasured: why the modem subsystem stalls ~40 s
+into its own initialization, and whether `wlan0` appears at all once the modem
+is actually running. A later physical measurement, one session under the
+standing coordinator approval with the host address pinned before reboot, could
+distinguish exactly these outcomes. The 150 s timer is a userspace timer only;
+it cannot rescue the kernel panic seen in run 31 and must not be represented as
+protection against it. No outcome authorizes a second variable, a second
+remoteproc start, a restart or a module reload inside this issue.
+
+| observed outcome | interpretation |
+| --- | --- |
+| With the modem offline, the `icnss2`/QMI probe ends in a named error within the 60 s baseline | The baseline probe failure is recorded as fact; it does not by itself explain the stall. |
+| `wlan0` appears while the modem stays `running` past the 60 ms run-31 check | The single guarded start was sufficient for the interface in that session; preserve the timestamps. |
+| `wlan0` stays absent but a named `icnss2`/QMI probe failure is logged while the modem stays `running` | The probe failure, not probe timing, is the WLAN blocker in that session. |
+| The modem repeats the stalled-initialization fatal error | The complete fatal text and the immediately preceding modem lines name the subsystem that stalled; the cause is recorded, not fixed. |
+| SSH never becomes usable | The timer should return the device to fastboot at about 150 s; a userspace timer does not cover a kernel hang or the modem panic. |
+
+### Reproducible host artifact
+
+| artifact (outside repo) | bytes | SHA-256 |
+| --- | ---: | --- |
+| `$HOME/sm7635-build/out/init_boot-live-session.img` | 8,388,608 | `4216af26089281b135c145eb96da281781b03d73c24cedd6255232456b4f7938` |
+
+Two independent serial invocations of `scripts/build-init-boot-live-session.sh`
+each built and compared two byte-identical candidates. Both invocations gave the
+same SHA above, distinct from every previously recorded measured SHA (including
+`560c98e5`, `5a61de0e`, `e5b99b7c`, `9291c369`, `2faab7e2`, `995aaca3`,
+`be946562`, `86402ac6`, `9f89fe8d`, `88c93077`, `8f8b7331`, `bde3a3b3`,
+`6078269d`). The stock `init_boot_a` prefix differs only at the ramdisk-size
+field; one LZ4 HC-12 legacy block (1,934,317 bytes) carries a 3,498,496-byte
+debug cpio (SHA-256 `6b5847c28ced49b7c85c09d5574589f22720caa2775e94d163c2550fa91849b2`),
+with no `.ko` embedded, a zero gap and the unchanged stock signed tail from
+offset 2,121,728 (6,266,880 bytes). The vendor_boot suppliers stay pinned by
+full SHA-256, size and stock ramdisk identity. `scripts/verify-init-boot-live-session.py`
+fails closed; negative fixtures reject a missing, duplicated, moved or reworded
+session marker, a `/run/keep` created before the timer or before verified SSH, an
+init-time remoteproc start (including the #77 phase reintroduced), any `rmmod`
+or `modprobe`, a removed, shortened, lengthened or disabled 150 s timer, a
+missing, duplicated, reordered or unbounded supplier phase, a removed or
+lengthened bind gate, a truncated or repeated WLAN load, envelope or tail
+damage, the reused #75 and #77 inits, and every reused measured SHA including
+`560c98e5` and `5a61de0e`. A host-only simulated-clock test of the extracted
+timer proves both outcomes: with no SSH/keep the timer runs `RESTART2 bootloader`
+(and the `reboot -f` fallback) at 150 s, and with verified SSH the worker's keep
+exists before the deadline so no restart happens. Aggregate `verify-bootimg.sh`
+passed (exit 0).
+
+```sh
+WORK="$HOME/sm7635-build" scripts/build-init-boot-live-session.sh
+WORK="$HOME/sm7635-build" scripts/verify-bootimg.sh
+```
+
 ## One guarded modem remoteproc start before the WLAN probe (#77, host-only, 2026-10-24)
 
 **Host result:** one init_boot candidate built and verified; no physical boot or

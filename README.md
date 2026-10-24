@@ -294,6 +294,26 @@ recovery-path attempt before stock rollback; the physical coordinator alone
 may authorize any future bounded test of a new evidence-backed set. Nothing in this
 repository flashes or boots the phone.
 
+## Live-session init_boot with the modem start deferred to SSH (#79)
+
+`scripts/build-init-boot-live-session.sh` packages exactly one host-only session
+init_boot: the byte-exact measured #75 init (`5a61de0e` stack — three-module supplier
+phase and order, 12 s bounded WPSS/icnss2 bind gate, read-only super/firmware mounts,
+single stock WLAN load, 21- and 127-module closures, 150 s timer, RESTART2 helper,
+USB/key-only SSH path) plus exactly one session-only log after the armed timer and
+before the module phase, stating that the modem start is deferred to the live
+key-only-SSH diagnosis. There is no modem remoteproc start, no `/run/keep` creation
+and no module unload or reload in the boot init; the known ~42 s modem panic of run 31
+is thereby not reproduced at boot. `scripts/verify-init-boot-live-session.py` fails
+closed with negative fixtures (pre-SSH or pre-timer keep, init-time remoteproc start,
+missing supplier or WLAN phase, removed/shortened/disabled timer, rmmod/modprobe, the
+measured #75 and #77 inits, and every reused measured SHA including `560c98e5` and
+`5a61de0e`) plus a host-only simulated-clock timer test proving that a missing
+SSH/keep triggers `RESTART2 bootloader` at 150 s while verified SSH allows the worker
+to create keep before the deadline. It is wired into `scripts/verify-bootimg.sh`.
+The reproducible image, the two open questions and the predicted outcomes are
+recorded in [BOOT.md](BOOT.md). No physical boot, `wlan0` or modem result is claimed.
+
 ## Modem remoteproc start init_boot (2026-10-24, #77)
 
 `scripts/build-init-boot-modem-start.sh` packages exactly one host-only init_boot

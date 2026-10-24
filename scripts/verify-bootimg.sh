@@ -51,6 +51,7 @@ for artifact in "$OUT/boot.img" "$OUT/boot-stock-kernel.img" "$OUT/boot-full-foo
 	"$OUT/init_boot-ipci-defer.img" \
 	"$OUT/init_boot-wpss-supplier.img" \
 	"$OUT/init_boot-modem-start.img" \
+	"$OUT/init_boot-live-session.img" \
 	"$OUT/boot-diagnostic-ext4.img" \
 	"$OUT/boot-diagnostic-initcall-debug.img" \
 	"$OUT/Image-diagnostic-ext4.gz" \
@@ -288,6 +289,16 @@ python3 "$ROOT/scripts/verify-init-boot-modem-start.py" --self-test \
 	"$PSTORE_CONSOLE" "$OUT/restart2"
 python3 "$ROOT/scripts/verify-init-boot-modem-start.py" \
 	"$OUT/init_boot-modem-start.img" "$STOCK_INIT" "$OUT/initramfs.cpio.gz" \
+	"$STOCK_BOOT" "$STOCK_VENDOR" "$STOCK_RECOVERY" "$STOCK_CONFIG" \
+	"$WORK/src/init/initramfs.c" "$WORK/src/lib/decompress_unlz4.c" \
+	"$PSTORE_CONSOLE" "$OUT/restart2"
+python3 "$ROOT/scripts/verify-init-boot-live-session.py" --self-test \
+	"$OUT/init_boot-live-session.img" "$STOCK_INIT" "$OUT/initramfs.cpio.gz" \
+	"$STOCK_BOOT" "$STOCK_VENDOR" "$STOCK_RECOVERY" "$STOCK_CONFIG" \
+	"$WORK/src/init/initramfs.c" "$WORK/src/lib/decompress_unlz4.c" \
+	"$PSTORE_CONSOLE" "$OUT/restart2"
+python3 "$ROOT/scripts/verify-init-boot-live-session.py" \
+	"$OUT/init_boot-live-session.img" "$STOCK_INIT" "$OUT/initramfs.cpio.gz" \
 	"$STOCK_BOOT" "$STOCK_VENDOR" "$STOCK_RECOVERY" "$STOCK_CONFIG" \
 	"$WORK/src/init/initramfs.c" "$WORK/src/lib/decompress_unlz4.c" \
 	"$PSTORE_CONSOLE" "$OUT/restart2"
@@ -821,6 +832,7 @@ echo 'init_boot wlan-closure control: same stock baa33fd4 prefix and signed tail
 	echo 'init_boot ipci-defer control: same stock baa33fd4 prefix and signed tail as wlan-rfkill; unchanged corrected read-only mounts and 21-module closure; only the final qca_cld3 insmod waits at most 12 s for icnss2 platform bind and logs WPSS and icnss2 bind state before the one stock insmod; the 127-module order, USB, key-only SSH and 150 s timer are unchanged; zero .ko in cpio; negative fixtures reject a missing, duplicated, retargeted, unbounded or moved gate, earlier mount/module regressions, a planted .ko, a changed timer or image envelope/tail and all prior measured SHA including 9291c369; host-only, not a boot result'
 	echo 'init_boot wpss-supplier control: the measured #71 init with one bounded supplier phase inside the final qca_cld3 branch: smp2p.ko, pinctrl-spmi-gpio.ko and qti-fixed-regulator.ko from the pinned stock /lib/modules paths, already-loaded guard, bounded insmod, per-module result and WPSS/regulator/icnss2 bind logs before the unchanged 12 s bind gate and single WLAN insmod; the 127-module order, mounts, USB, key-only SSH and 150 s timer are unchanged; zero .ko in cpio; negative fixtures reject missing, duplicated, reordered or unbounded supplier loads, rmmod, WLAN/remoteproc reloads, modem control, gate and timer regressions, image envelope/tail damage and all measured SHA including e5b99b7c; host-only, not a boot result'
 	echo 'init_boot modem-start control: the measured #75 init with one guarded bounded phase inside the final qca_cld3 branch, after the unchanged supplier phase and before the unchanged 12 s icnss2 bind gate and single WLAN insmod: it reads remoteproc2 state with a 2 s timeout and writes start exactly once to /sys/class/remoteproc/remoteproc2/state with a 10 s timeout only while that state is offline, leaving a running modem untouched and skipping every other state, then logs the write result and the resulting state; the 127-module order, corrected read-only mounts, USB, key-only SSH and 150 s timer are unchanged; zero .ko in cpio; negative fixtures reject a missing, duplicated, moved, unguarded, retargeted or unbounded start, a stop, restart or any other remoteproc write, rmmod, a repeated WLAN or remoteproc module load, supplier, gate and timer regressions, image envelope/tail damage and every measured SHA including 5a61de0e; host-only, not a boot result'
+	echo 'init_boot live-session control: the exact measured #75 init plus one session-only log after the armed 150 s timer; no init-time modem remoteproc start, /run/keep creation or rmmod; three pinned supplier modules in order, bounded WPSS/icnss2 gate, single stock WLAN load, read-only mounts, module closures, USB/key-only SSH and RESTART2 timer unchanged; zero .ko in cpio; negative fixtures reject early keep, modem start, missing supplier or WLAN, timer regressions, module unload/reload, envelope/tail damage and all previously measured image SHAs including 560c98e5 and 5a61de0e; host-only, not a boot result'
 	echo 'stock AVB footers and hashed image prefixes match embedded metadata; vbmeta_a init_boot/vendor_boot/dtbo hashes match stock; boot is chained'
 	echo 'stock boot separate 16KiB AVB0 record hashes the shorter kernel-only prefix; stock verification flags and vbmeta_a rollback index are zero'
 	echo 'built images are not authenticated by stock vbmeta_a: no AVB footer, stock hashes do not match; bootloader policy during attempt unknown'
@@ -844,7 +856,7 @@ echo 'init_boot wlan-closure control: same stock baa33fd4 prefix and signed tail
 		init_boot-kernel-banner.img init_boot-initcall-debug.img \
 		init_boot-wlan-closure.img init_boot-wlan-rfkill.img \
 		init_boot-ipci-defer.img init_boot-wpss-supplier.img \
-		init_boot-modem-start.img \
+		init_boot-modem-start.img init_boot-live-session.img \
 		boot-diagnostic-ext4.img boot-diagnostic-initcall-debug.img \
 		Image-diagnostic-ext4.gz Image-diagnostic-initcall-debug.gz restart2 \
 		boot-hash-boundary.img boot-image-size.img init_boot.img \
