@@ -294,6 +294,22 @@ recovery-path attempt before stock rollback; the physical coordinator alone
 may authorize any future bounded test of a new evidence-backed set. Nothing in this
 repository flashes or boots the phone.
 
+## Run-29 live WLAN diagnosis (2026-10-24, #73)
+
+The run-29 coordinator session over key-only SSH on the measured
+`e5b99b7c…` init_boot measured the WPSS supplier chain directly: the absent
+`smp2p` provider of the `slave-kernel` smem-state supplier kept
+`9bb00000.remoteproc-wpss` deferred, and the fixed PMIC pinctrl/regulator
+chain kept icnss2 deferred behind it. Volatile loads of the stock
+`/lib/modules/smp2p.ko`, `pinctrl-spmi-gpio.ko` and `qti-fixed-regulator.ko`
+bound WPSS, `soc:pm3001a-s1j` and icnss2, and `wpss_boot=1` brought the WPSS
+firmware up (`WLAN FW Initialization done`) — but `wlan0` was never observed:
+icnss2 failed its driver probe on an unavailable DMS MAC service while the
+modem remoteproc was offline. A modem start and WLAN-driver retry lost SSH
+before the result could be read. No new image was built or verified for #73;
+the next blocker needs a coordinator-restored live session. See
+[BOOT.md](BOOT.md) for the full fact/hypothesis separation.
+
 ## License
 
 Upstream Linux kernel is GPL-2.0-only. Do not add proprietary firmware.
