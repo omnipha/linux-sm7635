@@ -311,8 +311,15 @@ measured #75 and #77 inits, and every reused measured SHA including `560c98e5` a
 `5a61de0e`) plus a host-only simulated-clock timer test proving that a missing
 SSH/keep triggers `RESTART2 bootloader` at 150 s while verified SSH allows the worker
 to create keep before the deadline. It is wired into `scripts/verify-bootimg.sh`.
-The reproducible image, the two open questions and the predicted outcomes are
-recorded in [BOOT.md](BOOT.md). No physical boot, `wlan0` or modem result is claimed.
+The reproducible image, the two open questions, predicted outcomes and the
+measured live-session result are recorded in [BOOT.md](BOOT.md): key-only SSH
+succeeded, `/run/keep` was set only after host-link verification, a >60 s
+modem-off baseline found no named `icnss2`/QMI probe failure and no `wlan0`;
+a single guarded `remoteproc2` start reached `running`, while `wlan0` stayed
+absent through the ~30 s check. SSH was lost before the 60 s check and the
+host saw crash/download mode `05c6:900e`; the fatal text was not captured live.
+The coordinator owns pstore capture before Android and the verified stock
+rollback, both pending. This SHA is now measured and must never be reflashed.
 
 ## Modem remoteproc start init_boot (2026-10-24, #77)
 

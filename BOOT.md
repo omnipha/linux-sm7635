@@ -1,10 +1,48 @@
-## Live-session init_boot: modem start deferred to key-only SSH (#79, host-only, 2026-10-24)
+## Live-session init_boot: modem start deferred to key-only SSH (#79, 2026-10-24)
 
-**Host result:** one session init_boot candidate built and verified; no physical
-boot, `wlan0` result or modem result is claimed. The measured #77 image
-(`560c98e5`) and the measured #75 image (`5a61de0e`) must not be reflashed. This
-issue performed no device access, flash, USB, modem control, kernel rebuild,
-DTBO/vbmeta/slot-B change or userdata work.
+**Host build result:** one session init_boot candidate built and verified.
+This SHA (`4216af26`) was subsequently physically measured in one coordinator-
+flashed session and must never be reflashed; the measured #77 image (`560c98e5`)
+and #75 image (`5a61de0e`) must not be reflashed either. The worker had only
+key-only SSH access, and performed no adb, fastboot, flash, partition or USB
+write, no kernel rebuild, DTBO/vbmeta/slot-B change or userdata work.
+
+### Live session (worker measurement, 2026-10-24; rollback pending)
+
+The physical coordinator flashed the new image to `init_boot_a` only after a
+fresh stock-chain/hash and fastboot gate, pinned `172.16.42.1/24` on the host
+NCM link and marked both gadget interfaces unmanaged in NetworkManager before
+reboot. Stock `boot_a`, `vendor_boot_a`, `dtbo_a` and `vbmeta_a` stayed unchanged.
+The `18d1:4ee2` gadget came up. Key-only SSH to `root@172.16.42.2` verified
+`uid=0`, stock 6.1.84 with the own init, `remoteproc2=offline` and no
+`/run/keep` at uptime 18.82 s; the worker created `/run/keep` only after
+verifying SSH and the host link, at uptime 31.70 s. This measured usable SSH
+session is not a claim that the later modem test succeeded.
+
+**Modem-off baseline, measured:** at uptime 50.65–122.42 s (>71 s),
+`remoteproc2=offline` and `wlan0` absent throughout; the dmesg snapshot
+remained unchanged over 65 s of polled read-only capture (1,475 lines,
+checksum `820b0391`). `[1.427950] icnss2: Platform driver probed successfully`,
+`[1.482552] qca_cld3_qca6750: Loading driver v5.2.1.94A +PANIC_ON_BUG`, and
+`[1.484485] wlan_hdd_state wlan major(495) initialized`. No named icnss2/QMI
+probe failure appeared in this baseline. This does not prove the WLAN probe
+completed, and the lack of `wlan0` is not explained by these lines alone.
+
+**One guarded start, measured:** the worker read `remoteproc2=offline` at
+uptime 170.70 s, wrote `start` once (accepted) and did not restart, stop,
+`rmmod` or reload anything. Dmesg recorded `[170.712111] remoteproc2 powering
+up`, `[170.714482] Booting fw image modem.mdt`, and `[171.688472] remoteproc2
+running`. At uptime 171.68 s (~1 s after start), 181.69 s (~11 s) and 201.69 s
+(~31 s), `remoteproc2=running` and `wlan0` absent; no new icnss2/QMI probe
+lines appeared in the captured dmesg tails. The SSH command timed out before
+the planned 60 s check, ~33–40 s after the start; the host then saw Qualcomm
+crash/download mode `05c6:900e`, with the NCM link gone. No live fatal text was
+captured. This is a lost session at approximately the known run-31 modem-stall
+boundary, **not** a measured identification of the stalled subsystem or a
+successful 60 s WLAN window. The userspace timer cannot rescue a kernel panic.
+The coordinator owns crash-mode recovery, pstore capture before stock Android,
+and the verified stock `init_boot_a` rollback; those results are pending.
+Worker session captures remain outside Git.
 
 ### Facts, separated from the hypothesis
 
@@ -58,6 +96,14 @@ remoteproc start, a restart or a module reload inside this issue.
 | `wlan0` stays absent but a named `icnss2`/QMI probe failure is logged while the modem stays `running` | The probe failure, not probe timing, is the WLAN blocker in that session. |
 | The modem repeats the stalled-initialization fatal error | The complete fatal text and the immediately preceding modem lines name the subsystem that stalled; the cause is recorded, not fixed. |
 | SSH never becomes usable | The timer should return the device to fastboot at about 150 s; a userspace timer does not cover a kernel hang or the modem panic. |
+
+Measured outcome of the live session: the modem-off baseline showed no named
+probe failure (row 1 did not occur), `wlan0` stayed absent with the modem
+`running` for the measured ~31 s (row 3 without a named failure line in the
+captured tails), and the session was lost ~33–40 s after the single start with
+the device dropping to `05c6:900e` — consistent with row 4, but the fatal text
+itself was **not** captured live, so the stalled subsystem remains unnamed until
+the coordinator's pstore capture. No second variable is authorized by this.
 
 ### Reproducible host artifact
 
