@@ -62,7 +62,11 @@ WLAN_ORDER = (
 )
 RFKILL = "rfkill.ko"
 RFKILL_SIZE = 63817
+RFKILL_SHA256 = "773ddddb360d8de4212da9a327124e97f5b8fe94626a82e44fdcfb689adabb47"
 RFKILL_PATH = "lib/modules/6.1.84-android14-11-gf4b0d69fdf34-ab12786779/kernel/net/rfkill/rfkill.ko"
+LOOP_MAX_PART = 7
+BY_NAME = {"super": "sda6", "modem_a": "sde6"}
+BY_NAME_MSG = "the measured by-name table does not place super on sda6 and modem_a on sde6"
 
 
 def load(name, module):
@@ -239,13 +243,33 @@ def verify_mounted(super_path, vendor_dlkm_root, vendor_root, system_dlkm_root, 
     order, new, already = compute_closure(files, old_order)
     sizes = {name: len(files[name]) for name in order}
     require(sum(sizes.values()) == 20464888, CLOSURE_MSG)
-    rfkill = system_dlkm_root / RFKILL_PATH
-    require(rfkill.is_file() and rfkill.stat().st_size == RFKILL_SIZE and
-            rfkill.read_bytes()[:4] == b"\x7fELF", RFKILL_MSG)
+    verify_rfkill(system_dlkm_root / RFKILL_PATH)
     link = vendor_root / "lib" / "modules"
     require(link.is_symlink() and link.readlink().as_posix() == "/vendor_dlkm/lib/modules",
             CLOSURE_MSG)
     return order, new, already, sizes
+
+
+def verify_rfkill(path):
+    rfkill = pathlib.Path(path)
+    require(rfkill.is_file(), RFKILL_MSG)
+    rfkill_bytes = rfkill.read_bytes()
+    require(len(rfkill_bytes) == RFKILL_SIZE and rfkill_bytes[:4] == b"\x7fELF" and
+            sha256(rfkill_bytes) == RFKILL_SHA256, RFKILL_MSG)
+    return rfkill_bytes
+
+
+def verify_by_name(path):
+    text = pathlib.Path(path).read_text()
+    found = {}
+    for line in text.splitlines():
+        fields = line.split()
+        if len(fields) == 10 and fields[-2] == "->" and fields[-1].startswith("/dev/block/"):
+            found[fields[-3]] = fields[-1].rsplit("/", 1)[-1]
+    for name, device in BY_NAME.items():
+        require(found.get(name) == device, BY_NAME_MSG)
+    require("vendor_a" not in found and "system_dlkm_a" not in found, BY_NAME_MSG)
+    return found
 
 
 def old_order_from_list(path):
@@ -259,9 +283,17 @@ def old_order_from_list(path):
 
 def main():
     args = sys.argv[1:]
-    require(len(args) in (1, 6) and (len(args) == 1 or args[0] == "--verify-mounted"),
+    require(len(args) in (1, 2, 6) and
+            (len(args) == 1 or
+             (len(args) == 2 and args[0] == "--verify-by-name") or
+             (len(args) == 6 and args[0] == "--verify-mounted")),
             "usage: super-wlan-closure.py [--verify-mounted SUPER VENDOR_DLKM_ROOT "
-            "VENDOR_ROOT SYSTEM_DLKM_ROOT OLD_ORDER] SUPER_IMAGE")
+            "VENDOR_ROOT SYSTEM_DLKM_ROOT OLD_ORDER] [--verify-by-name BY_NAME] SUPER_IMAGE")
+    if args[0] == "--verify-by-name":
+        found = verify_by_name(args[1])
+        print(f"by-name: super -> {found['super']}, modem_a -> {found['modem_a']}; "
+              "vendor_a and system_dlkm_a are not GPT partitions")
+        return
     if args[0] == "--verify-mounted":
         old_order = old_order_from_list(args[5])
         order, new, already, sizes = verify_mounted(args[1], args[2], args[3], args[4],
@@ -271,7 +303,8 @@ def main():
         for index, name in enumerate(order):
             tag = "new" if name in new else "recovery-loaded"
             print(f"  {index + 1:2}. {name:28} {sizes[name]:9} bytes  {tag}")
-        print(f"rfkill.ko provider: {RFKILL_PATH} ({RFKILL_SIZE} bytes, system_dlkm)")
+        print(f"rfkill.ko provider: {RFKILL_PATH} ({RFKILL_SIZE} bytes, system_dlkm, "
+              f"SHA-256 {RFKILL_SHA256[:8]})")
         print(f"closure list SHA-256: {CLOSURE_SHA256}")
         return
     with pathlib.Path(args[0]).open("rb") as handle:

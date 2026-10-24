@@ -218,6 +218,20 @@ pstore, panic and `sm7635-boot-marker` fragments. The resulting gzip payload
 (14,782,792 bytes) misses the signed-tail bound of 13,967,360 bytes, so the
 build fails closed, packages no image and records no control SHA. It is a
 negative host result, not a boot result; see [BOOT.md](BOOT.md).
+The #69 host-only control, `scripts/build-init-boot-wlan-rfkill.sh`, fixes the
+measured run-27 `vendor_a` and `system_dlkm_a` mount failures: the stock kernel's
+`loop.max_part=7` means loop device minors cannot equal loop indexes. It derives
+loop major:minor from `/sys/block/loopN/dev`, probes erofs/ext4 magic and mounts
+the same three verified super extents read-only. `system_dlkm_a` supplies the
+SHA-pinned `rfkill.ko` before `cfg80211.ko`; `vendor_a` is mounted read-only,
+and the firmware directory is supplied separately by the measured by-name
+`modem_a` (`/dev/block/sde6`, vfat), mounted read-only at
+`/vendor/firmware_mnt`. The unchanged 21-module order and capped logging expose
+mount, firmware, module and wlan results. The frozen run-24 init, timer and
+stock image envelope are otherwise unchanged. `scripts/verify-init-boot-wlan-rfkill.py`
+is wired into `scripts/verify-bootimg.sh` with fail-closed negative fixtures,
+including absent rfkill, guessed loop minors and a repeated `2faab7e2` SHA.
+This is a host control, not a boot result; see [BOOT.md](BOOT.md).
 The #67 host-only control, `scripts/build-init-boot-wlan-closure.sh`, starts
 from the frozen run-24 #53 init and adds exactly one `wlan-init` phase before
 `console ready`: it checks `/dev/block/sda6` against the measured super size and
