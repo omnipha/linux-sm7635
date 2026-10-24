@@ -218,6 +218,21 @@ pstore, panic and `sm7635-boot-marker` fragments. The resulting gzip payload
 (14,782,792 bytes) misses the signed-tail bound of 13,967,360 bytes, so the
 build fails closed, packages no image and records no control SHA. It is a
 negative host result, not a boot result; see [BOOT.md](BOOT.md).
+The #67 host-only control, `scripts/build-init-boot-wlan-closure.sh`, starts
+from the frozen run-24 #53 init and adds exactly one `wlan-init` phase before
+`console ready`: it checks `/dev/block/sda6` against the measured super size and
+the pinned logical-partition metadata, mounts `vendor_dlkm_a`, `vendor_a` and
+`system_dlkm_a` read-only, and `insmod`s the 21-module dependency-ordered stock
+WLAN closure (the 20-module `vendor_dlkm` closure of `qcom_q6v5_pas`,
+`icnss2`, `qca_cld3_qca6750`, `cnss_plat_ipc_qmi_svc` and `qrtr-smd`, plus
+`rfkill.ko` from `system_dlkm`) with per-module result lines and capped read-only
+`wlan0`/`iw`/`dmesg`/firmware-name logging. The 127-module order, the single
+`peripheral` write, the 40 × 0.25 s UDC wait, the 150 s `/run/keep` timer,
+`bin/restart2`, the NCM+ECM functions and the key-only sshd are unchanged, and
+no `.ko` enters `init_boot`. `scripts/verify-init-boot-wlan-closure.py`, run by
+`scripts/verify-bootimg.sh`, fails closed with negative fixtures and rejects
+every repeated SHA including `995aaca3`. It is a host control, not a boot
+result; see [BOOT.md](BOOT.md).
 The #53 host-only control, `scripts/build-init-boot-static-address.sh`, starts
 from the frozen #51 init (`initramfs/init-51-peripheral-mode`, so `9f89fe8d…`
 still rebuilds) and stops discarding the two `ip link set` and two `ip addr add`
