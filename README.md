@@ -218,6 +218,19 @@ pstore, panic and `sm7635-boot-marker` fragments. The resulting gzip payload
 (14,782,792 bytes) misses the signed-tail bound of 13,967,360 bytes, so the
 build fails closed, packages no image and records no control SHA. It is a
 negative host result, not a boot result; see [BOOT.md](BOOT.md).
+The #71 host-only control, `scripts/build-init-boot-ipci-defer.sh`, keeps the
+measured #69 init (`9291c369…`, never reflash) and adds exactly one bounded bind
+gate before the final `qca_cld3_qca6750.ko` insmod: run 28 showed
+`pld_register_driver:305:: Fail to register ipci driver` because `__icnss_register_driver`
+returns `-EAGAIN` while icnss2 has not finished probing behind the strict
+`fw_devlink` supplier `9bb00000.remoteproc-wpss`. The gate waits at most 12 s for
+`/sys/bus/platform/devices/17110040.qcom,wcn6750/driver`, then logs the WPSS and
+icnss2 platform-bind state before the one stock insmod. Everything else,
+including the 21-module closure, mounts, 150 s timer and USB/SSH path, is
+unchanged. `scripts/verify-init-boot-ipci-defer.py` is wired into
+`scripts/verify-bootimg.sh` with fail-closed negative fixtures, including a
+removed, duplicated, retargeted or unbounded gate and a repeated `9291c369` SHA.
+This is a host control, not a boot result; see [BOOT.md](BOOT.md).
 The #69 host-only control, `scripts/build-init-boot-wlan-rfkill.sh`, fixes the
 measured run-27 `vendor_a` and `system_dlkm_a` mount failures: the stock kernel's
 `loop.max_part=7` means loop device minors cannot equal loop indexes. It derives
