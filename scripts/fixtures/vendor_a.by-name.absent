@@ -1,0 +1,4 @@
+total 0
+lrwxrwxrwx 1 root root 15 1970-02-02 03:50 modem_a -> /dev/block/sde6
+lrwxrwxrwx 1 root root 15 1970-02-02 03:50 super -> /dev/block/sda7
+lrwxrwxrwx 1 root root 16 1970-02-02 03:50 vendor_a -> /dev/block/sda7
