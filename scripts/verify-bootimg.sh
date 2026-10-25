@@ -52,6 +52,7 @@ for artifact in "$OUT/boot.img" "$OUT/boot-stock-kernel.img" "$OUT/boot-full-foo
 	"$OUT/init_boot-wpss-supplier.img" \
 	"$OUT/init_boot-modem-start.img" \
 	"$OUT/init_boot-live-fatal-stream.img" \
+	"$OUT/init_boot-retry-marker.img" \
 	"$OUT/boot-diagnostic-ext4.img" \
 	"$OUT/boot-diagnostic-initcall-debug.img" \
 	"$OUT/Image-diagnostic-ext4.gz" \
@@ -299,6 +300,16 @@ python3 "$ROOT/scripts/verify-init-boot-live-fatal-stream.py" --self-test \
 	"$PSTORE_CONSOLE" "$OUT/restart2"
 python3 "$ROOT/scripts/verify-init-boot-live-fatal-stream.py" \
 	"$OUT/init_boot-live-fatal-stream.img" "$STOCK_INIT" "$OUT/initramfs.cpio.gz" \
+	"$STOCK_BOOT" "$STOCK_VENDOR" "$STOCK_RECOVERY" "$STOCK_CONFIG" \
+	"$WORK/src/init/initramfs.c" "$WORK/src/lib/decompress_unlz4.c" \
+	"$PSTORE_CONSOLE" "$OUT/restart2"
+python3 "$ROOT/scripts/verify-init-boot-retry-marker.py" --self-test \
+	"$OUT/init_boot-retry-marker.img" "$STOCK_INIT" "$OUT/initramfs.cpio.gz" \
+	"$STOCK_BOOT" "$STOCK_VENDOR" "$STOCK_RECOVERY" "$STOCK_CONFIG" \
+	"$WORK/src/init/initramfs.c" "$WORK/src/lib/decompress_unlz4.c" \
+	"$PSTORE_CONSOLE" "$OUT/restart2"
+python3 "$ROOT/scripts/verify-init-boot-retry-marker.py" \
+	"$OUT/init_boot-retry-marker.img" "$STOCK_INIT" "$OUT/initramfs.cpio.gz" \
 	"$STOCK_BOOT" "$STOCK_VENDOR" "$STOCK_RECOVERY" "$STOCK_CONFIG" \
 	"$WORK/src/init/initramfs.c" "$WORK/src/lib/decompress_unlz4.c" \
 	"$PSTORE_CONSOLE" "$OUT/restart2"
@@ -833,6 +844,7 @@ echo 'init_boot wlan-closure control: same stock baa33fd4 prefix and signed tail
 	echo 'init_boot wpss-supplier control: the measured #71 init with one bounded supplier phase inside the final qca_cld3 branch: smp2p.ko, pinctrl-spmi-gpio.ko and qti-fixed-regulator.ko from the pinned stock /lib/modules paths, already-loaded guard, bounded insmod, per-module result and WPSS/regulator/icnss2 bind logs before the unchanged 12 s bind gate and single WLAN insmod; the 127-module order, mounts, USB, key-only SSH and 150 s timer are unchanged; zero .ko in cpio; negative fixtures reject missing, duplicated, reordered or unbounded supplier loads, rmmod, WLAN/remoteproc reloads, modem control, gate and timer regressions, image envelope/tail damage and all measured SHA including e5b99b7c; host-only, not a boot result'
 	echo 'init_boot modem-start control: the measured #75 init with one guarded bounded phase inside the final qca_cld3 branch, after the unchanged supplier phase and before the unchanged 12 s icnss2 bind gate and single WLAN insmod: it reads remoteproc2 state with a 2 s timeout and writes start exactly once to /sys/class/remoteproc/remoteproc2/state with a 10 s timeout only while that state is offline, leaving a running modem untouched and skipping every other state, then logs the write result and the resulting state; the 127-module order, corrected read-only mounts, USB, key-only SSH and 150 s timer are unchanged; zero .ko in cpio; negative fixtures reject a missing, duplicated, moved, unguarded, retargeted or unbounded start, a stop, restart or any other remoteproc write, rmmod, a repeated WLAN or remoteproc module load, supplier, gate and timer regressions, image envelope/tail damage and every measured SHA including 5a61de0e; host-only, not a boot result'
 	echo 'init_boot live-fatal-stream control: the exact measured #75 init plus one #81 session-only log after the armed 150 s timer, forcing a SHA distinct from the reused measured 4216af26 #79 session image and every other measured SHA; no init-time remoteproc start, /run/keep creation, rmmod or reload; three pinned supplier modules in order, bounded WPSS/icnss2 bind gate, read-only mounts, single stock WLAN load, module closures, USB/key-only SSH path and RESTART2 timer unchanged; zero .ko in cpio; negative fixtures reject a missing, duplicated, moved or reworded marker, the #79 marker text, early keep, init-time modem start, the reused #75, #77 and #79 inits, timer regressions, module unload/reload, envelope/tail damage and all measured SHAs including 4216af26; host-only, not a boot result'
+	echo 'init_boot retry-marker control: the exact measured #81 init (ae2ccff7) with only the session marker reworded to the single #83 capture-gated retry log, forcing a SHA distinct from the measured ae2ccff7 image and every other measured SHA; no init-time remoteproc start, /run/keep creation, rmmod or reload; supplier phase and order, bounded WPSS/icnss2 bind gate, read-only mounts, single stock WLAN load, module closures, USB/key-only SSH path and the 150 s RESTART2 timer unchanged; zero .ko in cpio; negative fixtures reject a missing, duplicated, moved, reworded or renumbered marker, the reused #81 and #79 marker texts, early keep, init-time modem start, the rebuilt measured ae2ccff7 image and its SHA, the reused #75, #77, #79 and #81 inits, timer regressions, module unload/reload, envelope/tail damage and all measured SHAs including ae2ccff7; host-only, not a boot result'
 	echo 'stock AVB footers and hashed image prefixes match embedded metadata; vbmeta_a init_boot/vendor_boot/dtbo hashes match stock; boot is chained'
 	echo 'stock boot separate 16KiB AVB0 record hashes the shorter kernel-only prefix; stock verification flags and vbmeta_a rollback index are zero'
 	echo 'built images are not authenticated by stock vbmeta_a: no AVB footer, stock hashes do not match; bootloader policy during attempt unknown'
@@ -857,6 +869,7 @@ echo 'init_boot wlan-closure control: same stock baa33fd4 prefix and signed tail
 		init_boot-wlan-closure.img init_boot-wlan-rfkill.img \
 		init_boot-ipci-defer.img init_boot-wpss-supplier.img \
 		init_boot-modem-start.img init_boot-live-fatal-stream.img \
+		init_boot-retry-marker.img \
 		boot-diagnostic-ext4.img boot-diagnostic-initcall-debug.img \
 		Image-diagnostic-ext4.gz Image-diagnostic-initcall-debug.gz restart2 \
 		boot-hash-boundary.img boot-image-size.img init_boot.img \
