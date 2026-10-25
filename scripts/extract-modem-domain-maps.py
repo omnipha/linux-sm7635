@@ -8,7 +8,7 @@ import struct
 import sys
 import tempfile
 
-SECTOR = 512
+BOOT_HEADER_BYTES = 512
 MAX_JSN_BYTES = 1 << 20
 MAX_INVENTORY = 200000
 MAX_DEPTH = 16
@@ -19,14 +19,15 @@ TOP_FLAT_KEYS = {"soc", "domain", "subdomain", "provider", "sr_version", "sr_ser
 DOMAIN_REQUIRED = {"soc", "domain", "subdomain"}
 DOMAIN_OPTIONAL = {"qmi_instance_id"}
 SERVICE_REQUIRED = {"provider", "service"}
-SERVICE_OPTIONAL = {"instance", "qmi_instance_id", "service_data_valid", "service_data"}
-INT_KEYS = {"sr_version", "instance", "qmi_instance_id", "service_data"}
+SERVICE_OPTIONAL = {"instance", "qmi_instance_id", "service_data_valid",
+                     "service_data", "dcomment"}
+MAX_DCOMMENT = 512
 MANIFEST_NAME = "extraction-manifest.txt"
 MAPS_NAME = "domain-maps.json"
 CONFIG_NAME = "pd-mapper.conf.json"
 NON_STOCK_NOTE = (
-    "stock_verified stays false until omnipha/linux-sm7635#89 hash-pins the real "
-    "modem_a partition; this file is never a flashable image"
+    "stock_verified is always false in generated outputs; #89 hash-pinned the "
+    "modem_a partition independently, and this file is never a flashable image"
 )
 
 
@@ -46,20 +47,25 @@ def sha256_file(path):
 def short_checksum(raw11):
     total = 0
     for byte in raw11:
-        total = ((total & 1) << 7) + (total >> 1) + byte
-    return total & 0xFF
+        total = (((total & 1) << 7) + (total >> 1) + byte) & 0xFF
+    return total
 
 
 class FatImage:
     def __init__(self, path):
         self.size = path.stat().st_size
-        require(self.size >= 33 * SECTOR and self.size % SECTOR == 0,
-                "dump is not a non-zero whole-512-byte image")
+        require(self.size >= BOOT_HEADER_BYTES,
+                "dump is smaller than a FAT boot header")
         self.stream = open(path, "rb")
-        self.head = self.read_at(0, 512)
-        require(self.head[510:512] == b"\x55\xaa",
-                "dump has no FAT boot signature 55 AA at offset 510")
+        self.head = self.read_at(0, BOOT_HEADER_BYTES)
         bps = struct.unpack_from("<H", self.head, 11)[0]
+        require(bps in (512, 1024, 2048, 4096),
+                "FAT bytes-per-sector is not one of 512/1024/2048/4096")
+        require(self.size >= bps, "dump is smaller than one FAT boot sector")
+        boot = self.head if bps == 512 else self.read_at(0, bps)
+        require(boot[510:512] == b"\x55\xaa" or boot[bps - 2:bps] == b"\x55\xaa",
+                "dump has no FAT boot signature 55 AA at offset 510 or the "
+                f"{bps}-byte boot-sector end")
         spc = self.head[13]
         reserved = struct.unpack_from("<H", self.head, 14)[0]
         nfats = self.head[16]
@@ -69,15 +75,13 @@ class FatImage:
         tot32 = struct.unpack_from("<I", self.head, 32)[0]
         fat32_size = struct.unpack_from("<I", self.head, 36)[0]
         self.root_cluster = struct.unpack_from("<I", self.head, 44)[0]
-        require(bps in (512, 1024, 2048, 4096),
-                "FAT bytes-per-sector is not one of 512/1024/2048/4096")
         require(spc >= 1 and spc & (spc - 1) == 0,
                 "FAT sectors-per-cluster is not a power of two")
         require(reserved >= 1 and nfats in (1, 2),
                 "FAT reserved-sector or table count is implausible")
         total = tot16 if tot16 else tot32
-        require(total > 0 and total * bps <= self.size,
-                "FAT total-sector count does not fit inside the dump")
+        require(total > 0 and total * bps == self.size,
+                "FAT total-sector count does not match the dump size exactly")
         fat_size = fat16_size if fat16_size else fat32_size
         require(fat_size > 0, "FAT table size is zero")
         self.is32 = fat16_size == 0
@@ -270,6 +274,27 @@ def check_str(container, key, where):
     return value
 
 
+def check_sr_version(obj, where):
+    # sr_version is optional; the stock modem_a dump (#92, dump sha256
+    # 08a5caf8…) carries it as {"major": 1, "minor": 1, "patch": 1} in every
+    # .jsn, and upstream pd_load_map() ignores the key entirely. Accept the
+    # stock object form and the historical plain non-negative integer; any
+    # other shape stays a hard failure.
+    if "sr_version" not in obj:
+        return None
+    value = obj["sr_version"]
+    if isinstance(value, bool):
+        raise ValueError(f"{where} sr_version is not an int or version object")
+    if isinstance(value, int):
+        check_int(obj, "sr_version", where)
+        return value
+    if isinstance(value, dict) and set(value) == {"major", "minor", "patch"}:
+        return {"major": check_int(value, "major", f"{where} sr_version"),
+                "minor": check_int(value, "minor", f"{where} sr_version"),
+                "patch": check_int(value, "patch", f"{where} sr_version")}
+    raise ValueError(f"{where} sr_version is not an int or version object")
+
+
 def validate_jsn(path, data):
     try:
         text = data.decode("utf-8")
@@ -306,8 +331,7 @@ def validate_jsn(path, data):
         subdomain = check_str(obj, "subdomain", where)
         provider = check_str(obj, "provider", where)
         qmi_instance_id = None
-    sr_version = (check_int(obj, "sr_version", where)
-                  if "sr_version" in obj else None)
+    sr_version = check_sr_version(obj, where)
     services = obj["sr_service"]
     require(isinstance(services, list) and services,
             f"{where} sr_service is not a non-empty array")
@@ -325,6 +349,12 @@ def validate_jsn(path, data):
         for key in ("instance", "qmi_instance_id", "service_data"):
             if key in service:
                 entry[key] = check_int(service, key, s_where)
+        if "dcomment" in service:
+            comment = service["dcomment"]
+            require(isinstance(comment, str) and len(comment) <= MAX_DCOMMENT,
+                    f"{s_where} dcomment is not a string of at most "
+                    f"{MAX_DCOMMENT} bytes")
+            entry["dcomment"] = comment
         if "service_data_valid" in service:
             valid = check_int(service, "service_data_valid", s_where)
             require(valid in (0, 1), f"{s_where} service_data_valid is not 0 or 1")

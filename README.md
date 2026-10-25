@@ -284,18 +284,22 @@ one field, the gzip newc payload, the empty kernel, the unchanged signed tail
 from offset 2,121,728 and the fixed 8,388,608-byte size. It is a host control,
 not a boot result.
 
-## Read-only `modem_a` domain-map handoff (2026-10-25, #88)
+## Read-only `modem_a` domain-map handoff (2026-10-25, #88, #92)
 
-`docs/modem-a-acquisition-and-extraction.md` prepares, but does not execute,
-the physical coordinator's single read-only `modem_a` acquisition for #89 and
-the fail-closed host extractor for a later supplied dump.
+`docs/modem-a-acquisition-and-extraction.md` records the physical coordinator's
+single read-only `modem_a` acquisition for #89 and the fail-closed host
+extractor. The acquisition ran once: 367,001,600 bytes, SHA-256
+`08a5caf81d50a0a2450dee77cb74ba71a215f9009aba55594912373dd2de843a`, quarantined
+outside Git, device unchanged. #92 corrected the #88 tooling against that dump
+(4096-byte FAT16 sectors, the LFN short-name checksum mask bug, the stock
+`sr_version` object form) and extracted six validated `.jsn` under `image/`.
 `scripts/extract-modem-domain-maps.py` reads only a supplied FAT image, lists
 and hashes every `.jsn`, validates the evidenced pd-mapper schema, and derives
 a JSON config only from validated data. `scripts/test-modem-domain-map-extraction.sh`
-exercises it with synthetic non-stock, non-flashable fixtures. No real stock
-maps are claimed until #89 hash-pins the partition. The independent
-`msm_sharedmem.ko`/rmtfs evidence from #85 stays separate from the #86
-pd-mapper/tftp variable.
+exercises it with synthetic non-stock, non-flashable fixtures, including a
+4096-byte-sector FAT16 fixture and the LFN case that aborted the stock run.
+The independent `msm_sharedmem.ko`/rmtfs evidence from #85 stays separate from
+the #86 pd-mapper/tftp variable.
 
 The first `fastboot boot` of the earlier single `boot.img` returned
 `Booting OKAY` but never enumerated the gadget. A header-v4 boot takes its
