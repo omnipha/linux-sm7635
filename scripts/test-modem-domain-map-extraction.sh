@@ -132,6 +132,32 @@ expect_fail in-repo-output python3 "$EXTRACT" "$WORK/in-repo.img" --out "$HERE/.
 echo "negative: repeated run into a non-empty output directory"
 expect_fail reuse python3 "$EXTRACT" "$WORK/good.img" --out "$WORK/out-good" --expect-synthetic
 
+# #92 additions: 4096-byte-sector FAT16 geometry as measured on the real
+# modem_a dump, the LFN short-alias that aborted the stock run, and
+# negative controls for both the geometry and the LFN checksum.
+python3 "$MAKE" "$WORK/4k-lfn.img" 4k-lfn
+expect_pass 4k-lfn python3 "$EXTRACT" "$WORK/4k-lfn.img" --out "$WORK/out-4k-lfn" --expect-synthetic
+for field in 'fat_type=16' 'jsn_under_image=2' 'providers=2'; do
+    grep -q "^$field\$" "$WORK/out-4k-lfn/extraction-manifest.txt" ||
+        { echo "FAIL: 4096-byte-sector fixture must record $field"; failures=$((failures + 1)); }
+done
+[ -f "$WORK/out-4k-lfn/maps/image/nested/second.jsn" ] ||
+    { echo "FAIL: 4096-byte-sector fixture must extract nested .jsn under maps/"; failures=$((failures + 1)); }
+grep -q '"major": 1' "$WORK/out-4k-lfn/pd-mapper.conf.json" ||
+    { echo "FAIL: stock {major,minor,patch} sr_version object must survive validation"; failures=$((failures + 1)); }
+
+python3 "$MAKE" "$WORK/4k-no-image.img" 4k-no-image
+expect_fail 4k-no-image python3 "$EXTRACT" "$WORK/4k-no-image.img" --out "$WORK/out-4k-no-image" --expect-synthetic
+python3 "$MAKE" "$WORK/4k-bad-lfn.img" 4k-bad-lfn
+expect_fail 4k-bad-lfn python3 "$EXTRACT" "$WORK/4k-bad-lfn.img" --out "$WORK/out-4k-bad-lfn" --expect-synthetic
+
+python3 "$MAKE" "$WORK/lfn.img" lfn
+expect_pass lfn python3 "$EXTRACT" "$WORK/lfn.img" --out "$WORK/out-lfn" --expect-synthetic
+grep -q '^jsn_under_image=2$' "$WORK/out-lfn/extraction-manifest.txt" ||
+    { echo "FAIL: LFN-aliased image/ directory must still yield two .jsn"; failures=$((failures + 1)); }
+python3 "$MAKE" "$WORK/bad-lfn.img" bad-lfn
+expect_fail bad-lfn python3 "$EXTRACT" "$WORK/bad-lfn.img" --out "$WORK/out-bad-lfn" --expect-synthetic
+
 if [ "$failures" -eq 0 ]; then
     echo "ALL SYNTHETIC TESTS PASSED"
     exit 0
