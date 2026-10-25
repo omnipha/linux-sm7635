@@ -1,3 +1,34 @@
+## Run 37: WPSS FW_READY reached, wlan0 absent (#101, outcome b, 2026-10-25)
+
+**Measurement source:** the physical coordinator's #101 comment at
+2026-10-25T17:38:43Z (run 37), with host-only evidence under
+`~/phone-second-life-data/mb003/pstore/attempt-20261025-1832-initboot-wpssboot/`
+(`capture/kmsg.log:2466-2488`). The distinct-SHA
+`init_boot-wpss-boot.img` (`d9d8d2b8268f1fcc8e3212b7943bf62c5a5b4b7e20f258acf80cbc76d5508076`)
+was flashed to `init_boot_a` only after the 16/16 manifest, 5/5 on-device
+stock hash proof and fresh fastboot gate. Capture selftest passed in 1.336 s;
+key-only SSH and the single guarded `remoteproc2` start held the modem with no
+DOG fatal. DMS connected before the one-shot `/bin/wpss-once` invocation; all
+preconditions were green.
+
+**Outcome (b):** `remoteproc3` (`9bb00000.remoteproc-wpss`) powered up, booted
+`qca6750/wpss.mdt` (4844 B), and became `running`. `icnss2` logged
+`WLAN FW Initialization done: 0x680483` and `WLAN FW is ready: 0x480487`:
+`ICNSS_FW_READY` was reached. WPSS and modem remained `running` through the
+full +90 s observation window without fatal or SSH loss, but `wlan0` was
+absent. The coordinator measured `qca_cld3_qca6750` loading ~255 s before
+FW_READY and not receiving that event; the next single blocker is inside
+**qca_cld3 driver registration/probe ordering**, not WPSS firmware bring-up.
+No reprobe, module reload or second WPSS attempt was performed. This outcome
+does not establish an association/`wpa_supplicant` question yet.
+
+`d9d8d2b8` is now measured and **never-reflash**. `bf2089c4`, `8dddb8c7`,
+`35866d56`, `ae2ccff7`, `4216af26` and all earlier measured SHAs remain
+never-reflash without exception. At the time of the coordinator's comment,
+the SSH session and capture were still live with `/run/keep`; the stock
+`init_boot_a` rollback (`baa33fd4`) was pending and is **not claimed here**.
+Rollback remains solely the physical coordinator's operation.
+
 ## WLAN reprobe after the modem holds: vetted unsafe, no image (#99, host-only, 2026-10-25)
 
 **Host result: no safe single reprobe is establishable from the existing
@@ -185,6 +216,8 @@ capture selftest, confirms the #96 preconditions, performs the single guarded
 `remoteproc2` start, lets the modem hold past +60 s and DMS connect (up to
 +150 s), sets `/run/keep` so the 150 s timer stays disarmed for the session
 window, then invokes `/bin/wpss-once` once with continuous host capture.
+The measured result is recorded above as run 37, outcome (b): FW_READY
+reached, `wlan0` absent, qca_cld3 probe ordering named as the next blocker.
 (a) `ICNSS_FW_READY` reached and `wlan0` appears (`WLAN FW is ready` kmsg,
 `icnss_call_driver_probe` on the FW_READY event, `main.c:1452-1493`) — the
 DMS/WPSS dependency is confirmed; next question association/wpa_supplicant.
@@ -194,10 +227,10 @@ DMS/WPSS dependency is confirmed; next question association/wpa_supplicant.
 error / remoteproc3 crash), the modem losing `running`, or any new fatal —
 record verbatim, stop, no second attempt. A reject-exit of the helper without a
 write documents a missing precondition and closes the issue on that gap without
-a second attempt. Either physical result requires the coordinator's measured
-recovery and the verified five-partition stock rollback. `d9d8d2b8` and every
-previously measured SHA are never-reflash after the run. The issue stays open
-until the outcome and rollback proof are recorded.
+a second attempt. Any physical result requires the coordinator's measured
+recovery and verified five-partition stock rollback. `d9d8d2b8` and every
+previously measured SHA are never-reflash after the run. The run-37 outcome
+is recorded above; rollback was still pending in the coordinator's comment.
 
 ## Stock sharedmem + pinned rmtfs session init_boot (#96, host-only, 2026-10-25)
 
