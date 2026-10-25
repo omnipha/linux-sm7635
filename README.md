@@ -284,6 +284,19 @@ one field, the gzip newc payload, the empty kernel, the unchanged signed tail
 from offset 2,121,728 and the fixed 8,388,608-byte size. It is a host control,
 not a boot result.
 
+## Read-only `modem_a` domain-map handoff (2026-10-25, #88)
+
+`docs/modem-a-acquisition-and-extraction.md` prepares, but does not execute,
+the physical coordinator's single read-only `modem_a` acquisition for #89 and
+the fail-closed host extractor for a later supplied dump.
+`scripts/extract-modem-domain-maps.py` reads only a supplied FAT image, lists
+and hashes every `.jsn`, validates the evidenced pd-mapper schema, and derives
+a JSON config only from validated data. `scripts/test-modem-domain-map-extraction.sh`
+exercises it with synthetic non-stock, non-flashable fixtures. No real stock
+maps are claimed until #89 hash-pins the partition. The independent
+`msm_sharedmem.ko`/rmtfs evidence from #85 stays separate from the #86
+pd-mapper/tftp variable.
+
 The first `fastboot boot` of the earlier single `boot.img` returned
 `Booting OKAY` but never enumerated the gadget. A header-v4 boot takes its
 generic ramdisk from `init_boot` and its DTB and vendor command line from
