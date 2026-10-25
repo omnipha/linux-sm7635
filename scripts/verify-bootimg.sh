@@ -56,6 +56,7 @@ for artifact in "$OUT/boot.img" "$OUT/boot-stock-kernel.img" "$OUT/boot-full-foo
 	"$OUT/init_boot-retry-marker.img" \
 	"$OUT/init_boot-pdmapper-tqftpserv.img" \
 	"$OUT/init_boot-rmtfs-sharedmem.img" \
+	"$OUT/init_boot-wpss-boot.img" \
 	"$OUT/rmtfs" "$OUT/msm_sharedmem.ko" \
 	"$OUT/boot-diagnostic-ext4.img" \
 	"$OUT/boot-diagnostic-initcall-debug.img" \
@@ -358,6 +359,22 @@ python3 "$ROOT/scripts/verify-init-boot-rmtfs-sharedmem.py" --self-test \
 	"$MAPS"
 python3 "$ROOT/scripts/verify-init-boot-rmtfs-sharedmem.py" \
 	"$OUT/init_boot-rmtfs-sharedmem.img" "$OUT/init_boot-pdmapper-tqftpserv.img" \
+	"$STOCK_INIT" "$OUT/initramfs.cpio.gz" \
+	"$STOCK_BOOT" "$STOCK_VENDOR" "$STOCK_RECOVERY" "$STOCK_CONFIG" \
+	"$WORK/src/init/initramfs.c" "$WORK/src/lib/decompress_unlz4.c" \
+	"$PSTORE_CONSOLE" "$OUT/restart2" "$OUT/pd-mapper" "$OUT/tqftpserv" \
+	"$OUT/rmtfs" "$OUT/msm_sharedmem.ko" "$HOME/phone-second-life-data/mb003/by-name.txt" \
+	"$MAPS"
+python3 "$ROOT/scripts/verify-init-boot-wpss-boot.py" --self-test \
+	"$OUT/init_boot-wpss-boot.img" "$OUT/init_boot-rmtfs-sharedmem.img" \
+	"$STOCK_INIT" "$OUT/initramfs.cpio.gz" \
+	"$STOCK_BOOT" "$STOCK_VENDOR" "$STOCK_RECOVERY" "$STOCK_CONFIG" \
+	"$WORK/src/init/initramfs.c" "$WORK/src/lib/decompress_unlz4.c" \
+	"$PSTORE_CONSOLE" "$OUT/restart2" "$OUT/pd-mapper" "$OUT/tqftpserv" \
+	"$OUT/rmtfs" "$OUT/msm_sharedmem.ko" "$HOME/phone-second-life-data/mb003/by-name.txt" \
+	"$MAPS"
+python3 "$ROOT/scripts/verify-init-boot-wpss-boot.py" \
+	"$OUT/init_boot-wpss-boot.img" "$OUT/init_boot-rmtfs-sharedmem.img" \
 	"$STOCK_INIT" "$OUT/initramfs.cpio.gz" \
 	"$STOCK_BOOT" "$STOCK_VENDOR" "$STOCK_RECOVERY" "$STOCK_CONFIG" \
 	"$WORK/src/init/initramfs.c" "$WORK/src/lib/decompress_unlz4.c" \
@@ -898,6 +915,7 @@ echo 'init_boot wlan-closure control: same stock baa33fd4 prefix and signed tail
 	echo 'init_boot retry-marker control: the exact measured #81 init (ae2ccff7) with only the session marker reworded to the single #83 capture-gated retry log, forcing a SHA distinct from the measured ae2ccff7 image and every other measured SHA; no init-time remoteproc start, /run/keep creation, rmmod or reload; supplier phase and order, bounded WPSS/icnss2 bind gate, read-only mounts, single stock WLAN load, module closures, USB/key-only SSH path and the 150 s RESTART2 timer unchanged; zero .ko in cpio; negative fixtures reject a missing, duplicated, moved, reworded or renumbered marker, the reused #81 and #79 marker texts, early keep, init-time modem start, the rebuilt measured ae2ccff7 image and its SHA, the reused #75, #77, #79 and #81 inits, timer regressions, module unload/reload, envelope/tail damage and all measured SHAs including ae2ccff7; host-only, not a boot result'
 	echo 'init_boot pdmapper-tqftpserv control (#86): from the exact run-34 #83 init (35866d56), only the marker reworded and one QRTR-service phase after SSH and before console ready; static aarch64 pd-mapper and tqftpserv are packaged with six byte-exact #89 stock .jsn maps, runtime hashes and process/log status under /run. No init-time remoteproc control; the coordinator must prove capture and QRTR bind before one guarded remoteproc2 start. Same timer, module order, mounts and WLAN/USB path, no rmtfs/sharedmem. Header/prefix, LZ4 envelope, zero gap and stock signed tail verified; negative fixtures reject missing/altered/nonexecutable services or stock maps, missing/moved/altered startup/log phase and all measured SHAs including 35866d56. Host-only, not a boot result.'
 	echo 'init_boot rmtfs-sharedmem control (#96): from the exact run-35 #86 init (8dddb8c7), the marker reworded and one rmtfs/sharedmem phase after the unchanged #86 QRTR phase and before console ready. A reconstruction step before the byte-identical #86 phase unpacks the three pinned static services (pd-mapper 40acf0b0, tqftpserv 4eacb4ae, rmtfs d66204e7) from xz and checks each hash, so the #86 phase still runs the exact #95 binaries. The new phase loads the stock vendor_dlkm_a msm_sharedmem.ko (e9216dcb) as-is from the read-only vendor_dlkm mount (not shipped, not rebuilt), records whether the sharedmem client device and the kernel "Device created for client rmtfs" line appear, links /boot/modemst1 -> sdf2 and /boot/modemst2 -> sdf3 from the measured by-name table, and starts rmtfs -r -P -o /boot (read-only shadow, fsc/fsg unexposed) logging its QRTR publish to /run/rmtfs.log and /run/rmtfs.status. No init-time remoteproc start. Header/prefix, LZ4 envelope, zero gap and stock signed tail verified; negative fixtures reject missing/altered/nonexecutable services, the stock module, missing/moved/reordered phases, missing backing links, a removed QRTR-publish check, an init-time remoteproc start and all measured SHAs including 8dddb8c7, 35866d56, ae2ccff7 and 4216af26. Host-only, not a boot result.'
+	echo 'init_boot wpss-boot control (#101): from the exact run-36 #96 image (bf2089c4), the session init and every packaged service are byte-exact; the only cpio delta is one dormant helper bin/wpss-once (16d4747e, 2390 B, mode 0755) that the physical coordinator may execute once over key-only SSH after the guarded remoteproc2 start holds and QMI DMS has connected. The helper re-checks remoteproc3=9bb00000.remoteproc-wpss offline and remoteproc2=4080000.remoteproc-mss running, the /run/qrtr-services.status and /run/rmtfs.status published markers, icnss2 bound at 17110040.qcom,wcn6750, the read-only vfat modem_a mount in /proc/mounts and all 13 stock qca6750/wpss.* firmware files, arms a /run/wpss-once.attempted one-shot marker and performs exactly one bounded stock wpss_boot=1 write to /sys/kernel/icnss/wpss_boot (timeout -k 1 3), logging before/after remoteproc states to kmsg. No init-time or helper-side remoteproc state write, no rmmod/insmod, no module reload, no second attempt. Header/prefix, LZ4 envelope (2095480/2117632 B), zero gap and stock signed tail verified; negative fixtures reject removed/altered/non-executable triggers, run-36 reuse, a remoteproc-state rewrite, a weakened precondition, a removed timeout, init mutations and all measured SHAs including bf2089c4, 8dddb8c7, 35866d56, ae2ccff7 and 4216af26. Host-only, not a boot result.'
 	echo 'stock AVB footers and hashed image prefixes match embedded metadata; vbmeta_a init_boot/vendor_boot/dtbo hashes match stock; boot is chained'
 	echo 'stock boot separate 16KiB AVB0 record hashes the shorter kernel-only prefix; stock verification flags and vbmeta_a rollback index are zero'
 	echo 'built images are not authenticated by stock vbmeta_a: no AVB footer, stock hashes do not match; bootloader policy during attempt unknown'
@@ -925,6 +943,7 @@ echo 'init_boot wlan-closure control: same stock baa33fd4 prefix and signed tail
 		init_boot-retry-marker.img \
 		init_boot-pdmapper-tqftpserv.img \
 		init_boot-rmtfs-sharedmem.img \
+		init_boot-wpss-boot.img \
 		pd-mapper tqftpserv rmtfs msm_sharedmem.ko \
 		boot-diagnostic-ext4.img boot-diagnostic-initcall-debug.img \
 		Image-diagnostic-ext4.gz Image-diagnostic-initcall-debug.gz restart2 \
