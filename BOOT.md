@@ -3,14 +3,19 @@
 **Host result (this section supersedes the "ordering" reading of run 37 recorded
 below):** the run-37 capture shows the qca_cld3 probe callback was delivered on
 the FW_READY event and **failed**; `wlan0` is absent because of that failure,
-not because neither delivery path ran. No bounded, memory-safe in-session
-operation exists to retry it (stop rule, same as #99); the exact failing step
-inside qca_cld3 is unmeasured because the driver's HDD/QDF error lines never
-reach kmsg. All evidence is host-only, from the pinned vendor tree (NothingOSS
-`android_kernel_msm-6.1_nothing_sm7635` @ `d5f5f965fd0b478eaf4eb63fd984c5a4a92135a7`,
-read-only) and the run-37 artifacts
-(`~/phone-second-life-data/mb003/pstore/attempt-20261025-1832-initboot-wpssboot/`).
-No image, build, flash or device operation.
+not because neither delivery path ran. The failure is traced with high
+confidence to a **named missing input**: the WLAN INI file
+`wlan/qca_cld/qca6750/WCNSS_qcom_cfg.ini` is unreachable through every
+`firmware_class.path` search path in the diagnostic session (stock serves it
+from `vendor_a` via `/vendor/firmware`), and that read failure maps to exactly
+the observed `-1` (`-EPERM`). No bounded, memory-safe in-session operation
+retries the probe in the failed run-37 state (stop rule, same as #99); the
+successor single variable is the INI reachability, not ordering and not
+observability. All evidence is host-only, from the pinned vendor tree
+(NothingOSS `android_kernel_msm-6.1_nothing_sm7635` @
+`d5f5f965fd0b478eaf4eb63fd984c5a4a92135a7`, read-only) and the run-37/stock
+artifacts (`~/phone-second-life-data/mb003/pstore/`, read-only, never
+committed). No image, build, flash or device operation.
 
 ### The line that answers the open question
 
@@ -41,16 +46,22 @@ Path A — FW_READY when ops are already registered (run 37's path):
 - WLFW QMI FW-ready indication `fw_ready_ind_cb` (`qmi.c:2330-2345`) posts
   `ICNSS_DRIVER_EVENT_FW_READY_IND` (`qmi.c:2343`; early return only on a
   spurious/no-txn indication, `qmi.c:2338-2341`). The WLFW server itself is
-  found via `wlfw_new_server` (`qmi.c:3205-3231`, `-ENOMEM` on event alloc),
-  which posts `SERVER_ARRIVE`; `icnss_driver_event_server_arrive`
-  (`main.c:1111-1318`) clears `ICNSS_FW_READY`/`ICNSS_FW_DOWN`
-  (`main.c:1123-1124`), asserts on double-connect (`main.c:1136-1139`) and runs
-  the full bring-up handshake (host cap `main.c:1184`, device info
-  `main.c:1232`, BDF download `main.c:1262-1269`); only then can the firmware
-  send FW_INIT_DONE (`qmi.c:2507` cb) and FW_READY. FW_INIT_DONE
-  (`icnss_driver_event_fw_init_done`, `main.c:1495-1521`) either arms
-  calibration (`main.c:1511-1515`) or calls the FW_READY handler directly
-  (`main.c:1517`).
+  found via `wlfw_new_server` (`qmi.c:3205-3231`): when `ICNSS_DEL_SERVER`
+  is set it ignores arrival (`3212-3216`); event allocation can return
+  `-ENOMEM` (`3222-3223`), else it posts `SERVER_ARRIVE` (`3228`).
+  `icnss_driver_event_server_arrive` (`main.c:1111-1318`) rejects `!priv`
+  (`1119-1120`), clears `ICNSS_FW_READY`/`ICNSS_FW_DOWN` (`1123-1124`),
+  handles Slate wait and double-connect (`1126-1139`) and runs the full
+  bring-up handshake (host cap `1184`, device info `1232`, BDF download
+  `1262-1269`); any failure returns without a healthy server (`1312-1317`).
+  The MSA memory-info/ready requests are **ADRASTEA-only** (`1189-1207`),
+  not a WCN6750 probe gate; CE IRQ setup is not called on either probe
+  delivery branch. Only then can the firmware send FW_INIT_DONE
+  (`qmi.c:2507-2579`: no txn returns at `2519-2522`, bad/absent hang-data
+  details still post the indication at `2577-2579`) and FW_READY.
+  FW_INIT_DONE (`icnss_driver_event_fw_init_done`, `main.c:1495-1521`)
+  returns `-ENODEV` on `!priv` (`1499-1500`), then either arms cold-boot
+  calibration (`1511-1515`) or calls the FW_READY handler directly (`1517`).
 - Handler `icnss_driver_event_fw_ready_ind` (`main.c:1452-1493`): `-ENODEV`
   without `priv` (`1456-1457`); sets `ICNSS_FW_READY` (`1460`), prints
   "WLAN FW is ready" (`1468`, `kmsg:2486`); `-ENODEV` if `!priv->pdev`
@@ -108,40 +119,103 @@ stock (run 37: 8.66 s; stock: ~9 s). So the run-37 session init did **not**
 invert the stock order; the ordering hypothesis is retired. `wpss_boot_store`
 (`main.c:4373-4396`) gates only on `wpss_supported` (`4380`) and parses
 `1`/`0` (`4383`); `schedule_work(&wpss_loader)` (`4391`) -> `icnss_wpss_load`
-(`main.c:4348-4371`) -> `rproc_boot` (`4366`).
+(`main.c:4348-4371`) -> `rproc_boot` (`4366`). Run 36 (the #96 lineage this
+session inherits) shows the same early registration and no trigger at all
+(`attempt-20261025-1425-initboot-rmtfs-sharedmem/capture/kmsg.log`: closure
+modules at ~1.6 s, DMS connected at `:2470`, `stage9-state.txt:21` wpss
+offline), so no measured session inverted the order either.
 
-### (3) Line-by-line cross-check; what the absent qca_cld3 lines implicate
+### (3) Line-by-line cross-check; the named missing step
 
-Between `kmsg:2486` and `:2488` there is **no** HDD/QDF error line — also none
-anywhere after `:2378` (whole-capture grep for `hdd|cds_|hif|qca_cld3|probe`).
-Two independent causes, both verified in the pinned tree:
+Between `kmsg:2486` and `:2488` there is **no** HDD/QDF error line and no
+firmware-load line at all (whole-capture grep). The stock console, in the same
+2 ms window of its own boot, shows exactly one relevant line,
+`console-ramoops-0:6593`:
 
-- qca_cld3 logs go to the driver's own `wlan_logging`/QDF ring, not printk;
-  only the banner (`kmsg:2376`) reaches kmsg. The run-37 capture therefore
-  cannot show *which* callee returned `-1`; the stock console shows the same
-  chain only because stock's driver logs `[kworke]...qca6750: [E:HDD]` lines
-  (`console-ramoops-0:6614+`), which the run-37 initramfs has no collector
-  for.
+```
+(NULL device *): loading /vendor/firmware_mnt/image/wlan/qca_cld/qca6750/WCNSS_qcom_cfg.ini failed with error -13
+```
+
+That is the kernel firmware loader's non-`ENOENT` warn
+(`drivers/base/firmware_loader/main.c:604-607`); `-13` (`-EACCES`) is stock's
+first-path attempt under `/vendor/firmware_mnt/image`, **not** evidence the
+file actually exists on `modem_a`. Stock then succeeds on a later search path
+(the HDD chain proceeds, `console-ramoops-0:6613+`; an `ENOENT` miss is
+`dev_dbg`-only, `main.c:608-610`, silent). The chain from there, all
+pinned-tree verified:
+
+- `__hdd_soc_probe` (`wlan_hdd_driver_ops.c:799`) -> `hdd_context_create`
+  (`wlan_hdd_main.c:14649`) -> `cfg_parse(WLAN_INI_FILE)`
+  (`wlan_hdd_main.c:14682`), where `WLAN_INI_FILE` is
+  `"wlan/qca_cld/qca6750/WCNSS_qcom_cfg.ini"` (`wlan_hdd_misc.h:44-45`; the
+  `qca6750/` prefix comes from `MULTI_IF_NAME`/`DYNAMIC_SINGLE_CHIP`, and the
+  chip-named module `qca_cld3_qca6750` measured at `kmsg:2376` confirms it).
+- `cfg_parse` -> `qdf_ini_parse` (`qdf_parse.c:149`) -> `qdf_file_read`
+  (`qdf_file.c:47-59`) reads the INI **through the kernel firmware loader**
+  (`firmware_request_nowarn`, `qdf_file.c:28-35`), i.e. the search paths are
+  `firmware_class.path` followed by `/lib/firmware*`
+  (`firmware_loader/main.c:473-488`, split on `,` at `491-522`).
+- Stock and run 37 share the identical
+  `firmware_class.path=/vendor/firmware_mnt/image,/vendor/vm-system/oemvm/boot,/vendor/vm-system/trustedvm/boot,/vendor/firmware`
+  (stock `console-ramoops-0:139`, run 37 `kmsg:141`; byte-identical
+  extraction). Reads resolve in init's mount namespace
+  (`kernel_read_file_from_path_initns`, `main.c:600`).
+- **Stock provides `/vendor/firmware` from `vendor_a`.** Raw read-only search
+  of the stock super image finds, inside the `vendor_a` extent (offset
+  5678039040, `super-wlan-closure.py:32`), directory entries for
+  `WCNSS_qcom_cfg.ini` and `wlan_mac.bin` whose symlink targets are
+  `/vendor/etc/wifi/qca6750/WCNSS_qcom_cfg.ini` (and the `peach_v2`
+  twin), plus a `/vendor/firmware` entry — the `Android.mk` install layout
+  (`qcacld-3.0/Android.mk:228-229,366-369` symlinks
+  `firmware/wlan/qca_cld/<chip>/WCNSS_qcom_cfg.ini` ->
+  `/vendor/etc/wifi/<chip>/WCNSS_qcom_cfg.ini`). The read-only `modem_a`
+  extraction manifest has **no** `image/wlan/` directory at all, so the first
+  `firmware_class.path` entry can never supply the INI on this device.
+- **The run-37 diagnostic initramfs never mounts any of the four paths.**
+  The wlan-init phase mounts `vendor_a` at `/mnt/vendor`, `system_dlkm_a`,
+  `vendor_dlkm_a` similarly (`build-init-boot-wlan-rfkill-payload.py:106-120`,
+  inherited unchanged through the frozen #96/#101 inits) and `modem_a` at
+  `/vendor/firmware_mnt` (`:143`); `/vendor/firmware` itself is never created
+  (run-37 `stage9-wlaninit.txt:4-12` shows the mounts; the later
+  `pdmapper` phase binds only `/vendor/firmware_mnt/image` to
+  `/lib/firmware`, `build-init-boot-pdmapper-tqftpserv-payload.py:76-79` —
+  which by the manifest carries no `wlan/` tree either). So in run 37 the INI
+  lookup is `ENOENT` on **every** candidate path — each one silently
+  `dev_dbg`-only — exactly matching the total absence of loader lines in the
+  run-37 capture where stock has its `-13` line.
+- The failed read returns `QDF_STATUS_E_FAILURE` (`qdf_file.c:58`),
+  `cfg_parse` propagates it, and `hdd_context_create` converts it with
+  `qdf_status_to_os_return` (`wlan_hdd_main.c:14688`), whose `default:`
+  branch (`qdf_status.c:91-93`) maps the unmapped `E_FAILURE` to **`-EPERM`**
+  — exactly the `-1` in `kmsg:2488`. The `QDF_BUG` guard at `14687` does not
+  fire (it triggers only on `E_INVAL`, i.e. file present but empty;
+  `qdf_parse.c:184-187`), so no panic — matching the measured clean session.
+- Why no `hdd_err("Failed to parse cfg ...")` (`wlan_hdd_main.c:14684`)
+  appears in kmsg: QDF traces route through `wlan_log_to_user`
+  (`qdf_trace.c:3575-3582`), whose console gate is closed at probe time — the
+  logging service flips `is_active` with `console_log_levels = 0` at module
+  load (`wlan_logging_sock_svc.c:431-435,490-491`), and the bitmap from the
+  (missing) INI is applied only later at `hdd_set_wlan_logging`
+  (`wlan_hdd_main.c:14730`). An early INI read failure is therefore silent
+  in kmsg inside the driver; stock's visible `-13` line is the kernel
+  loader's, not the driver's.
 - In icnss2, every failure print on this chain is unconditional
-  (`icnss_pr_err`, `debug.h`), and the only one that fired is
-  `main.c:1358-1359`. This excludes every icnss2-side `-1` source: the DMS/MAC
-  retry-exhaustion assert (`main.c:1008-1009`, would print "Unable to get MAC
-  from DMS after retries" — absent; MAC received instead) and the QMI
-  `ret = -resp.resp.result` sites in `icnss_qmi_get_dms_mac`
-  (`qmi.c:896-899`) / `icnss_wlfw_wlan_mac_req_send_sync` (`qmi.c:960-962`,
-  would print "WLAN mac req failed" — absent), plus the return of
+  (`icnss_pr_err`), and the only one that fired is `main.c:1358-1359`. This
+  excludes every icnss2-side `-1` source: the DMS/MAC retry-exhaustion assert
+  (`main.c:1008-1009`, would print "Unable to get MAC from DMS after retries"
+  — absent; MAC received instead) and the QMI `ret = -resp.resp.result` sites
+  (`qmi.c:896-899`, `qmi.c:960-962` — absent), plus the return of
   `icnss_setup_dms_mac` is discarded at the call site (`main.c:1485`) anyway.
-  The `-1` (`-EPERM`) therefore originates inside
-  `pld_ipci_probe` (`pld_ipci.c:50-70`) -> `wlan_hdd_pld_probe`
-  (`wlan_hdd_driver_ops.c:1882-1898`) -> `hdd_soc_probe` (`867-898`) ->
-  `__hdd_soc_probe` (`775-853`), where any **unmapped** QDF status is
-  collapsed to `-EPERM` by `qdf_status_to_os_return`'s `default:` branch
-  (`qca-wifi-host-cmn/qdf/linux/src/qdf_status.c:91-93`). Note the failure
-  predates the `assert_fail_count` label (`wlan_hdd_driver_ops.c:843-845`) —
-  its "consecutive probe failures" line is also absent from kmsg, consistent
-  with the failure occurring before that label (e.g. in
-  `osif_psoc_sync_create_and_trans`/`hdd_init_qdf_ctx`) or with that `hdd_err`
-  landing only in the uncollected QDF ring.
+  The `-1` therefore originates inside the qca_cld3 callback chain
+  (`pld_ipci.c:50-70` -> `wlan_hdd_driver_ops.c:775-898`), and the INI read
+  is an early, demonstrably unreachable step that maps to exactly `-EPERM`.
+- Residual uncertainty, stated honestly: the run-37 record contains no line
+  naming the INI (the loader is silent on `ENOENT`, the driver's error line is
+  console-gated off), so the INI is a *strongly evidenced* cause (exact errno
+  mapping, stock's own loader line in the same window, the verified absence of
+  every candidate path in the diagnostic mount layout, and the verified
+  presence of the stock layout in `vendor_a`), not a directly measured one.
+  A successor session can confirm it decisively (below).
 - Run-37 artifacts have **no captured `icnss2/stats` read** like run 29:
   `initramfs/init:37-38` mounts debugfs, and `debug.c:329-341,826-874`
   creates `icnss/stats` with Posted/Processed counters. The `REGISTER_DRIVER`
@@ -190,15 +264,23 @@ Every candidate was vetted against the pinned tree:
   memory-safe-by-construction.
 
 Per the stop rule (as in #99): **no single bounded, memory-safe in-session
-operation exists** that delivers the missing step in the run-37 state. The
-named next blocker for a successor issue is **inside the qca_cld3 probe
-callback**: the `-EPERM` origin in `pld_ipci_probe -> wlan_hdd_pld_probe ->
-hdd_soc_probe -> __hdd_soc_probe` is unmeasured because HDD/QDF error output
-never reached kmsg. The successor single variable is observability of that
-chain (e.g. a kmsg-facing collector for the driver's QDF/wlan log ring, or the
-specific early `-EPERM` sites), in its own issue with its own distinct-SHA
-image; no physical result is claimed here. The sysfs unbind/bind and
-rmmod/insmod vetoes (#99/PR #100, run 29) stand unchanged.
+operation exists** that retries the probe in the failed run-37 state — the
+probe already ran, failed, and the state machine does not re-enter it without
+a module reload or a WPSS restart, both excluded. The **named missing step**
+is instead the WLAN INI file `wlan/qca_cld/qca6750/WCNSS_qcom_cfg.ini`, which
+the diagnostic session never exposes through `firmware_class.path` while stock
+serves it from `vendor_a` via `/vendor/firmware` (section 3). The successor
+single variable — for its own issue with its own distinct-SHA image and
+fail-closed design, not built here — is making the stock INI (and, because
+the stock install is a symlink, its `/vendor/etc/wifi/qca6750/` target)
+reachable on one of the existing search paths before the WLAN closure loads,
+with predicted discriminating outcomes: (a) the probe passes `cfg_parse` and
+the HDD chain continues (new `qca6750:` kmsg lines / `wlan0`) — the INI cause
+confirmed; (b) the probe fails again at a later fallible step — the INI cause
+confirmed for this step and the new line names the next blocker; (c) an
+identical silent `-1` with no new lines — the INI hypothesis weakened,
+observability of the QDF ring becomes the successor question. The sysfs
+unbind/bind and rmmod/insmod vetoes (#99/PR #100, run 29) stand unchanged.
 
 ## Run 37: WPSS FW_READY reached, wlan0 absent (#101, outcome b, 2026-10-25)
 
