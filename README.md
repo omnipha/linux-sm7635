@@ -416,6 +416,27 @@ physical run is owned by the physical coordinator and follows the #113 preboot
 capture handoff exactly; predicted outcomes (a)/(b)/(c)/(d) and the handoff are
 in [BOOT.md](BOOT.md). This is not a physical result.
 
+## Host-only live-session WLAN handoff (2026-10-26, #134)
+
+[BOOT.md](BOOT.md#planned-live-session-wlan-handoff-scan-through-connectivity-134-host-only-2026-10-26)
+prepares one bounded, coordinator-owned live-session handoff on the **unchanged**
+run-43 image (`0f998e29…`) from the #132 inventory. It host-verifies the cached
+Alpine v3.21 aarch64 bundle (`iw`/`wpa_supplicant`/`wpa_cli` + musl/libnl): APK
+and per-file SHA-256, the musl interpreter and dependency closure, and QEMU smoke
+loads through the bundled loader (`iw version 6.9`, `wpa_supplicant v2.10`, exit 0)
+— proving **loading only**, not a guest scan. It inventories guest DHCP tooling
+without touching a WLAN profile (`udhcpc` present; run-43 cpio ships **no**
+`/etc/udhcpc/default.script`, so the hash-checked, synthetic-tested lease helper
+is transferred into RAM),
+documents fail-closed preboot readiness for the protected profile/client/DHCP
+without printing secrets, and plans root-only RAM transfer over the pinned
+key-only session, a 20 s-bounded guest `iw` scan, and only on success bounded
+association/address/reachability with per-stage separability and stop rules. No
+image, kernel, config, module, timer, transfer, scan, association or device
+operation is performed here. This is host delivery only; #134 stays
+`AWAITING_PHYSICAL_RESULT` until the coordinator records the discriminating
+per-stage result and verified rollback (or a named pre-flash refusal).
+
 ## Host-only guest scan-client diagnosis (2026-10-26, #132)
 
 [BOOT.md](BOOT.md#run-46-guest-scan-client-diagnosis-132-host-only-2026-10-26)
