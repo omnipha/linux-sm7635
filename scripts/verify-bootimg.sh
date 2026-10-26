@@ -60,6 +60,7 @@ for artifact in "$OUT/boot.img" "$OUT/boot-stock-kernel.img" "$OUT/boot-full-foo
 	"$OUT/init_boot-wlan-ini.img" \
 	"$OUT/init_boot-psoc-hold.img" \
 	"$OUT/init_boot-psoc-hold-capture.img" \
+	"$OUT/init_boot-psoc-hold-capture-hostkey.img" \
 	"$OUT/rmtfs" "$OUT/msm_sharedmem.ko" \
 	"$OUT/boot-diagnostic-ext4.img" \
 	"$OUT/boot-diagnostic-initcall-debug.img" \
@@ -427,6 +428,26 @@ python3 "$ROOT/scripts/verify-init-boot-psoc-hold-capture.py" --self-test \
 	"$PSTORE_CONSOLE" "$OUT/restart2" "$OUT/pd-mapper" "$OUT/tqftpserv" "$OUT/rmtfs" \
 	"$OUT/msm_sharedmem.ko" "$HOME/phone-second-life-data/mb003/by-name.txt" \
 	"$MAPS"
+python3 "$ROOT/scripts/verify-init-boot-psoc-hold-capture-hostkey.py" --self-test \
+	"$OUT/init_boot-psoc-hold-capture-hostkey.img" \
+	"$OUT/init_boot-psoc-hold-capture.img" "$OUT/init_boot-psoc-hold.img" \
+	"$OUT/init_boot-wlan-ini.img" "$OUT/init_boot-wpss-boot.img" \
+	"$STOCK_INIT" "$OUT/initramfs.cpio.gz" \
+	"$STOCK_BOOT" "$STOCK_VENDOR" "$STOCK_RECOVERY" "$STOCK_CONFIG" \
+	"$WORK/src/init/initramfs.c" "$WORK/src/lib/decompress_unlz4.c" \
+	"$PSTORE_CONSOLE" "$OUT/restart2" "$OUT/pd-mapper" "$OUT/tqftpserv" "$OUT/rmtfs" \
+	"$OUT/msm_sharedmem.ko" "$HOME/phone-second-life-data/mb003/by-name.txt" \
+	"$MAPS" "${HOSTKEY:-$HOME/.omnipha/sm7635/dropbear_ed25519_host_key}"
+python3 "$ROOT/scripts/verify-init-boot-psoc-hold-capture-hostkey.py" \
+	"$OUT/init_boot-psoc-hold-capture-hostkey.img" \
+	"$OUT/init_boot-psoc-hold-capture.img" "$OUT/init_boot-psoc-hold.img" \
+	"$OUT/init_boot-wlan-ini.img" "$OUT/init_boot-wpss-boot.img" \
+	"$STOCK_INIT" "$OUT/initramfs.cpio.gz" \
+	"$STOCK_BOOT" "$STOCK_VENDOR" "$STOCK_RECOVERY" "$STOCK_CONFIG" \
+	"$WORK/src/init/initramfs.c" "$WORK/src/lib/decompress_unlz4.c" \
+	"$PSTORE_CONSOLE" "$OUT/restart2" "$OUT/pd-mapper" "$OUT/tqftpserv" "$OUT/rmtfs" \
+	"$OUT/msm_sharedmem.ko" "$HOME/phone-second-life-data/mb003/by-name.txt" \
+	"$MAPS" "${HOSTKEY:-$HOME/.omnipha/sm7635/dropbear_ed25519_host_key}"
 python3 "$ROOT/scripts/verify-init-boot-psoc-hold-capture.py" \
 	"$OUT/init_boot-psoc-hold-capture.img" "$OUT/init_boot-psoc-hold.img" \
 	"$OUT/init_boot-wlan-ini.img" "$OUT/init_boot-wpss-boot.img" \
@@ -973,7 +994,8 @@ echo 'init_boot wlan-closure control: same stock baa33fd4 prefix and signed tail
 	echo 'init_boot wpss-boot control (#101): from the exact run-36 #96 image (bf2089c4), the session init and every packaged service are byte-exact; the only cpio delta is one dormant helper bin/wpss-once (16d4747e, 2390 B, mode 0755) that the physical coordinator may execute once over key-only SSH after the guarded remoteproc2 start holds and QMI DMS has connected. The helper re-checks remoteproc3=9bb00000.remoteproc-wpss offline and remoteproc2=4080000.remoteproc-mss running, the /run/qrtr-services.status and /run/rmtfs.status published markers, icnss2 bound at 17110040.qcom,wcn6750, the read-only vfat modem_a mount in /proc/mounts and all 13 stock qca6750/wpss.* firmware files, arms a /run/wpss-once.attempted one-shot marker and performs exactly one bounded stock wpss_boot=1 write to /sys/kernel/icnss/wpss_boot (timeout -k 1 3), logging before/after remoteproc states to kmsg. No init-time or helper-side remoteproc state write, no rmmod/insmod, no module reload, no second attempt. Header/prefix, LZ4 envelope (2095480/2117632 B), zero gap and stock signed tail verified; negative fixtures reject removed/altered/non-executable triggers, run-36 reuse, a remoteproc-state rewrite, a weakened precondition, a removed timeout, init mutations and all measured SHAs including bf2089c4, 8dddb8c7, 35866d56, ae2ccff7 and 4216af26. Host-only, not a boot result.'
 	echo 'init_boot wlan-ini control (#106): from the exact measured run-37 #101 image (d9d8d2b8), only the session marker and a bounded INI-reachability phase before the byte-exact WLAN closure are changed. The phase bind-mounts the already-mounted read-only vendor_a root at /vendor, before the modem_a mount, so the stock absolute INI symlink at wlan/qca_cld/qca6750/WCNSS_qcom_cfg.ini and its target /vendor/etc/wifi/qca6750/WCNSS_qcom_cfg.ini (57989aba, 2095 B) resolve through the existing /vendor/firmware entry of firmware_class.path. The modem-holding stack, 21-module WLAN closure, one-shot WPSS trigger, USB/key-only SSH and recovery timer are byte-exact; no kernel, modem, WPSS, or physical-device operation in this build. Header/prefix, LZ4 envelope, zero gap, signed tail and measured-SHA rejection verified; negative fixtures reject removed/moved/writable/retargeted INI exposure and image damage. Host-only, not a boot result.'
 	echo 'init_boot psoc-hold control (#109): from the exact measured run-38 #106 image (e75c5bd2), only the session marker and the one-shot WPSS trigger are changed. The trigger rejects absence of /dev/wlan, schedules a single 25 s bounded ON write before issuing the original one stock wpss_boot=1 write, waits for the writer to report its result, and reads wlan0 flags/operstate after the existing 12 s window. It does not bring up an interface or associate. The stock INI phase, modem-holding stack, WLAN closure, USB/key-only SSH path and 150 s recovery timer are byte-exact. Header/prefix, LZ4 envelope, zero gap, signed tail, negative fixtures and every measured-SHA rejection including e75c5bd2 verified. Host-only, not a boot result.'
-	echo 'init_boot psoc-hold-capture control (#116): from the exact measured run-40 #109 image (0b40ac34), only the session marker is reworded, so the single 25 s-capped /dev/wlan ON hold, the one-shot WPSS trigger with its single stock wpss_boot=1 write, the stock INI phase, modem-holding stack, WLAN closure, USB/key-only SSH path, the unchanged 150 s recovery timer and /run/keep semantics are byte-exact. Negative fixtures reject a prior measured SHA, a removed, duplicated, re-capped or moved hold, an altered or retargeted /dev/wlan ON write, a second WPSS write, a removed, shortened or lengthened timer, an early or disabling /run/keep change, marker regressions to the #109/#106 wording and image damage; two serial builds are byte-identical. Distinct SHA 7c3d915f. Host-only, not a boot result; the physical run follows the #113 preboot capture handoff and is owned by the physical coordinator.'
+	echo 'init_boot psoc-hold-capture control (#116): from the exact measured run-40 #109 image (0b40ac34), only the session marker is reworded, so the single 25 s-capped /dev/wlan ON hold, the one-shot WPSS trigger with its single stock wpss_boot=1 write, the stock INI phase, modem-holding stack, WLAN closure, USB/key-only SSH path, the unchanged 150 s recovery timer and /run/keep semantics are byte-exact. Negative fixtures reject a prior measured SHA, a removed, duplicated, re-capped or moved hold, an altered or retargeted /dev/wlan ON write, a second WPSS write, a removed, shortened or lengthened timer, an early or disabling /run/keep change, marker regressions to the #109/#106 wording and image damage; two serial builds are byte-identical. Distinct SHA 7c3d915f. Host-only, unflashed, not a boot result.'
+	echo 'init_boot psoc-hold-capture-hostkey control (#120): from the exact unflashed #116 run-41 image (7c3d915f), only the Dropbear invocation is changed, plus a protected-input deterministic ed25519 host key at /etc/dropbear/dropbear_ed25519_host_key (mode 0600); the #116 session marker is byte-exact. The single 25 s-capped /dev/wlan ON hold, one-shot WPSS trigger, stock INI phase, modem-holding stack, WLAN closure, 150 s recovery timer and /run/keep semantics are byte-exact #109. Negative fixtures reject -R, a missing/unpinned/committed private key, timer, keep, hold, WPSS or WLAN-write changes, marker regressions and every measured SHA plus unflashed 7c3d915f. Public pin ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA2ioqI4txcs3PSJWvcgSd/qBuDuCC50OIvIpKsjrjql, fingerprint SHA256:fZKbZhNlbjd9/c7oxUy2YWmOgZs5TcVjxLRuPLEgb4w; known_hosts [172.16.42.2]:22. Two serial builds are byte-identical. Distinct SHA 8b62520f. Host-only, not a boot result; #116 owns the one physical rerun.'
 	echo 'stock AVB footers and hashed image prefixes match embedded metadata; vbmeta_a init_boot/vendor_boot/dtbo hashes match stock; boot is chained'
 	echo 'stock boot separate 16KiB AVB0 record hashes the shorter kernel-only prefix; stock verification flags and vbmeta_a rollback index are zero'
 	echo 'built images are not authenticated by stock vbmeta_a: no AVB footer, stock hashes do not match; bootloader policy during attempt unknown'
@@ -1003,7 +1025,7 @@ echo 'init_boot wlan-closure control: same stock baa33fd4 prefix and signed tail
 		init_boot-rmtfs-sharedmem.img \
 		init_boot-wpss-boot.img \
 		init_boot-wlan-ini.img init_boot-psoc-hold.img \
-		init_boot-psoc-hold-capture.img \
+		init_boot-psoc-hold-capture.img init_boot-psoc-hold-capture-hostkey.img \
 		pd-mapper tqftpserv rmtfs msm_sharedmem.ko \
 		boot-diagnostic-ext4.img boot-diagnostic-initcall-debug.img \
 		Image-diagnostic-ext4.gz Image-diagnostic-initcall-debug.gz restart2 \
