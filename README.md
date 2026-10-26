@@ -416,6 +416,22 @@ physical run is owned by the physical coordinator and follows the #113 preboot
 capture handoff exactly; predicted outcomes (a)/(b)/(c)/(d) and the handoff are
 in [BOOT.md](BOOT.md). This is not a physical result.
 
+## Run-48 live-session WLAN connectivity finding (2026-10-26, #137)
+
+[BOOT.md](BOOT.md#run-48-measured-guest-wlan-connectivity-in-one-held-session-137-live-session-finding-2026-10-26)
+records a measured stock-kernel guest WLAN chain in one pinned-key, captured USB-SSH
+session on the unchanged run-43 image: one guarded modem start and one WPSS
+trigger reached FW ready and `wlan0`; `iw` scanned after IFF_UP (exit 0, 20
+BSS), with the complete raw scan and boot ID retained privately outside Git.
+The protected target matched 7 BSS privately. `wpa_supplicant` reached
+`COMPLETED` with a connected `iw link`; bounded `udhcpc` applied an IPv4 lease,
+default route and DNS; bounded gateway ping (3/3), DNS lookup and external
+ping (3/3) each succeeded. Continuous capture stayed live with no new
+fatal/crash/idle callback across the chain. This proves in-session WLAN
+connectivity, not autoconnect after reboot. The coordinator still owns the
+pending stock `init_boot_a` restore, five-hash proof, pstore preservation and
+stock Android verification; #137 remains OPEN until that closure is recorded.
+
 ## Run-47 live-session WLAN scan finding (2026-10-26, #134)
 
 [BOOT.md](BOOT.md#run-47-measured-guest-scan-success-association-unmeasured-134-live-session-finding-2026-10-26)
@@ -426,8 +442,8 @@ safe link-up (flags `0x1003`), one 20 s-bounded retry returned exit 0 with 17 BS
 (10 at 2.4 GHz, 7 at 5 GHz) and zero new fatal/crash/idle capture lines. The
 worker did not inspect SSIDs/BSSIDs or touch a profile. This proves the stock
 nl80211 driver serves scans, **not** target visibility, association, DHCP or
-network access. Stock rollback is still coordinator-owned and pending; #134 stays
-OPEN. The earlier host-only [handoff plan](BOOT.md#planned-live-session-wlan-handoff-scan-through-connectivity-134-host-only-2026-10-26)
+network access. Run 47 later returned to verified five-partition stock and
+#134 was closed as superseded by #137. The earlier host-only [handoff plan](BOOT.md#planned-live-session-wlan-handoff-scan-through-connectivity-134-host-only-2026-10-26)
 prepares one bounded, coordinator-owned live-session handoff on the **unchanged**
 run-43 image (`0f998e29…`) from the #132 inventory. It host-verifies the cached
 Alpine v3.21 aarch64 bundle (`iw`/`wpa_supplicant`/`wpa_cli` + musl/libnl): APK
