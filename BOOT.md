@@ -1,4 +1,82 @@
-## Run 44 handoff: one bounded userspace action on the measured run-43 WLAN stack (#127, host-only, 2026-10-26)
+## Current handoff: reuse the unchanged run-43 image for one userspace WLAN action (#130, host-only, 2026-10-26)
+
+**Host verification only; no device operation or WLAN outcome.** Read-only checks
+of `$HOME/sm7635-build/out/init_boot-psoc-hold-wlan-node.img` returned exactly
+8,388,608 bytes and SHA-256
+`0f998e29fa87037dd1c0c474f4e9eccdb405fa75fb21bfaf0743c351594bb3aa`.
+The image was not rebuilt or rewritten; no source, kernel, config, module, timer
+or host key changes are part of this handoff. Run 43 reached key-only SSH after
+writing only `init_boot_a`, measured the persistent `wlan0` stack, and returned
+to verified five-partition stock. Run 44 aborted before any partition write and
+measured no follow-up action. #127 remains OPEN blocked; #129 remains CLOSED
+not-planned and its marker diff is not resumed. #114 stays withdrawn.
+
+Under the **current device-op reuse rule** (`omnipha/agents` `8ef6aa49`), the
+changed image from the newest boot that reached key-only SSH and named
+`partitionsWritten` can be reused: run 43's `init_boot_a` image above is the
+**sole current reusable changed image**. This supersedes the stale #127/run-44
+never-reflash contradiction below; it is **not an owner reflash exception**,
+does not authorize editing either ledger, and is conditional on the live gate
+still agreeing at preflight. Every older measured SHA remains refused, explicitly
+including `8b62520fe6288361fd15faa573587a0d1be1e0788f780c62440677a60b739801`,
+`0b40ac3434b790653e04f8c48b6e035ed0b47bce982a6435e7fc0ef2c0004fe7`,
+and `e75c5bd260477b0c4bc4b93d528324ec95dc1f8f01e93e551262522bcef2918c`.
+No other SHA or partition is authorized. If the live device-op gate no longer
+permits this exact reuse, stop; do not force the flash or substitute an image.
+
+**Physical coordinator only**, under the standing `full_autonomy_device_iteration`
+approval: exactly one session and one attempt, with all records outside Git.
+
+1. Use only the unchanged image above on `init_boot_a`, through the existing
+   `device-op.py flash` path with its normal preflight and verifier hooks. Require
+   the verified stock five-partition baseline and fresh targeted gate. No force
+   option, ledger edit, second SHA, second partition or second attempt. Use the
+   existing #113/#120 preboot capture handoff unchanged: pin the known-hosts
+   line recorded in #120, start the listener **before** reboot, pin and verify
+   the route only **after** gadget enumeration, accept key-only SSH with the
+   pinned host key, selftest capture on the new boot, then create `/run/keep`
+   strictly before the unchanged 150-second deadline. Stop and name any failed
+   gate rather than continuing without capture.
+2. Reproduce the measured run-43 prerequisite **once**: from an offline guard,
+   one bounded remoteproc2 start; exactly one `/bin/wpss-once` invocation with
+   exit 0 and its single ON hold and stock WPSS write; firmware-ready event,
+   `/sys/class/net/wlan0` present and the idle-timeout callback count 0 in
+   this boot's captured kmsg. Record the states and stop with the named gap if
+   any prerequisite fails. No repeat modem or WPSS action, module reload or
+   altered timer.
+3. Record a pre-action kmsg offset and read-only `wlan0` flags/operstate. Check
+   the **guest's** busybox applet list for `iw`; only if present, use bounded
+   `iw dev` discovery to confirm a phy for `wlan0`. Then issue **exactly one**
+   guest action through the captured session: `iw dev wlan0 scan` only if that
+   phy was reported; otherwise `ip link set wlan0 up` once. Bound the chosen
+   command to 20 seconds (1-second kill grace); preserve its exit, stdout and
+   stderr. No second command on error or timeout, no imported/host `iw`, scan
+   after fallback, association, credentials or `wpa_supplicant`.
+4. Immediately record command availability/discovery, chosen action, timing,
+   exit and output summary, post-action `wlan0` presence, flags, operstate,
+   and **new** fatal, crash or `hdd_psoc_idle_timeout_callback` lines against
+   the captured pre-action offset. Classify (a) scan results with `wlan0`
+   registered and no new fatal/crash/idle line; (b) the named command/driver
+   error as the next blocker, including a successful link-up fallback (not a
+   scan); or (c) vanished `wlan0` or a new fatal, crash or idle-timeout line.
+   Name failed preconditions or lost capture as gaps instead of inventing an
+   outcome. Report a kernel hang separately: the userspace timer cannot cover
+   it. Preserve the evidence and stop; do not retry.
+5. Return via the established guarded stock recovery path, verify **all five**
+   stock partition hashes, pull pstore **before** Android and record rollback
+   and final stock state. No `boot_a`, `dtbo`, `vbmeta`, slot B or userdata
+   change; do not reopen blocked #12 or the metadata-encrypted userdata gate.
+   #130 stays OPEN until the coordinator records the discriminating measurement
+   and verified rollback; host delivery alone does not close it. #127 is
+   resolved by that measurement, not relabeled by this handoff.
+
+## Historical run-44 handoff: one bounded userspace action on the measured run-43 WLAN stack (#127, host-only, 2026-10-26)
+
+**Superseded by #130 above; this section is not current flash authority.**
+Run 44 aborted before a partition write. The #127 one-use exception and its
+never-reflash-after-flash language below describe the former gate, not the
+current `device-op.py` reuse rule. The existing #113/#120 capture and bounded
+userspace action procedure remain applicable as restated above.
 
 **Procedure only; no run-44 result is claimed.** The physical coordinator alone
 owns one session and one attempt under the standing
@@ -10,10 +88,10 @@ measured SHA-256 `0f998e29fa87037dd1c0c474f4e9eccdb405fa75fb21bfaf0743c351594bb3
 `wpss_boot=1` write accepted, remoteproc3 running; FW ready received and
 `wlan0` persisted from uptime 181 to 264 s, flags `0x1002`,
 `operstate=down`, idle-timeout callback count 0. The five-partition stock
-rollback and pstore-before-Android were verified. **This issue alone permits
-exactly one further use of this measured SHA, on `init_boot_a` only, for this
-one session; it is never-reflash after that flash.** The #124 section below
-predates this exception and does not independently authorize a flash. No new
+rollback and pstore-before-Android were verified. **The former #127 one-use
+permission and never-reflash-after-flash rule are superseded by #130 above;
+this historical section does not authorize a flash.** The #124 section below
+predates this handoff and does not independently authorize a flash. No new
 image, SHA, kernel, config, module, timer, modem stack or WLAN-closure change.
 The run-43 state is the prerequisite, not the question to repeat.
 
@@ -125,8 +203,10 @@ The run-43 state is the prerequisite, not the question to repeat.
    discriminating physical result and rollback, not on this host PR.
 
 `8b62520f…`, `7c3d915f…`, `0b40ac34…`, `e75c5bd2…`, `d9d8d2b8…`,
-`bf2089c4…` and all earlier measured SHAs remain never-reflash. The sole
-#127 exception for `0f998e29…` expires after its single authorized flash.
+`bf2089c4…` and all earlier measured SHAs remain never-reflash. The stale
+#127 one-use exception for `0f998e29…` is superseded by the current device-op
+reuse rule in the #130 section above; that section, not this one, governs the
+next reuse.
 
 ## Run 43 candidate: fail-closed /dev/wlan node for the registered wlan_hdd_state char device (#124, host-only, 2026-10-26)
 
@@ -230,13 +310,16 @@ WORK="$HOME/sm7635-build" scripts/verify-bootimg.sh
 
 Never reflash `8b62520f…`, `7c3d915f…`, `0b40ac34…`, `e75c5bd2…`,
 `d9d8d2b8…`, `bf2089c4…` or any earlier measured SHA. This #124 handoff does
-not authorize any flash. The single later exception is the run-44 handoff at
-the top of this file: #127 permits exactly one use of measured
-`0f998e29fa87037dd1c0c474f4e9eccdb405fa75fb21bfaf0743c351594bb3aa` on
-`init_boot_a`, then that SHA returns to never-reflash. It uses the #113/#120
-preboot capture handoff (including the pinned `[172.16.42.2]:22 ssh-ed25519
-…` known-hosts line recorded in the #120 section below, unchanged here) and
-the one-attempt stop rule.
+not authorize any flash. The current reuse authority is the #130 section at
+the top of this file: the current device-op rule permits reuse of the unchanged
+measured `0f998e29fa87037dd1c0c474f4e9eccdb405fa75fb21bfaf0743c351594bb3aa` on
+`init_boot_a` only, through the existing device-op flash path and its normal
+preflight and verifier hooks. It is not an owner reflash exception and does not
+authorize a ledger edit, force option, or any other SHA or partition. It uses
+the #113/#120 preboot capture handoff (including the pinned `[172.16.42.2]:22
+ssh-ed25519 …` known-hosts line recorded in the #120 section below, unchanged
+here) and the one-session, one-attempt stop rule. The stale #127/run-44
+never-reflash contradiction is superseded by that section.
 
 ## Run 42 `/dev/wlan` vetting (#122, host-only, 2026-10-26)
 

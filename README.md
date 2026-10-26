@@ -416,12 +416,25 @@ physical run is owned by the physical coordinator and follows the #113 preboot
 capture handoff exactly; predicted outcomes (a)/(b)/(c)/(d) and the handoff are
 in [BOOT.md](BOOT.md). This is not a physical result.
 
-## Run-44 handoff: one bounded userspace action on the run-43 WLAN stack (2026-10-26, #127)
+## Current run-43 image reuse handoff (2026-10-26, #130)
 
-The measured run-43 image (`0f998e29…`) is authorized for exactly one more
-flash to `init_boot_a` in one physical session under the standing
-`full_autonomy_device_iteration` approval, so the coordinator can ask whether
-the stock driver serves one bounded userspace nl80211 action while `wlan0` is
+[BOOT.md](BOOT.md) records a read-only recheck of the measured run-43 image
+(`0f998e29…`, 8,388,608 bytes). Under the current device-op rule this is the
+sole reusable changed image from the newest boot that reached key-only SSH;
+#127's run-44 one-use/never-reflash language below is historical, and run 44
+aborted before any partition write. The physical coordinator owns exactly one
+session and one attempt through `device-op.py flash` on `init_boot_a` only, with
+normal preflight and verifier hooks; no force or ledger edit. Every older
+measured SHA remains refused. No new image, SHA, kernel, config, module or timer
+change. #130 stays open until the coordinator records the measurement and stock
+rollback; this host handoff claims no device result.
+
+## Historical run-44 handoff (2026-10-26, #127)
+
+Superseded by #130 above. The following describes the former #127 procedure,
+not the current reuse gate: it proposed one further `init_boot_a` flash under
+the standing `full_autonomy_device_iteration` approval to ask whether the
+stock driver serves one bounded userspace nl80211 action while `wlan0` is
 registered (`operstate=down`). No new image, SHA, kernel, config, module or
 timer change. `scripts/verify-run44-session-plan.py` checks the synthetic
 handoff fail-closed: preboot listener and pinned host key before the one
