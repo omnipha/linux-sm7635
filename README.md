@@ -416,6 +416,27 @@ physical run is owned by the physical coordinator and follows the #113 preboot
 capture handoff exactly; predicted outcomes (a)/(b)/(c)/(d) and the handoff are
 in [BOOT.md](BOOT.md). This is not a physical result.
 
+## Run-44 handoff: one bounded userspace action on the run-43 WLAN stack (2026-10-26, #127)
+
+The measured run-43 image (`0f998e29…`) is authorized for exactly one more
+flash to `init_boot_a` in one physical session under the standing
+`full_autonomy_device_iteration` approval, so the coordinator can ask whether
+the stock driver serves one bounded userspace nl80211 action while `wlan0` is
+registered (`operstate=down`). No new image, SHA, kernel, config, module or
+timer change. `scripts/verify-run44-session-plan.py` checks the synthetic
+handoff fail-closed: preboot listener and pinned host key before the one
+authorized flash, post-enumeration NCM route, key-only SSH, capture selftest
+and `/run/keep` before the unchanged 150 s deadline, reproduction of the
+run-43 state (one guarded modem start, one `/bin/wpss-once` with exit 0 and
+idle-callback count 0), exactly one 20 s time-bounded action using the
+session's own busybox (`iw dev wlan0 scan` only if the guest `iw dev` reports
+a phy; otherwise a single `ip link set wlan0 up`), post-action sysfs/kmsg
+evidence with new fatal/crash/idle-timeout counts, and the stock rollback
+with pstore pulled before stock Android. Timeouts and fallback outcomes are
+recorded, never retried. It proves no physical result; the coordinator handoff
+is recorded in [BOOT.md](BOOT.md) and this issue closes only on the recorded
+measurement.
+
 ## Preboot capture handoff (2026-10-26, #113)
 
 `scripts/verify-preboot-capture-handoff.py` checks the host-only launch order
