@@ -358,6 +358,18 @@ executability, ordering, logs, image envelope and all previously measured
 SHAs. The host image, full hashes, predicted physical outcomes and rollback
 gate are in [BOOT.md](BOOT.md). This is not a physical result.
 
+## Preboot capture handoff (2026-10-26, #113)
+
+`scripts/verify-preboot-capture-handoff.py` checks the host-only launch order
+against the unchanged 150 s recovery deadline. The listener and gadget route
+must be ready before the simulated reboot. At the measured run-40 SSH point of
+uptime 120 s, the synthetic sequence has a 30 s residual budget; it permits
+`/run/keep` at 124 s only after a marker from that boot passes selftest. The
+negative fixtures reject late capture, late selftest or keep, another boot's
+marker, a stale pre-selftest marker, keep without a passing selftest, and a
+down link. This authorizes no image and proves no physical session. The
+coordinator handoff is recorded in [BOOT.md](BOOT.md).
+
 ## Capture-gated retry session init_boot (2026-10-25, #83)
 
 `scripts/build-init-boot-retry-marker.sh` packages exactly one host-only session
