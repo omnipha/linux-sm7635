@@ -129,10 +129,9 @@ def check_candidate(candidate, run41, run39, run38, run37, stock, source, boot,
     require(init.count(hostkey.DROPBEAR_CMD) == 1 and
             init.count(hostkey.GENERATED_CMD) == 0 and
             init.count(b"/bin/dropbear -R") == 0, INIT_MSG)
-    require(init.replace(builder.MARKER, capture.MARKER, 1)
-            .replace(hostkey.DROPBEAR_CMD, hostkey.GENERATED_CMD, 1) == run41_init and
-            run41_init.replace(capture.MARKER, builder.MARKER, 1)
-            .replace(hostkey.GENERATED_CMD, hostkey.DROPBEAR_CMD, 1) == init, INIT_MSG)
+    require(init.replace(hostkey.DROPBEAR_CMD, hostkey.GENERATED_CMD, 1) == run41_init and
+            run41_init.replace(hostkey.GENERATED_CMD, hostkey.DROPBEAR_CMD, 1) == init,
+            INIT_MSG)
 
     require(HOST_KEY_DIR in by_name and HOST_KEY_PATH in by_name, KEY_MSG)
     directory = by_name[HOST_KEY_DIR]
@@ -262,7 +261,7 @@ def self_test(candidate, run41, run39, run38, run37, stock, source, boot, vendor
     case("/run/keep escape disabled", INIT_MSG, rebuild(with_entry(
         "init", init.replace(b"\tif [ ! -e /run/keep ]; then\n", b"\tif false; then\n", 1))))
     case("early /run/keep planted in init", INIT_MSG, rebuild(with_entry(
-        "init", init.replace(builder.MARKER, builder.MARKER + b"mkdir -p /run/keep\n", 1))))
+        "init", init.replace(capture.MARKER, capture.MARKER + b"mkdir -p /run/keep\n", 1))))
     case("/run/keep renamed", INIT_MSG, rebuild(with_entry(
         "init", init.replace(b"/run/keep", b"/run/hold", 1))))
     case("25 s-capped hold removed", TRIGGER_MSG, rebuild(with_entry(
@@ -275,10 +274,12 @@ def self_test(candidate, run41, run39, run38, run37, stock, source, boot, vendor
         "bin/wpss-once", trigger.replace(
             psoc.WPSS_RESULT,
             psoc.WPSS_RESULT + b"printf '1\\n' >/sys/kernel/icnss/wpss_boot\n", 1))))
-    case("#120 marker removed", INIT_MSG, rebuild(with_entry(
-        "init", init.replace(builder.MARKER, b"", 1))))
-    case("marker left at the #116 wording", INIT_MSG, rebuild(with_entry(
-        "init", init.replace(builder.MARKER, capture.MARKER, 1))))
+    case("#116 marker left unchanged", INIT_MSG, rebuild(with_entry(
+        "init", init.replace(capture.MARKER, b"", 1))))
+    case("#116 marker duplicated", INIT_MSG, rebuild(with_entry(
+        "init", init.replace(capture.MARKER, capture.MARKER + capture.MARKER, 1))))
+    case("marker regressed to the #109 wording", INIT_MSG, rebuild(with_entry(
+        "init", init.replace(capture.MARKER, psoc.MARKER, 1))))
     case("reused unflashed run-41 image", INIT_MSG, run41)
     case("reused measured run-39 image", INIT_MSG, run39)
 
@@ -349,8 +350,8 @@ def main():
     print(f"closure: {len(order)} modules, {len(outside)} outside modules.load, "
           f"list SHA-256 {modules.EUD_ORDER_SHA256}")
     print(f"debug cpio: {len(cpio)} bytes, zero .ko, SHA-256 {modules.sha256(cpio)}")
-    print("session delta: from the unflashed #116 run-41 image (7c3d915f), only the init "
-          "marker and the Dropbear invocation change; the deterministic host key is "
+    print("session delta: from the unflashed #116 run-41 image (7c3d915f), only the "
+          "Dropbear invocation changes; the deterministic host key is "
           "packaged at mode 0600 and the single 25 s-capped /dev/wlan ON hold, the "
           "one-shot WPSS trigger, the stock INI phase, the modem-holding stack, the "
           "21-module WLAN closure, the 150 s timer and /run/keep semantics are byte-exact")

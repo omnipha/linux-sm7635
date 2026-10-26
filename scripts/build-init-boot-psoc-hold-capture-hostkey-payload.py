@@ -32,23 +32,20 @@ CPIO_MSG = ("candidate cpio differs from the unflashed #116 cpio beyond the pinn
             "Dropbear host key")
 TRIGGER_MSG = capture.TRIGGER_MSG
 
-MARKER = (b"log 'session #120: deterministic Dropbear host key pinned for the #116 "
-          b"capture handoff'\n")
 HOST_KEY_DIR = hostkey.HOST_KEY_DIR
 HOST_KEY_PATH = hostkey.HOST_KEY_PATH
 
 
 def expected_init(run41_init):
-    require(run41_init.count(capture.MARKER) == 1 and MARKER not in run41_init and
+    require(run41_init.count(capture.MARKER) == 1 and
             run41_init.count(hostkey.GENERATED_CMD) == 1 and
             hostkey.DROPBEAR_CMD not in run41_init, INIT_MSG)
-    return (run41_init.replace(capture.MARKER, MARKER, 1)
-            .replace(hostkey.GENERATED_CMD, hostkey.DROPBEAR_CMD, 1))
+    return run41_init.replace(hostkey.GENERATED_CMD, hostkey.DROPBEAR_CMD, 1)
 
 
 def check_init(init, run41_init):
-    require(init == expected_init(run41_init) and init.count(MARKER) == 1 and
-            init.count(capture.MARKER) == 0 and init.count(psoc.MARKER) == 0 and
+    require(init == expected_init(run41_init) and init.count(capture.MARKER) == 1 and
+            init.count(psoc.MARKER) == 0 and
             init.count(hostkey.DROPBEAR_CMD) == 1 and
             init.count(hostkey.GENERATED_CMD) == 0 and
             init.count(b"/bin/dropbear -R") == 0 and
@@ -141,8 +138,8 @@ def main():
     check_host_key(blob, public)
     stock, cpio, frame, _, _ = prepare(args[1:21], blob, public)
     image, digest = assemble(stock, frame)
-    print("session delta: from the unflashed #116 image, only the init marker and the "
-          "Dropbear invocation change; the pinned host key replaces the -R generated "
+    print("session delta: from the unflashed #116 image, only the Dropbear invocation "
+          "changes; the pinned host key replaces the -R generated "
           "key while the single bounded /dev/wlan ON hold, the one-shot WPSS trigger, "
           "the 150 s timer and /run/keep semantics stay byte-exact")
     print(f"pinned Dropbear host public key: {hostkey.openssh_public_line(public)}")

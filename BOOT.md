@@ -15,7 +15,7 @@ placed in the known-hosts file before reboot.
 
 | artifact (outside repo) | bytes | SHA-256 |
 | --- | ---: | --- |
-| `$HOME/sm7635-build/out/init_boot-psoc-hold-capture-hostkey.img` | 8,388,608 | `859fb4888fe9414bcacecf3dd58ffba34f9d03435aa54ad81d2366dfa3dbf620` |
+| `$HOME/sm7635-build/out/init_boot-psoc-hold-capture-hostkey.img` | 8,388,608 | `8b62520fe6288361fd15faa573587a0d1be1e0788f780c62440677a60b739801` |
 
 **Pinned Dropbear host public key.** Place this exact line in the attempt
 directory's known-hosts file before any reboot:
@@ -34,17 +34,16 @@ inside a mode `0700` `etc/dropbear`, and `init` starts
 `dropbear -r /etc/dropbear/dropbear_ed25519_host_key -p 172.16.42.2:22`; no `-R`
 remains. Two serial builds from the same protected input are byte-identical.
 
-The only deltas from the unflashed #116 run-41 image (`7c3d915f…`) are the init
-session marker (reworded to `session #120: deterministic Dropbear host key pinned
-for the #116 capture handoff`) and that one Dropbear invocation, plus the two new
-cpio entries. `bin/wpss-once` is byte-identical to #109, so the single 25 s-capped
+The only deltas from the unflashed #116 run-41 image (`7c3d915f…`) are that one
+Dropbear invocation and the two new cpio entries. The #116 session marker stays
+byte-exact. `bin/wpss-once` is byte-identical to #109, so the single 25 s-capped
 `/dev/wlan` `ON` hold, the one stock `wpss_boot=1` write and the 12 s window
 sample are unchanged; the stock INI phase, the modem-holding stack, the 21-module
 WLAN closure, the armed `sleep 150` self-recovery timer and the single `/run/keep`
 test inside it are byte-exact #109. The debug cpio carries zero `.ko` and is
 3,672,576 B, SHA-256
-`c661a4e084a2685302efff3fbb441b4ef96313d0ef2557abad125445a5cf93cf`; the LZ4 HC-12
-frame is 2,096,294 / 2,117,632 B and the 6,266,880 B signed tail from offset
+`9a5e5d6798b885792fc6c138ae335add43cc23915cb173b9c4f3ec2d631eded4`; the LZ4 HC-12
+frame is 2,096,286 / 2,117,632 B and the 6,266,880 B signed tail from offset
 2,121,728 is unchanged.
 
 `scripts/verify-init-boot-psoc-hold-capture-hostkey.py` first re-verifies the
@@ -78,7 +77,7 @@ any previously measured pin, and add nothing:
    the NCM host address `172.16.42.1/24`, mark both gadget links unmanaged, and
    verify the link and the route to `172.16.42.2`. Abort if any preboot check
    fails. `session-capture.py check` is not the preboot gate.
-2. Flash `859fb4888fe9414bcacecf3dd58ffba34f9d03435aa54ad81d2366dfa3dbf620` to
+2. Flash `8b62520fe6288361fd15faa573587a0d1be1e0788f780c62440677a60b739801` to
    `init_boot_a` only, after the verified five-partition stock rollback and the
    fresh fastboot gate, and reboot once. The SHA becomes never-reflash on first
    flash. Never flash the unflashed `7c3d915f…`, `0b40ac34…`, `e75c5bd2…`,
@@ -99,7 +98,7 @@ any previously measured pin, and add nothing:
 **Superseded and never-reflash.** This candidate was never flashed, and #120
 showed its `-R` generated host key cannot be pinned before the reboot that the
 #113/#116 handoff requires. Use the run-42 image
-`859fb4888fe9414bcacecf3dd58ffba34f9d03435aa54ad81d2366dfa3dbf620` above
+`8b62520fe6288361fd15faa573587a0d1be1e0788f780c62440677a60b739801` above
 instead; do not flash `7c3d915f3c8554d8a551b33f1b1caf162d410c0f629fae75425f29112c2fedf0`.
 
 **Host result, not a device result.** The physical coordinator owns the one
