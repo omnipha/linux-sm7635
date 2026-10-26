@@ -446,9 +446,9 @@ session's own busybox (`iw dev wlan0 scan` only if the guest `iw dev` reports
 a phy; otherwise a single `ip link set wlan0 up`), post-action sysfs/kmsg
 evidence with new fatal/crash/idle-timeout counts, and the stock rollback
 with pstore pulled before stock Android. Timeouts and fallback outcomes are
-recorded, never retried. It proves no physical result; the coordinator handoff
-is recorded in [BOOT.md](BOOT.md) and this issue closes only on the recorded
-measurement.
+recorded, never retried. It proves no physical result; the current coordinator
+handoff is recorded in [BOOT.md](BOOT.md). #127 remains OPEN blocked until the
+#130 coordinator measurement resolves it.
 
 ## Preboot capture handoff (2026-10-26, #113)
 
