@@ -1,3 +1,125 @@
+## Run 42 `/dev/wlan` vetting (#122, host-only, 2026-10-26)
+
+**Finding: the missing step is creation of the character file in the diagnostic
+session's `/dev`, not a late WLAN probe or the #113 preboot route.** This is a
+host-only source/record analysis; no image, kernel build, device access or
+physical result belongs to #122. The pinned NothingOSS 6.1.78 tree is at
+`d5f5f965fd0b478eaf4eb63fd984c5a4a92135a7` (`UPSTREAM.md:7-17`);
+the measured device kernel is 6.1.84, so the vendor source explains the path
+but is not asserted to be byte-identical to the stock driver.
+
+1. The run-42 `bin/wpss-once` is constructed by
+   `scripts/build-init-boot-psoc-hold-payload.py:32-38,92-103` and retained
+   byte-exact by `scripts/build-init-boot-psoc-hold-capture-payload.py:46-52`
+   and `scripts/build-init-boot-psoc-hold-capture-hostkey-payload.py:55-61`.
+   Its lines 25-27 are `if [ ! -c /dev/wlan ]; then`, `log 'rejected:
+   /dev/wlan control node absent before WPSS trigger'`, `exit 9`. The `log`
+   function prefixes `wpss-once: ` (`scripts/build-init-boot-wpss-boot-payload.py:29-32`).
+   `-c` tests the *pathname's present character-file type*, not whether the
+   kernel registered `wlan_hdd_state`; it cannot say whether a node was never
+   made, was removed, or was replaced by a non-character file. The check comes
+   after the remoteproc/service/icnss2 gates but before the mount/firmware
+   checks, one-shot marker, ON writer and sole `wpss_boot=1` write (generated
+   trigger lines 16-47; source `scripts/build-init-boot-wpss-boot-payload.py:45-69`
+   and `scripts/build-init-boot-psoc-hold-payload.py:33-47,100-103`). The
+   observed `exit=9` and rejection are `stage8-wpss.txt:1` and
+   `capture/kmsg.log:2474-2475` under the run-42 record
+   `~/phone-second-life-data/mb003/pstore/attempt-20261026-0652-initboot-psochold-hostkey/`;
+   the later `stage8-wpss-diagnose.txt:1-2` also finds no node or marker.
+
+2. In the pinned tree, `qca_cld3_qca6750`'s module entry calls
+   `hdd_driver_load` (`vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/
+   wlan_hdd_main_module.c:29-40`). After `pld_init`, it registers the driver
+   (up to 50 retries on `-EAGAIN`, 100 ms apart), returns on registration
+   failure, skips creation on a soft load, then calls
+   `wlan_hdd_state_ctrl_param_create` (`core/hdd/src/wlan_hdd_main.c:20307-20330,20398-20435`).
+   That function allocates `qcwlanstate`, creates class/device named `wlan`
+   (`CONFIG_WLAN_CTRL_NAME="wlan"`, `configs/volcano_gki_qca6750_defconfig:323`),
+   adds the cdev and logs `wlan_hdd_state wlan major(...) initialized`
+   (`main.c:19257-19299`). This is **registration and a sysfs device**, not
+   proof of a `/dev/wlan` filesystem node. A normal full unload destroys the
+   device/cdev (`main.c:19331-19338,20558-20563`); the record has no such
+   unregister line. The icnss2 platform-device gate can return `-EAGAIN`
+   before registration (`vendor/qcom/opensource/wlan/platform/icnss2/main.c:3331-3340`),
+   but registration can succeed while FW is *not* ready: its event handler
+   stores ops and parks without probing (`main.c:1747-1771`). Only FW_READY
+   leads to `icnss_call_driver_probe` and eventual `wlan0` (`main.c:1452-1493,
+   1335-1372`). Neither a running modem, the stock INI used later by the
+   HDD probe, nor a WPSS trigger is required to register this control device.
+
+   The merged init mounts `/dev` as devtmpfs or falls back to tmpfs **without
+   checking/logging which mounted** (`initramfs/init:8-21`, inherited by the
+   run-42 init); it explicitly creates a few basic nodes. Its WLAN phase binds
+   the stock INI before the closure (`scripts/build-init-boot-wlan-ini-payload.py:40-68,78-85`),
+   waits up to 12 s for icnss2 before qca_cld3
+   (`scripts/build-init-boot-ipci-defer-payload.py:39-60`), then insmods the
+   21-module closure and checks `wlan0`, **not `/dev/wlan`**
+   (`scripts/build-init-boot-wlan-closure-payload.py:44-51,106-162`). It
+   never runs a device-node manager or `mknod /dev/wlan`. The *measured stock*
+   config (`~/phone-second-life-data/mb003/config.gz:1723,6634`) has
+   `# CONFIG_DEVTMPFS is not set` and `CONFIG_TMPFS=y`. On that kernel the
+   driver-core `devtmpfs_create_node(dev)` call (`drivers/base/core.c:3626-3645`) is a
+   no-op (`drivers/base/base.h:198-204`); `/sys/class/wlan/wlan/dev` still
+   advertises the device number (`drivers/base/core.c:2949-2954,3626-3633`).
+   Run 42's `capture/kmsg.log:1256` actually reports `request_module
+   fs-devtmpfs succeeded, but still no fs?`, consistent with the tmpfs fallback.
+   The diagnostic init has no ueventd/mdev node-creation path. Thus *the
+   merged session itself cannot create `/dev/wlan`*: the major(495) line is
+   not evidence of a character file. An unrecorded external creation/removal
+   cannot be excluded by the single `-c` observation.
+
+   Run 42's stock INI succeeded before module load (`capture/kmsg.log:2297-2303`);
+   icnss2 bound, qca_cld3 logged its banner at 1.642 s, `wlan_hdd_state`
+   registered major 495 at 1.644 s, the module loaded and `wlan0` was absent
+   (`capture/kmsg.log:2380-2387`). One guarded modem start at uptime 65 s
+   reached DMS connected (`capture/kmsg.log:2473`; `stage7-hold.txt`); the
+   helper reached its node check at uptime 190 s and exited 9. **Yes, it can
+   reach that check with the device registered but the `/dev` file never
+   instantiated:** none of the preceding modem/icnss2/service gates tests
+   `/dev/wlan`, and the early module-registration/soft-load/failure gates
+   were passed as shown by the successful major log. The WPSS trigger could
+   not run after this rejection; WPSS stayed offline and the ON hold did not
+   run (`stage8-final-state.txt:3-5`).
+
+3. Run 38 (`e75c5bd2…`, outcome (a)) logged the same `request_module
+   fs-devtmpfs ... still no fs?` (`attempt-20261025-2148-initboot-wlanini/
+   capture/kmsg.log:1256`) and the same qca_cld3 load -> major(495) ->
+   `wlan0 absent` sequence at 1.605-1.610 s (`:2400-2404`). **Correction to
+   the comparison premise:** run 38 did *not* use the byte-identical #109/#116
+   helper: its #106 helper (`scripts/build-init-boot-wpss-boot-payload.py:29-79`)
+   has no `/dev/wlan` precheck or ON writer. Its `stage8-preconditions.txt`
+   did not inspect that node; `capture/kmsg.log:2492-2511` shows the old helper
+   wrote `wpss_boot=1`, reached FW_READY, and `stageB-wlan0.txt` confirms
+   `wlan0` registered. These facts do **not** establish that run 38 ever had
+   `/dev/wlan`; `wlan0` is a different netdev. The known difference is the
+   added fail-closed precheck before the one WPSS write, not a changed WLAN
+   closure/INI/modem stack. The raw record lacks `/dev/wlan` snapshots at
+   module load in either run, so it cannot distinguish an unobserved external
+   node creation followed by removal from never having a file; the stock
+   config, tmpfs fallback and merged init support the latter without proving
+   a complete history of `/dev`.
+
+4. **Single missing variable in the controlled session:** instantiating the
+   registered char device in the tmpfs `/dev`. One bounded *future* in-session
+   operation, after the existing successful qca_cld3 load and before the
+   unchanged one-shot helper, would fail closed unless
+   `/sys/class/wlan/wlan/dev` supplies a validated numeric major:minor that
+   matches the `qcwlanstate` registration in `/proc/devices`; only then create
+   `/dev/wlan` with those live numbers via a time-capped `mknod` (mode 0600)
+   and verify it is the expected character device. Never hard-code the observed
+   major 495, create a node without the class, or alter the helper. In a
+   separately authorized distinct-SHA single-variable session, prediction:
+   if the class and device number persist, the node check passes and the
+   existing ON writer and single WPSS write can run; whether the hold is
+   accepted, FW_READY arrives and `wlan0` persists discriminates the *later*
+   psoc-idle question. If the class/number is absent or changes, or `mknod`
+   fails, stop before the WPSS helper: the registration/lifecycle or filesystem
+   path is the next named gap. If a verified node still yields exit 9, the
+   check's filesystem/namespace or intervening removal is the discriminator;
+   stop, not a second write. None of these is an observed physical outcome or
+   permission to repeat #116. No timer, `/run/keep`, 25 s ON hold, WPSS write,
+   modem stack, WLAN closure, kernel, or measured SHA is changed here.
+
 ## Run 42 candidate: pinned deterministic Dropbear host key for the #116 capture handoff (#120, host-only, 2026-10-26)
 
 **Host result, not a device result.** No flash, reboot or other device operation
@@ -382,9 +504,10 @@ Pinned NothingOSS `android_kernel_msm-6.1_nothing_sm7635` @
   (`:5443-5449`), so `operstate` may still report `down` even if the psoc
   survives. The run-38 session issued no interface-up before the ~250 ms
   deadline; doing this after a distant SSH check would not vet this window.
-- **Userspace hold (the single tested variable):** `/dev/wlan` exists in the
-  measured run-38 module load (`kmsg:2401`, `wlan_hdd_state` major initialized).
-  Its `ON` write is a recognized value (`main.c:18958-18981,19121-19134`),
+- **Userspace hold (the single tested variable):** run 38 registered the
+  `wlan_hdd_state` device (`kmsg:2401`), but did not check whether the
+  `/dev/wlan` character file existed (see #122 vetting above). An `ON` write
+  through that node is a recognized value (`main.c:18958-18981,19121-19134`),
   waits for `cds_is_driver_loaded` if the probe is still in progress
   (`:19163-19174`; completion at `driver_ops.c:824-826`), then calls
   `hdd_psoc_idle_timer_stop` (`main.c:19179-19184`, `:14132-14136`) rather
