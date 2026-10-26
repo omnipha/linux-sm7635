@@ -416,9 +416,18 @@ physical run is owned by the physical coordinator and follows the #113 preboot
 capture handoff exactly; predicted outcomes (a)/(b)/(c)/(d) and the handoff are
 in [BOOT.md](BOOT.md). This is not a physical result.
 
-## Host-only live-session WLAN handoff (2026-10-26, #134)
+## Run-47 live-session WLAN scan finding (2026-10-26, #134)
 
-[BOOT.md](BOOT.md#planned-live-session-wlan-handoff-scan-through-connectivity-134-host-only-2026-10-26)
+[BOOT.md](BOOT.md#run-47-measured-guest-scan-success-association-unmeasured-134-live-session-finding-2026-10-26)
+records a measured guest `iw` scan success in one held, captured, pinned-key SSH
+session on the unchanged run-43 image. The first scan returned `-ENETDOWN`
+(exit 156) because `wlan0` was administratively down (flags `0x1002`); after one
+safe link-up (flags `0x1003`), one 20 s-bounded retry returned exit 0 with 17 BSS
+(10 at 2.4 GHz, 7 at 5 GHz) and zero new fatal/crash/idle capture lines. The
+worker did not inspect SSIDs/BSSIDs or touch a profile. This proves the stock
+nl80211 driver serves scans, **not** target visibility, association, DHCP or
+network access. Stock rollback is still coordinator-owned and pending; #134 stays
+OPEN. The earlier host-only [handoff plan](BOOT.md#planned-live-session-wlan-handoff-scan-through-connectivity-134-host-only-2026-10-26)
 prepares one bounded, coordinator-owned live-session handoff on the **unchanged**
 run-43 image (`0f998e29…`) from the #132 inventory. It host-verifies the cached
 Alpine v3.21 aarch64 bundle (`iw`/`wpa_supplicant`/`wpa_cli` + musl/libnl): APK
@@ -427,15 +436,12 @@ loads through the bundled loader (`iw version 6.9`, `wpa_supplicant v2.10`, exit
 — proving **loading only**, not a guest scan. It inventories guest DHCP tooling
 without touching a WLAN profile (`udhcpc` present; run-43 cpio ships **no**
 `/etc/udhcpc/default.script`, so the hash-checked, synthetic-tested lease helper
-is transferred into RAM),
-documents fail-closed preboot readiness for the protected profile/client/DHCP
-without printing secrets, and plans root-only RAM transfer over the pinned
-key-only session, a 20 s-bounded guest `iw` scan, and only on success bounded
-association/address/reachability with per-stage separability and stop rules. No
-image, kernel, config, module, timer, transfer, scan, association or device
-operation is performed here. This is host delivery only; #134 stays
-`AWAITING_PHYSICAL_RESULT` until the coordinator records the discriminating
-per-stage result and verified rollback (or a named pre-flash refusal).
+is transferred into RAM). The host-only plan documents fail-closed preboot
+readiness for the protected profile/client/DHCP without printing secrets, plus
+root-only RAM transfer, a 20 s-bounded scan and conditional bounded
+association/address/reachability with per-stage stop rules. The new measured
+scan above is a separate live result; it does **not** close #134 until the
+coordinator records the remaining per-stage outcome and verified rollback.
 
 ## Host-only guest scan-client diagnosis (2026-10-26, #132)
 
