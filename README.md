@@ -440,11 +440,28 @@ reversibly under guest RAM, keeping the diagnostic PID 1, gadget and pinned
 host preparation, not a phone result, image, own-kernel test, persistence path or
 release; the coordinator owns the live session and stock rollback.
 
+## Isolated guest device and PTY host fixture (2026-10-27, #142)
+
+`scripts/pmos-session-stage.sh` now mounts a guest-only RAM tmpfs for `/dev`, creates
+and verifies minimal character nodes (including guest-local `tty`), and mounts a
+private `devpts` with `/dev/ptmx` linked to its instance. It never binds the
+diagnostic `/dev`. Teardown checks mount types and filesystem identities, refuses
+unknown/live nested mounts, and unmounts in reverse order. Run
+`scripts/test-pmos-session-dev.sh` on a host with passwordless sudo for an
+isolated mount/PID/network namespace and the pinned public userspace archive:
+the fixture covers fresh and partial/failed stage, missing/wrong nodes, a
+shared-`/dev` negative case, unchanged diagnostic service and device nodes, and
+both key-only non-PTY commands and `ssh -tt` in the staged userland. This is a
+**host PTY result only**. Run 49/#139 closed after verified five-partition stock
+rollback; the on-device `ssh -tt` defect remains unmeasured. A new device-side
+result requires a separately coordinator-proven held session and rollback; see
+[BOOT.md](BOOT.md#isolated-guest-dev-and-host-only-pty-fixture-142-2026-10-27).
+
 ## Run-49 live-session staged postmarketOS shell/service + WLAN connectivity finding (2026-10-27, #139)
 
 [BOOT.md](BOOT.md#run-49-measured-staged-postmarketos-shell-service-and-wlan-connectivity-139-live-session-finding-2026-10-27)
 records a measured physical result in the coordinator-held run-49 session: after
-the on-device-tested staging fix (private `devpts` replacing the failed nested
+the on-device-tested staging fix (chroot-local `devpts` replacing the failed nested
 `dev/pts` bind), the pinned 23.7 MiB postmarketOS/Alpine userspace staged into
 guest RAM, and a host-reached key-only shell confirmed UID 0 inside
 `/run/pmos`, postmarketOS v24.12 / Alpine 3.21.9 identity and the same running
@@ -465,9 +482,10 @@ into the outer namespace, so it was reverted and PTY left as a successor task â€
 non-PTY key-only command shells are the measured service surface. This proves
 an ephemeral RAM-only distribution userspace and WLAN connectivity on the
 measured stock kernel, **not** persistence, autoconnect after reboot, or a
-release image. The coordinator still owns the pending stock `init_boot_a`
-restore, five-hash proof, pstore preservation and stock Android verification;
-#139 remains OPEN until that closure is recorded.
+release image. At the time of that measured finding, the coordinator still
+owned the pending stock `init_boot_a` restore, five-hash proof, pstore
+preservation and stock Android verification; #139 has since closed after
+verified five-partition stock rollback.
 
 ## Run-48 live-session WLAN connectivity finding (2026-10-26, #137)
 
