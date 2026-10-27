@@ -62,6 +62,7 @@ for artifact in "$OUT/boot.img" "$OUT/boot-stock-kernel.img" "$OUT/boot-full-foo
 	"$OUT/init_boot-psoc-hold-capture.img" \
 	"$OUT/init_boot-psoc-hold-capture-hostkey.img" \
 	"$OUT/init_boot-psoc-hold-wlan-node.img" \
+	"$OUT/init_boot-pid1-handoff.img" \
 	"$OUT/rmtfs" "$OUT/msm_sharedmem.ko" \
 	"$OUT/boot-diagnostic-ext4.img" \
 	"$OUT/boot-diagnostic-initcall-debug.img" \
@@ -471,6 +472,16 @@ python3 "$ROOT/scripts/verify-init-boot-psoc-hold-wlan-node.py" \
 	"$PSTORE_CONSOLE" "$OUT/restart2" "$OUT/pd-mapper" "$OUT/tqftpserv" "$OUT/rmtfs" \
 	"$OUT/msm_sharedmem.ko" "$HOME/phone-second-life-data/mb003/by-name.txt" \
 	"$MAPS" "${HOSTKEY:-$HOME/.omnipha/sm7635/dropbear_ed25519_host_key}"
+printf '%s  %s\n' 'd90b22212812f022017a9eaaf6af58cce08a5bf08474a024b7ccb6317b51ffb7' \
+	"$OUT/init_boot-pid1-handoff.img" | sha256sum -c - || die 'unreviewed PID1 candidate SHA'
+python3 -B "$ROOT/scripts/verify-init-boot-pid1-handoff.py" --self-test \
+	"$OUT/init_boot-pid1-handoff.img" "$STOCK_INIT" \
+	"$OUT/init_boot-psoc-hold-wlan-node.img" --script \
+	"$ROOT/scripts/pmos-pid1-transition.sh"
+python3 -B "$ROOT/scripts/verify-init-boot-pid1-handoff.py" \
+	"$OUT/init_boot-pid1-handoff.img" "$STOCK_INIT" \
+	"$OUT/init_boot-psoc-hold-wlan-node.img" --script \
+	"$ROOT/scripts/pmos-pid1-transition.sh"
 python3 "$ROOT/scripts/verify-init-boot-psoc-hold-capture.py" \
 	"$OUT/init_boot-psoc-hold-capture.img" "$OUT/init_boot-psoc-hold.img" \
 	"$OUT/init_boot-wlan-ini.img" "$OUT/init_boot-wpss-boot.img" \
@@ -1052,6 +1063,7 @@ echo 'init_boot wlan-closure control: same stock baa33fd4 prefix and signed tail
 		init_boot-wlan-ini.img init_boot-psoc-hold.img \
 		init_boot-psoc-hold-capture.img init_boot-psoc-hold-capture-hostkey.img \
 		init_boot-psoc-hold-wlan-node.img \
+		init_boot-pid1-handoff.img \
 		pd-mapper tqftpserv rmtfs msm_sharedmem.ko \
 		boot-diagnostic-ext4.img boot-diagnostic-initcall-debug.img \
 		Image-diagnostic-ext4.gz Image-diagnostic-initcall-debug.gz restart2 \
