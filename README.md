@@ -440,6 +440,27 @@ reversibly under guest RAM, keeping the diagnostic PID 1, gadget and pinned
 host preparation, not a phone result, image, own-kernel test, persistence path or
 release; the coordinator owns the live session and stock rollback.
 
+## Stock-kernel PID-1 handoff candidate (2026-10-27, #145, host-only)
+
+[BOOT.md](BOOT.md#bounded-ram-backed-postmarketos-pid-1-handoff-145-host-only-2026-10-27)
+records a narrow, **unflashed** init_boot candidate from the measured run-43 image:
+PID 1 can accept a root-owned, boot-ID-bound request and SHA-pinned volatile
+transition only after the old 150 s recovery child has settled. The 134-APK
+public archive is staged on a distinct RAM tmpfs with separate private `/run`,
+`/dev`, `/proc`, `/sys`, and key-only `:2222`. Before `switch_root` the new
+160 s guard is armed independently of `/run/keep`; a strict-key host ack needs
+actual new-root PID 1, boot identity, a live second SSH service and heartbeat.
+`build-init-boot-pid1-handoff.sh` serially reproduces the 8,388,608-byte image
+`d90b2221…` outside Git, with exact `/init` delta, header and stock-tail
+negative checks. `sh scripts/test-pmos-session-dev.sh`,
+`sh scripts/test-pmos-pid1-request.sh` and `sh scripts/test-pmos-pid1.sh` are
+isolated **host** fixtures (the x86 PID 1 is native BusyBox, aarch64 userspace
+uses QEMU and recovery is mocked). They do **not** establish device PID 1,
+AVB acceptance, cold boot, a physical guard result or stock rollback. Only the
+coordinator can open a guarded session for #145; the worker continues on the
+same issue after a proven handoff, and #145 remains OPEN until a measured
+outcome and stock restore. No device operation is performed by these scripts.
+
 ## Isolated guest device and PTY host fixture (2026-10-27, #142)
 
 `scripts/pmos-session-stage.sh` now mounts a guest-only RAM tmpfs for `/dev`, creates
