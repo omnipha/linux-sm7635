@@ -46,11 +46,13 @@ $BB printf 'root:!:0:0:99999:7:::\n' > "$PMOS_ROOT/etc/shadow"
 $BB chmod 600 "$PMOS_ROOT/etc/shadow"
 log "reused existing pinned authorized_keys; locked password; key-only"
 
-for d in proc sys dev dev/pts; do
+for d in proc sys dev; do
 	$BB mount --bind "/$d" "$PMOS_ROOT/$d" || die "bind $d failed"
 done
+$BB mkdir -p "$PMOS_ROOT/dev/pts"
+$BB mount -t devpts devpts "$PMOS_ROOT/dev/pts" || die "devpts failed"
 [ -e "$PMOS_ROOT/dev/ptmx" ] || $BB ln -sf /dev/pts/ptmx "$PMOS_ROOT/dev/ptmx" 2>/dev/null || true
-log "bound proc/sys/dev into chroot"
+log "bound proc/sys/dev into chroot with private devpts"
 
 $BB chroot "$PMOS_ROOT" /bin/sh -ec \
 	'grep -E "^(PRETTY_NAME|ID)=" /etc/os-release; echo kernel=$(uname -r) userland=$(cat /etc/alpine-release); apk --version; uname -m' \
