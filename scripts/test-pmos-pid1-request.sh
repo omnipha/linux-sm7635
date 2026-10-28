@@ -3,7 +3,7 @@ set -eu
 
 BB=/bin/busybox
 SCRIPT_SHA=0b85d1dc3c05b58f703618994363a9d0dbd09ecf8139573d2db15628d2497549
-CANDIDATE_SHA=d90b22212812f022017a9eaaf6af58cce08a5bf08474a024b7ccb6317b51ffb7
+CANDIDATE_SHA=fef030081e04d3a90451bb7d64dcfa7668c41dc4248e6e0b1959fdb40efce948
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 hash() { $BB sha256sum "$1" | $BB cut -d ' ' -f 1; }
 healthy() {
@@ -42,8 +42,19 @@ if [ "${1:-}" = --worker ]; then
 	CASE=$2
 	DIAGNOSTIC_PID=$($BB cat /run/diagnostic.pid)
 	[ "$(hash /test-pmos-pid1-request.sh)" = "$TEST_SHA" ] || fail 'worker test source pin changed'
-	healthy || fail 'initial diagnostic service or hold missing'
+	$BB sleep 2
+	[ ! -e /run/keep ] && [ ! -L /run/keep ] && [ ! -s /run/handoff.log ] || fail 'console tail required an early hold'
 	[ "$(hash /run/pmos-pid1-transition.sh)" = "$SCRIPT_SHA" ] || fail 'initial script pin invalid'
+	if [ "$CASE" = valid ]; then
+		request "$BOOT_ID"
+		wait_log 'pid1 handoff rejected; diagnostic console and SSH retained'
+		[ ! -e /run/pmos-pid1-request ] || fail 'unheld request survived'
+		[ ! -f /run/accepted-at ] || fail 'unheld request accepted'
+		: > /run/handoff.log
+	fi
+	$BB touch /run/keep
+	healthy || fail 'diagnostic service or delayed hold missing'
+
 	[ "$($BB stat -c '%u:%a:%h' /run/pmos-pid1-transition.sh)" = 0:700:1 ] || fail 'initial script metadata invalid'
 	case "$CASE" in
 		missing)
@@ -99,7 +110,8 @@ if [ "${1:-}" = --pid1 ]; then
 	[ "$($BB stat -c '%u:%a' /run)" = 0:755 ] || fail 'fixture /run mode'
 	$BB awk '$2 == "/" {r++; if ($3 != "tmpfs") bad++} $2 == "/run" {n++; if ($3 != "tmpfs") bad++} END {exit(bad || r != 1 || n != 1)}' /proc/mounts || fail 'fixture is not tmpfs PID 1 root/run'
 	[ "$(hash /test-pmos-pid1-request.sh)" = "$TEST_SHA" ] && [ "$(hash /run/pmos-pid1-transition.sh)" = "$SCRIPT_SHA" ] && [ "$(hash /handoff.sh)" = "$HANDOFF_SHA" ] || fail 'fixture source pin changed'
-	$BB touch /run/keep /run/handoff.log
+	$BB touch /run/handoff.log
+	[ ! -e /run/keep ] && [ ! -L /run/keep ] || fail 'fixture hold must be absent at console tail'
 	($BB sleep 150; $BB touch /run/timer-finished; [ -e /run/keep ] || $BB touch /run/timer-reboot) &
 	$BB sleep 190 &
 	$BB printf '%s\n' "$!" > /run/diagnostic.pid
