@@ -100,12 +100,23 @@ done
 	[ -x "$PMOS_ROOT/bin/busybox" ] && [ ! -L "$PMOS_ROOT/bin/busybox" ] ||
 	die "missing distro openrc or busybox binary"
 [ ! -e "$PMOS_ROOT/sbin/init" ] && [ ! -L "$PMOS_ROOT/sbin/init" ] || die "guest init already exists"
-for level in "$PMOS_ROOT"/etc/runlevels/*; do
-	[ -d "$level" ] || continue
-	for service in dropbear sshd; do
-		[ ! -e "$level/$service" ] && [ ! -L "$level/$service" ] || die "conflicting OpenRC SSH service"
+for level in sysinit boot default nonetwork shutdown; do
+	path="$PMOS_ROOT/etc/runlevels/$level"
+	[ -d "$path" ] && [ ! -L "$path" ] || die "missing or unsafe OpenRC runlevel $level"
+	for entry in "$path"/* "$path"/.[!.]* "$path"/..?*; do
+		[ ! -e "$entry" ] && [ ! -L "$entry" ] || die "unexpected enabled OpenRC service"
 	done
 done
+[ -f "$PMOS_ROOT/etc/init.d/local" ] && [ ! -L "$PMOS_ROOT/etc/init.d/local" ] &&
+	[ -x "$PMOS_ROOT/etc/init.d/local" ] &&
+	[ -d "$PMOS_ROOT/etc/local.d" ] && [ ! -L "$PMOS_ROOT/etc/local.d" ] ||
+	die "local OpenRC service or configuration missing"
+for hook in "$PMOS_ROOT"/etc/local.d/*.start; do
+	[ ! -e "$hook" ] && [ ! -L "$hook" ] || die "unexpected local startup hook"
+done
+$BB ln -s /etc/init.d/local "$PMOS_ROOT/etc/runlevels/default/local" || die "cannot enable RAM-only local service"
+[ "$($BB readlink "$PMOS_ROOT/etc/runlevels/default/local")" = /etc/init.d/local ] ||
+	die "local OpenRC service link invalid"
 $BB ln -s ../bin/busybox "$PMOS_ROOT/sbin/init" || die "cannot link guest init"
 [ "$($BB readlink "$PMOS_ROOT/sbin/init")" = ../bin/busybox ] || die "guest init link invalid"
 $BB printf '::sysinit:/sbin/openrc sysinit\n::sysinit:/sbin/openrc boot\n::wait:/sbin/openrc default\n' > "$PMOS_ROOT/etc/inittab"

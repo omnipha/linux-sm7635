@@ -440,6 +440,25 @@ reversibly under guest RAM, keeping the diagnostic PID 1, gadget and pinned
 host preparation, not a phone result, image, own-kernel test, persistence path or
 release; the coordinator owns the live session and stock rollback.
 
+## Host-only OpenRC service diagnosis and RAM fixture (2026-10-28, #149)
+
+[BOOT.md](BOOT.md#host-only-openrc-runlevel-inventory-and-minimal-ram-only-defaultlocal-fixture-149-2026-10-28)
+traces run-52's empty `default` runlevel to `apk.static --no-scripts` in the
+134-APK `7a76a110…` public archive: 67 OpenRC service scripts were present,
+but no runlevel was enabled. The #145 stage supplied BusyBox `/sbin/init` and
+its three-line OpenRC inittab without populating a runlevel; run 52 reached
+`softlevel=default` with 0 services started and 0 failed, not an init failure.
+A minimal RAM-only stage now enables only `default/local`, after rejecting any
+pre-enabled runlevel, missing `local` script/configuration or unexpected startup
+hook. `scripts/test-alpine-session.sh` checks the pinned hook/service inventory
+and negative inputs; `scripts/test-pmos-session-dev.sh` tests the actual OpenRC
+`sysinit` → `boot` → `default` sequence with `local` started and rejects the
+missing network/deviceinfo and incompatible guest `/dev` prerequisites in
+isolated host namespaces. The archive, image, pinned transition/guard, inittab,
+USB control, key-only SSH and guest-private `/dev` remain unchanged. This is a
+host fixture only; device service/WLAN startup after cutover and USB continuity
+with the new runlevel remain unmeasured and require a separate issue/session.
+
 ## Stock-kernel PID-1 handoff and run-52 measured cutover (2026-10-28, #145)
 
 [BOOT.md](BOOT.md#run-52-measured-postmarketos-pid-1-cutover-and-usb-ssh-145-live-session-finding-2026-10-28)
