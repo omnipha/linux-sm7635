@@ -8,6 +8,7 @@ INI=etc/wifi/qca6750/WCNSS_qcom_cfg.ini
 INI_SHA=57989aba51e98e3c608350bbff78b24b9613242cdf39cd1b8f1e0141659377d4
 KO=mnt/vendor_dlkm/lib/modules/qca_cld3_qca6750.ko
 KO_SHA=c2dbdcd119955b7212d61eeb00528b8b69012a3e7f9528ceb1738b6081ee6e0b
+RMTFS_SHA=d66204e7895a6fd4cf78af369a45cee5bf1c88fa3f8cdad27e24690f233251bd
 HELPER_SHA=fef7e5da780d59a02a558b912d30fccb905ceb3b4e6a964ed666d1897f3987d2
 MSS=/sys/class/remoteproc/remoteproc2
 WPSS=/sys/class/remoteproc/remoteproc3
@@ -26,6 +27,74 @@ case "$stage" in prepare|modem|wpss|driver|scan|all) :;; *) fail 'unknown stage'
 [ -f /run/keep ] && [ ! -L /run/keep ] || fail 'diagnostic or guest hold absent'
 [ "$($BB id -u)" = 0 ] || fail 'not root'
 
+rmtfs_inputs() {
+	phase=$1
+	rmtfs_pid=
+	n=0
+	for dir in /proc/[0-9]*; do
+		[ "$($BB cat "$dir/comm" 2>/dev/null)" = rmtfs ] || continue
+		if [ "$phase" = pre ]; then
+			[ "$(hash "$dir/exe")" = "$RMTFS_SHA" ] || continue
+		else
+			[ "$($BB cat "$STATE/rmtfs.pid" 2>/dev/null)" = "${dir##*/}" ] &&
+				[ "$(hash "$dir/exe")" = "$RMTFS_SHA" ] || continue
+		fi
+		rmtfs_pid=${dir##*/}
+		n=$((n + 1))
+	done
+	[ "$n" = 1 ] || fail "expected exactly one pinned rmtfs process, found $n"
+	rmtfs_root=/proc/$rmtfs_pid/root
+	if [ "$phase" = pre ]; then
+		rmtfs_log=$rmtfs_root/run/rmtfs.log
+	else
+		[ "$($BB cat "$STATE/rmtfs.pid" 2>/dev/null)" = "$rmtfs_pid" ] || fail 'surviving rmtfs PID does not match the prepared service'
+		rmtfs_log=$STATE/rmtfs.log
+	fi
+	[ -f "$rmtfs_log" ] && [ ! -L "$rmtfs_log" ] &&
+		$BB grep -q 'rmtfs: published QRTR service' "$rmtfs_log" &&
+		$BB grep -q 'rmtfs: mapped stock UIO' "$rmtfs_log" || fail 'rmtfs did not log the UIO map and QRTR publish'
+	$BB grep -q '/dev/uio0' "/proc/$rmtfs_pid/maps" || fail 'rmtfs does not hold the mapped sharedmem UIO'
+	[ "$($BB cat /sys/class/uio/uio0/name 2>/dev/null)" = rmtfs ] || fail 'kernel sharedmem UIO is not the rmtfs client'
+	uio_id=$($BB cat /sys/class/uio/uio0/dev)
+	case "$uio_id" in [0-9]*:[0-9]*) :;; *) fail 'rmtfs UIO numbers invalid';; esac
+	if [ "$phase" = post ] && [ ! -c "$rmtfs_root/dev/uio0" ]; then
+		[ ! -e "$rmtfs_root/dev/uio0" ] && [ ! -L "$rmtfs_root/dev/uio0" ] || fail 'rmtfs UIO path is not a character node'
+		$BB mkdir -p "$rmtfs_root/dev" || fail 'cannot restore the rmtfs dev directory'
+		$BB mknod -m 0600 "$rmtfs_root/dev/uio0" c "${uio_id%%:*}" "${uio_id##*:}" || fail 'cannot restore the rmtfs UIO node'
+		rmtfs_restored="${rmtfs_restored:-} uio0"
+	fi
+	[ -c "$rmtfs_root/dev/uio0" ] &&
+		[ "$($BB stat -c '%t:%T' "$rmtfs_root/dev/uio0")" = "$($BB printf '%x:%x' "${uio_id%%:*}" "${uio_id##*:}")" ] ||
+		fail 'sharedmem UIO node absent or differs from sysfs'
+	for part in sdf2:modemst1 sdf3:modemst2; do
+		device=${part%%:*}
+		name=${part##*:}
+		[ "$($BB sed -n 's/^PARTNAME=//p' "/sys/class/block/$device/uevent" 2>/dev/null)" = "$name" ] || fail "$name PARTNAME changed"
+		if [ "$phase" = post ] && [ ! -b "$rmtfs_root/dev/block/$device" ]; then
+			[ ! -e "$rmtfs_root/dev/block/$device" ] && [ ! -L "$rmtfs_root/dev/block/$device" ] || fail "$name backing node differs"
+			devnum=$($BB cat "/sys/class/block/$device/dev")
+			case "$devnum" in [0-9]*:[0-9]*) :;; *) fail "$name device numbers invalid";; esac
+			$BB mkdir -p "$rmtfs_root/dev/block" || fail "cannot restore the rmtfs block directory"
+			$BB mknod -m 0400 "$rmtfs_root/dev/block/$device" b "${devnum%%:*}" "${devnum##*:}" || fail "cannot restore the $name block node"
+			rmtfs_restored="${rmtfs_restored:-} $device"
+		fi
+		[ -b "$rmtfs_root/dev/block/$device" ] || fail "$name backing block node absent from the rmtfs root"
+		devnum=$($BB cat "/sys/class/block/$device/dev")
+		[ "$($BB stat -c '%t:%T' "$rmtfs_root/dev/block/$device")" = "$($BB printf '%x:%x' "${devnum%%:*}" "${devnum##*:}")" ] || fail "$name backing node differs from sysfs"
+		if [ "$phase" = pre ]; then
+			[ "$($BB readlink "$rmtfs_root/boot/$name" 2>/dev/null)" = "/dev/block/$device" ] || fail "$name backing link absent before cutover"
+		elif [ -L "$rmtfs_root/boot/$name" ]; then
+			[ "$($BB readlink "$rmtfs_root/boot/$name")" = "/dev/block/$device" ] || fail "$name backing link differs from the measured target"
+		else
+			[ ! -e "$rmtfs_root/boot/$name" ] || fail "$name backing path is not the measured link"
+			$BB mkdir -p "$rmtfs_root/boot" || fail "cannot restore the rmtfs /boot directory"
+			$BB ln -s "/dev/block/$device" "$rmtfs_root/boot/$name" || fail "cannot restore the $name backing link"
+			rmtfs_restored="${rmtfs_restored:-} $name"
+		fi
+		$BB dd if="$rmtfs_root/dev/block/$device" of=/dev/null bs=512 count=1 2>/dev/null || fail "$name backing node is not readable"
+	done
+}
+
 if [ "$stage" = prepare ]; then
 	$BB readlink /proc/1/exe 2>/dev/null | $BB grep -q busybox || fail 'PID 1 is not the diagnostic busybox init'
 	[ -d /run/pmos/run ] && [ ! -L /run/pmos/run ] &&
@@ -42,6 +111,7 @@ if [ "$stage" = prepare ]; then
 	done
 	[ "$($BB cat /run/qrtr-services.status 2>/dev/null)" = qrtr-published ] &&
 		[ "$($BB cat /run/rmtfs.status 2>/dev/null)" = rmtfs-published ] || fail 'service status markers missing'
+	rmtfs_inputs pre
 	$BB mkdir -p /run/pmos/vendor/etc/wifi/qca6750 /run/pmos/vendor/firmware/wlan/qca_cld/qca6750
 	$BB cp "/vendor/$INI" "/run/pmos/vendor/$INI"
 	$BB chmod 444 "/run/pmos/vendor/$INI"
@@ -54,6 +124,11 @@ if [ "$stage" = prepare ]; then
 	[ "$(hash /run/pmos/run/radio-bringup/wpss-once)" = "$HELPER_SHA" ] || fail 'staged helper digest mismatch'
 	$BB printf 'qrtr-published\n' > /run/pmos/run/qrtr-services.status
 	$BB printf 'rmtfs-published\n' > /run/pmos/run/rmtfs.status
+	$BB cp /run/rmtfs.log /run/pmos/run/radio-bringup/rmtfs.log
+	$BB chmod 600 /run/pmos/run/radio-bringup/rmtfs.log
+	$BB printf '%s\n' "$rmtfs_pid" > /run/pmos/run/radio-bringup/rmtfs.pid
+	$BB chmod 600 /run/pmos/run/radio-bringup/rmtfs.pid
+	report "pinned rmtfs pid $rmtfs_pid holds the mapped sharedmem UIO and has its read-only modemst paths before cutover"
 	if [ -c /dev/wlan ]; then
 		wlan_id=$($BB stat -c '%t %T' /dev/wlan)
 		set -- $wlan_id
@@ -103,6 +178,16 @@ once() {
 	$BB printf '%s\n' "$boot" > "$STATE/$1.attempted" || fail "cannot arm $1 marker"
 }
 
+bind_rmtfs_storage() {
+	rmtfs_restored=
+	rmtfs_inputs post
+	for name in modemst1 modemst2; do
+		case $name in modemst1) device=sdf2;; *) device=sdf3;; esac
+		[ "$($BB readlink "$rmtfs_root/boot/$name")" = "/dev/block/$device" ] || fail "$name backing link missing after restore"
+	done
+	report "rmtfs pid $rmtfs_pid keeps the mapped UIO and QRTR service; restored backing links:${rmtfs_restored:- none needed}"
+}
+
 bind_firmware_mnt() {
 	find_oldroot || fail 'no surviving old-root process exposes the stock module and INI'
 	[ -r "$oldroot/vendor/firmware_mnt/image/modem.mdt" ] &&
@@ -130,6 +215,7 @@ modem() {
 	for service in pd-mapper tqftpserv rmtfs; do
 		$BB ps | $BB grep -v grep | $BB grep -q "$service" || fail "$service is not running"
 	done
+	bind_rmtfs_storage
 	bind_firmware_mnt
 	once modem
 	$BB printf 'radio-bringup: guarded remoteproc2 start\n' > /dev/kmsg

@@ -440,6 +440,19 @@ reversibly under guest RAM, keeping the diagnostic PID 1, gadget and pinned
 host preparation, not a phone result, image, own-kernel test, persistence path or
 release; the coordinator owns the live session and stock rollback.
 
+## Post-cutover rmtfs EFS backing store (2026-10-29, #155)
+
+[BOOT.md](BOOT.md#post-cutover-rmtfs-backing-store-for-the-efs-buffer-155-host-only-2026-10-29)
+records the run-54 boundary. The pinned rmtfs process, its QRTR publish and its
+sharedmem mapping survived the PID-1 cutover, but `switch_root` deletes the old
+root's `/dev/uio0` and `/boot/modemst1`/`/boot/modemst2` links. The modem asks
+for those paths only after it is `now up`, which is the
+`fs_device_efs_rmts.c:161` fatal. `scripts/pmos-radio-bringup.sh` now checks the
+pinned rmtfs process and restores only those missing nodes and links before the
+one-shot modem marker. `sh scripts/test-pmos-radio-bringup.sh` fails closed when
+any of them is absent or wrong. No new image is built and no modem start is
+claimed.
+
 ## Reproducible post-cutover radio bring-up (2026-10-28, #150)
 
 [BOOT.md](BOOT.md#reproducible-post-cutover-radio-bring-up-150-host-only-2026-10-28)
