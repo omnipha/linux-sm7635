@@ -440,6 +440,20 @@ reversibly under guest RAM, keeping the diagnostic PID 1, gadget and pinned
 host preparation, not a phone result, image, own-kernel test, persistence path or
 release; the coordinator owns the live session and stock rollback.
 
+## Reproducible post-cutover radio bring-up (2026-10-28, #150)
+
+[BOOT.md](BOOT.md#reproducible-post-cutover-radio-bring-up-150-host-only-2026-10-28)
+records `scripts/pmos-radio-bringup.sh`, the hash-checked reproduction of the
+run-53 radio order. Before `switch_root` it stages the read-only stock WLAN INI
+(`57989aba…`), the measured one-shot WPSS helper (`fef7e5da…`) and the service
+markers into the guest tmpfs. After cutover it runs one guarded modem start, one
+WPSS trigger, one `qca_cld3` insmod with at most one reload, and one 20 s-bounded
+scan, each gated on the current boot, `/run/keep` and a fresh capture marker.
+`sh scripts/test-pmos-radio-bringup.sh` checks those pins and one-shot guards in
+an isolated tmpfs. No new image is built: the unchanged `fef03008…` image stays
+the only reusable changed image. This is a host script, not a device result;
+association and reachability remain unmeasured.
+
 ## Post-cutover `default/local` host fixture and reuse review (2026-10-28, #150)
 
 [BOOT.md](BOOT.md#host-only-review-and-reuse-gate-for-post-cutover-defaultlocal-and-radio-diagnosis-150-2026-10-28)
