@@ -131,6 +131,11 @@ def self_test(candidate, stock, run43, script, library, decode_frame):
         builder.SETTLE, b"", 1)))
     bad("timer settle shortened", INIT_MSG, with_init(candidate_init.replace(
         b"151.01", b"15.01", 1)))
+    eager = builder.SETTLE.replace(
+        b"PID1_SETTLE_START=$(", b"if [ ! -f /run/keep ]; then PID1_TIMER_SETTLED=failed; fi\nPID1_SETTLE_START=$(", 1)
+    require(eager != builder.SETTLE, "eager-hold mutation did not apply")
+    bad("run-51 eager console-tail hold gate", INIT_MSG, with_init(candidate_init.replace(
+        builder.SETTLE, eager, 1)))
     bad("timer settle hold bypassed", INIT_MSG, with_init(candidate_init.replace(
         b'[ -f /run/keep ] && [ ! -L /run/keep ]', b'[ -e /run ]', 1)))
     bad("timer settle uptime bypassed", INIT_MSG, with_init(candidate_init.replace(
@@ -188,13 +193,14 @@ def self_test(candidate, stock, run43, script, library, decode_frame):
             require(str(exc) == SHA_MSG, "refused SHA rejection changed")
         else:
             raise ValueError(f"refused SHA accepted: {sha}")
-    require(builder.RUN43_SHA256 in builder.REFUSED and base.STOCK_SHA256 in builder.REFUSED and
+    require(builder.RUN43_SHA256 in builder.REFUSED and builder.RUN51_SHA256 in builder.REFUSED and
+            base.STOCK_SHA256 in builder.REFUSED and
             len(builder.REFUSED) == len(previous_shas()), "refused SHA inventory incomplete")
     print(f"negative mutations: OK; {len(builder.REFUSED)} refused image hashes; candidate {digest}")
 
 
 def previous_shas():
-    return {*builder.previous.PRIOR_IMAGES, builder.RUN43_SHA256}
+    return {*builder.previous.PRIOR_IMAGES, builder.RUN43_SHA256, builder.RUN51_SHA256}
 
 
 def main():

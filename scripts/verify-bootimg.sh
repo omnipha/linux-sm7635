@@ -472,7 +472,7 @@ python3 "$ROOT/scripts/verify-init-boot-psoc-hold-wlan-node.py" \
 	"$PSTORE_CONSOLE" "$OUT/restart2" "$OUT/pd-mapper" "$OUT/tqftpserv" "$OUT/rmtfs" \
 	"$OUT/msm_sharedmem.ko" "$HOME/phone-second-life-data/mb003/by-name.txt" \
 	"$MAPS" "${HOSTKEY:-$HOME/.omnipha/sm7635/dropbear_ed25519_host_key}"
-printf '%s  %s\n' 'd90b22212812f022017a9eaaf6af58cce08a5bf08474a024b7ccb6317b51ffb7' \
+printf '%s  %s\n' 'fef030081e04d3a90451bb7d64dcfa7668c41dc4248e6e0b1959fdb40efce948' \
 	"$OUT/init_boot-pid1-handoff.img" | sha256sum -c - || die 'unreviewed PID1 candidate SHA'
 python3 -B "$ROOT/scripts/verify-init-boot-pid1-handoff.py" --self-test \
 	"$OUT/init_boot-pid1-handoff.img" "$STOCK_INIT" \

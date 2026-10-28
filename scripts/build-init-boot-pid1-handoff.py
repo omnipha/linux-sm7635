@@ -20,10 +20,11 @@ base = load("build-init-boot-lz4-debug-ramdisk-payload.py", "pid1_lz4_base")
 vendor = load("build-init-boot-vendor-modules-payload.py", "pid1_vendor_builder")
 previous = load("build-init-boot-psoc-hold-wlan-node-payload.py", "pid1_previous_builder")
 RUN43_SHA256 = "0f998e29fa87037dd1c0c474f4e9eccdb405fa75fb21bfaf0743c351594bb3aa"
+RUN51_SHA256 = "d90b22212812f022017a9eaaf6af58cce08a5bf08474a024b7ccb6317b51ffb7"
 TRANSITION_SHA256 = "0b85d1dc3c05b58f703618994363a9d0dbd09ecf8139573d2db15628d2497549"
 GUARD_SHA256 = "dc37428ec10330c89fa8f559626be735013004b87d0bd9a7271d9b88dfc47fe3"
-EXPECTED_SHA256 = "d90b22212812f022017a9eaaf6af58cce08a5bf08474a024b7ccb6317b51ffb7"
-REFUSED = frozenset((*previous.PRIOR_IMAGES, RUN43_SHA256))
+EXPECTED_SHA256 = "fef030081e04d3a90451bb7d64dcfa7668c41dc4248e6e0b1959fdb40efce948"
+REFUSED = frozenset((*previous.PRIOR_IMAGES, RUN43_SHA256, RUN51_SHA256))
 ANCHOR = b"setsid cttyhack /bin/sh\n"
 INIT_MSG = "init must change only the unique final console command to the pinned PID1 handoff"
 CPIO_MSG = "cpio must change only /init, preserving every other entry and its metadata"
@@ -31,17 +32,12 @@ SHA_MSG = "candidate repeats a stock, measured or refused image SHA-256"
 FRAME_MSG = "ramdisk is not one reproducible LZ4 HC-12 block inside the stock envelope"
 
 SETTLE = b"""PID1_TIMER_SETTLED=0
-if [ -f /run/keep ] && [ ! -L /run/keep ]; then
-	PID1_SETTLE_START=$(/bin/busybox awk 'NF == 2 && $1 ~ /^[0-9]+([.][0-9]+)?$/ && $2 ~ /^[0-9]+([.][0-9]+)?$/ && $1 + 0 < 1000000000000 && $2 + 0 < 1000000000000 {print $1; valid=1} END {if (NR != 1 || !valid) exit 1}' /proc/uptime 2>/dev/null) || PID1_SETTLE_START=''
-	if [ -n "$PID1_SETTLE_START" ]; then
-		PID1_SETTLE_PREVIOUS=$PID1_SETTLE_START
-	else
-		PID1_TIMER_SETTLED=failed
-		log 'pid1 timer settle failed: invalid uptime; diagnostic console and SSH retained'
-	fi
+PID1_SETTLE_START=$(/bin/busybox awk 'NF == 2 && $1 ~ /^[0-9]+([.][0-9]+)?$/ && $2 ~ /^[0-9]+([.][0-9]+)?$/ && $1 + 0 < 1000000000000 && $2 + 0 < 1000000000000 {print $1; valid=1} END {if (NR != 1 || !valid) exit 1}' /proc/uptime 2>/dev/null) || PID1_SETTLE_START=''
+if [ -n "$PID1_SETTLE_START" ]; then
+	PID1_SETTLE_PREVIOUS=$PID1_SETTLE_START
 else
 	PID1_TIMER_SETTLED=failed
-	log 'pid1 timer settle failed: diagnostic hold missing; diagnostic console and SSH retained'
+	log 'pid1 timer settle failed: invalid uptime; diagnostic console and SSH retained'
 fi
 pid1_settle_timer() {
 	[ "$PID1_TIMER_SETTLED" != failed ] || return 1
