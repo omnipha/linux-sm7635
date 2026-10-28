@@ -39,7 +39,7 @@ $BB mknod -m 666 "$R/dev/null" c 1 3
 $BB mknod -m 666 "$R/dev/kmsg" c 1 11
 $BB mkdir -p "$R/proc/sys/kernel/random" "$R/proc/1" "$R/mnt/vendor/etc/wifi/qca6750" "$R/mnt/vendor/firmware/wlan/qca_cld/qca6750"
 $BB printf '%s\n' "$BOOT" > "$R/proc/sys/kernel/random/boot_id"
-$BB printf 'busybox\n' > "$R/proc/1/comm"
+$BB ln -sf /bin/busybox "$R/proc/1/exe"
 $BB touch "$R/run/keep"
 
 python3 -B - "$HERE/build-init-boot-psoc-hold-payload.py" "$INI_SHA" "$R/mnt/vendor/etc/wifi/qca6750/WCNSS_qcom_cfg.ini" "$HELPER_SHA" "$R/bin/wpss-once" "$KO_SHA" "$R/tmp/qca.ko" "$R/radio.sh" <<'PY'
@@ -110,6 +110,7 @@ $BB printf 'offline\n' > "$R/sys/class/remoteproc/remoteproc3/state"
 $BB mkdir -p "$R/proc/358/root/mnt/vendor_dlkm/lib/modules" "$R/proc/358/root/vendor/etc/wifi/qca6750" "$R/proc/358/root/vendor/firmware_mnt/image/qca6750"
 $BB cp "$R/tmp/qca.ko" "$R/proc/358/root/mnt/vendor_dlkm/lib/modules/qca_cld3_qca6750.ko"
 $BB cp "$R/vendor/etc/wifi/qca6750/WCNSS_qcom_cfg.ini" "$R/proc/358/root/vendor/etc/wifi/qca6750/WCNSS_qcom_cfg.ini"
+$BB printf 'fw\n' > "$R/proc/358/root/vendor/firmware_mnt/image/modem.mdt"
 for part in mdt b00 b01 b02 b03 b04 b05 b06 b07 b08 b09 b10 b12; do
 	$BB printf 'fw\n' > "$R/proc/358/root/vendor/firmware_mnt/image/qca6750/wpss.$part"
 done
@@ -151,8 +152,8 @@ case "${1:-}" in
 		shift 4
 		if [ "${1:-}" = /bin/busybox ] && [ "${2:-}" = sh ] && [ "${3:-}" = -c ]; then
 			case "$4" in
-				*remoteproc2/state*) "$BB" printf 'running\n' > /sys/class/remoteproc/remoteproc2/state; exit 0;;
-				*wpss_boot*) "$BB" printf 'running\n' > /sys/class/remoteproc/remoteproc3/state; exit 0;;
+				*remoteproc2/state*) [ -r /vendor/firmware_mnt/image/modem.mdt ] || exit 1; "$BB" printf 'running\n' > /sys/class/remoteproc/remoteproc2/state; exit 0;;
+				*wpss_boot*) [ -r /vendor/firmware_mnt/image/qca6750/wpss.mdt ] || exit 1; "$BB" printf 'running\n' > /sys/class/remoteproc/remoteproc3/state; exit 0;;
 				*'/dev/wlan'*) exit 124;;
 			esac
 		fi
@@ -179,7 +180,12 @@ $BB chmod 755 "$R/sbin/ip" "$R/usr/sbin/iw"
 reject_stage modem "$BOOT" modem
 $BB printf 'offline\n' > "$R/sys/class/remoteproc/remoteproc2/state"
 reject_stage modem "$BOOT" modem missing-marker
+$BB mv "$R/proc/358/root/vendor/firmware_mnt/image/modem.mdt" "$R/tmp/modem.mdt.hidden"
+reject_stage modem "$BOOT" modem capture-ok
+[ ! -e "$R/run/radio-bringup/modem.attempted" ] || fail 'modem start armed before firmware was reachable'
+$BB mv "$R/tmp/modem.mdt.hidden" "$R/proc/358/root/vendor/firmware_mnt/image/modem.mdt"
 run_stage modem capture-ok
+[ -r "$R/vendor/firmware_mnt/image/modem.mdt" ] || fail 'modem firmware not bound before start'
 [ "$($BB cat "$R/sys/class/remoteproc/remoteproc2/state")" = running ] || fail 'modem not running'
 run_stage modem capture-ok
 $BB printf 'offline\n' > "$R/sys/class/remoteproc/remoteproc2/state"

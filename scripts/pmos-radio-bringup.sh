@@ -27,8 +27,8 @@ case "$stage" in prepare|modem|wpss|driver|scan|all) :;; *) fail 'unknown stage'
 [ "$($BB id -u)" = 0 ] || fail 'not root'
 
 if [ "$stage" = prepare ]; then
-	[ "$($BB cat /proc/1/comm)" = busybox ] &&
-		[ -d /run/pmos/run ] && [ ! -L /run/pmos/run ] &&
+	$BB readlink /proc/1/exe 2>/dev/null | $BB grep -q busybox || fail 'PID 1 is not the diagnostic busybox init'
+	[ -d /run/pmos/run ] && [ ! -L /run/pmos/run ] &&
 		$BB awk '$2 == "/run/pmos" && $3 == "tmpfs" {n++} END {exit(n != 1)}' /proc/mounts &&
 		$BB awk '$2 == "/run/pmos/run" && $3 == "tmpfs" {n++} END {exit(n != 1)}' /proc/mounts ||
 		fail 'staged postmarketOS tmpfs not ready before cutover'
@@ -67,7 +67,7 @@ if [ "$stage" = prepare ]; then
 	exit 0
 fi
 
-[ "$($BB cat /proc/1/comm)" = busybox ] &&
+$BB readlink /proc/1/exe 2>/dev/null | $BB grep -q busybox &&
 	$BB awk '$2 == "/" && $3 == "tmpfs" {n++} END {exit(n != 1)}' /proc/1/mounts &&
 	$BB grep -q 'ID="postmarketos"' /etc/os-release &&
 	[ "$($BB cat /run/openrc/softlevel 2>/dev/null)" = default ] &&
@@ -103,6 +103,23 @@ once() {
 	$BB printf '%s\n' "$boot" > "$STATE/$1.attempted" || fail "cannot arm $1 marker"
 }
 
+bind_firmware_mnt() {
+	find_oldroot || fail 'no surviving old-root process exposes the stock module and INI'
+	[ -r "$oldroot/vendor/firmware_mnt/image/modem.mdt" ] &&
+		[ -r "$oldroot/vendor/firmware_mnt/image/qca6750/wpss.mdt" ] ||
+		fail 'stock modem_a firmware is not reachable'
+	if ! $BB grep -q ' /vendor/firmware_mnt vfat ro,' /proc/mounts; then
+		[ ! -e /vendor/firmware_mnt ] && [ ! -L /vendor/firmware_mnt ] || fail 'firmware_mnt path already present but not the read-only vfat'
+		$BB mkdir /vendor/firmware_mnt
+		$BB mount --bind "$oldroot/vendor/firmware_mnt" /vendor/firmware_mnt || fail 'stock firmware bind failed'
+		$BB mount -o remount,bind,ro /vendor/firmware_mnt || { $BB umount /vendor/firmware_mnt; fail 'firmware bind not read-only; bind removed'; }
+		$BB grep -q ' /vendor/firmware_mnt vfat ro,' /proc/mounts || fail 'firmware bind is not the read-only vfat'
+	fi
+	[ -r /vendor/firmware_mnt/image/modem.mdt ] &&
+		[ -r /vendor/firmware_mnt/image/qca6750/wpss.mdt ] ||
+		fail 'modem_a firmware not readable at /vendor/firmware_mnt/image'
+}
+
 modem() {
 	stage=modem
 	[ "$(state "$MSS")" = running ] && { report 'modem already running; untouched'; return 0; }
@@ -113,6 +130,7 @@ modem() {
 	for service in pd-mapper tqftpserv rmtfs; do
 		$BB ps | $BB grep -v grep | $BB grep -q "$service" || fail "$service is not running"
 	done
+	bind_firmware_mnt
 	once modem
 	$BB printf 'radio-bringup: guarded remoteproc2 start\n' > /dev/kmsg
 	$BB timeout -k 1 10 $BB sh -c 'printf "start\n" > /sys/class/remoteproc/remoteproc2/state' || fail 'modem start failed or timed out'
@@ -133,15 +151,7 @@ wpss() {
 	[ "$(state "$WPSS")" = running ] && { report 'WPSS already running; untouched'; return 0; }
 	[ "$(state "$WPSS")" = offline ] && [ "$(state "$MSS")" = running ] || fail 'WPSS must be offline with the modem running'
 	capture_gate
-	find_oldroot || fail 'no surviving old-root process exposes the stock module and INI'
-	[ -r "$oldroot/vendor/firmware_mnt/image/qca6750/wpss.mdt" ] || fail 'stock modem_a firmware is not reachable'
-	if ! $BB grep -q ' /vendor/firmware_mnt vfat ro,' /proc/mounts; then
-		[ ! -e /vendor/firmware_mnt ] && [ ! -L /vendor/firmware_mnt ] || fail 'firmware_mnt path already present but not the read-only vfat'
-		$BB mkdir /vendor/firmware_mnt
-		$BB mount --bind "$oldroot/vendor/firmware_mnt" /vendor/firmware_mnt || fail 'stock firmware bind failed'
-		$BB mount -o remount,bind,ro /vendor/firmware_mnt || { $BB umount /vendor/firmware_mnt; fail 'firmware bind not read-only; bind removed'; }
-		$BB grep -q ' /vendor/firmware_mnt vfat ro,' /proc/mounts || fail 'firmware bind is not the read-only vfat'
-	fi
+	bind_firmware_mnt
 	[ ! -e /run/wpss-once.attempted ] || fail 'wpss-once already attempted'
 	[ -f "$STATE/wpss-once" ] && [ ! -L "$STATE/wpss-once" ] && [ "$(hash "$STATE/wpss-once")" = "$HELPER_SHA" ] || fail 'staged helper missing or digest mismatch'
 	if [ ! -c /dev/wlan ]; then
