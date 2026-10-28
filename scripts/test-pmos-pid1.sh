@@ -97,7 +97,7 @@ if [ "${1:-}" = --client ]; then
 	ssh_guest bad_key known_hosts true >/dev/null 2>&1 && fail 'pre-cutover wrong client identity authenticated'
 	ssh_guest client_key bad-known_hosts true >/dev/null 2>&1 && fail 'pre-cutover wrong server identity authenticated'
 	ssh_guest client_key known_hosts \
-		'test "$(id -u)" = 0 && test ! -t 0 && test "$(cat /etc/alpine-release)" = 3.21.9 && grep -q '\''ID="postmarketos"'\'' /etc/os-release && test "$(cat /run/dropbear-session.pid)" = '"$server_pid"' && test "$(/bin/busybox stat -c '\''%d:%i'\'' /)" = "$(/bin/busybox stat -Lc '\''%d:%i'\'' /proc/1/root/guest)" && test -f /run/pid1-guard/armed && test "$(cat /proc/1/comm)" = busybox' || fail 'strict key-only pre-cutover SSH or initial PID 1 identity'
+		'test "$(id -u)" = 0 && test ! -t 0 && test "$(cat /etc/alpine-release)" = 3.21.9 && grep -q '\''ID="postmarketos"'\'' /etc/os-release && test "$(cat /run/dropbear-session.pid)" = '"$server_pid"' && test "$(/bin/busybox stat -c '\''%d:%i'\'' /)" = "$(/bin/busybox stat -Lc '\''%d:%i'\'' /proc/1/root/guest)" && test "$(/bin/busybox readlink /etc/runlevels/default/local)" = /etc/init.d/local && test ! -e /run/openrc/softlevel && test -f /run/pid1-guard/armed && test "$(cat /proc/1/comm)" = busybox' || fail 'strict key-only pre-cutover SSH or initial PID 1 identity'
 	[ "$before" = "$(service_state /proc/1/root/guest)" ] || fail 'pre-cutover service restarted after SSH'
 	$BB touch /proc/1/root/guest/run/client-prepared
 	attempt=0
@@ -111,7 +111,7 @@ if [ "${1:-}" = --client ]; then
 	ssh_guest bad_key known_hosts true >/dev/null 2>&1 && fail 'post-cutover wrong client identity authenticated'
 	ssh_guest client_key bad-known_hosts true >/dev/null 2>&1 && fail 'post-cutover wrong server identity authenticated'
 	identity=$(ssh_guest client_key known_hosts \
-		'test "$(id -u)" = 0 && test ! -t 0 && test "$(cat /run/dropbear-session.pid)" = '"$server_pid"' && test "$(cat /etc/alpine-release)" = 3.21.9 && grep -q '\''ID="postmarketos"'\'' /etc/os-release && test "$(cat /proc/1/comm)" = busybox && test "$(/bin/busybox sha256sum /proc/1/exe | /bin/busybox cut -d " " -f 1)" = "$(/bin/busybox sha256sum /bin/busybox | /bin/busybox cut -d " " -f 1)" && test -c /dev/tty && test -c /dev/pts/ptmx && /bin/busybox awk '\''$2 == "/" && $3 == "tmpfs" {n++} END {exit(n != 1)}'\'' /proc/1/mounts && /usr/bin/qemu-aarch64 -0 sh /bin/distro-busybox -c '\''test "$(/bin/busybox id -u)" = 0 && test "$(/bin/busybox cat /etc/alpine-release)" = 3.21.9'\'' && printf "pmos-pid1-host-ok\n"') || fail 'strict key-only SSH, switched root or distro BusyBox smoke'
+		'test "$(id -u)" = 0 && test ! -t 0 && test "$(cat /run/dropbear-session.pid)" = '"$server_pid"' && test "$(cat /etc/alpine-release)" = 3.21.9 && grep -q '\''ID="postmarketos"'\'' /etc/os-release && test "$(cat /proc/1/comm)" = busybox && test "$(/bin/busybox sha256sum /proc/1/exe | /bin/busybox cut -d " " -f 1)" = "$(/bin/busybox sha256sum /bin/busybox | /bin/busybox cut -d " " -f 1)" && test "$(cat /run/openrc/softlevel)" = default && /sbin/rc-service local status >/dev/null && test "$(/bin/rc-status --crashed)" = "" && test -c /dev/tty && test -c /dev/pts/ptmx && /bin/busybox awk '\''$2 == "/" && $3 == "tmpfs" {n++} END {exit(n != 1)}'\'' /proc/1/mounts && /usr/bin/qemu-aarch64 -0 sh /bin/distro-busybox -c '\''test "$(/bin/busybox id -u)" = 0 && test "$(/bin/busybox cat /etc/alpine-release)" = 3.21.9'\'' && printf "pmos-pid1-host-ok\n"') || fail 'strict key-only SSH, switched root, OpenRC local or distro BusyBox smoke'
 	[ "$identity" = pmos-pid1-host-ok ] || fail 'post-cutover distro identity'
 	[ "$before" = "$(service_state /proc/1/root/.)" ] || fail 'post-cutover service restarted after SSH'
 	case "$2" in
@@ -161,7 +161,7 @@ if [ "${1:-}" = --client ]; then
 		[ "$($BB cat /proc/1/root/run/pid1-guard/recovery-request)" = bootloader ] || fail 'mock recovery request not bootloader'
 		[ ! -e /proc/1/root/run/pid1-guard/accepted ] || fail 'unacknowledged guard accepted'
 	fi
-	ssh_guest client_key known_hosts 'test "$(cat /proc/1/comm)" = busybox && test -c /dev/null' || fail 'PID 1 did not survive guard'
+	ssh_guest client_key known_hosts 'test "$(cat /proc/1/comm)" = busybox && test -c /dev/null && test "$(cat /run/openrc/softlevel)" = default && /sbin/rc-service local status >/dev/null && test "$(/bin/rc-status --crashed)" = ""' || fail 'PID 1, local OpenRC service or guard did not survive'
 	$BB printf '%s\n' "$2" > /proc/1/root/run/client-result
 	exit 0
 fi
@@ -172,6 +172,13 @@ if [ "${1:-}" = --switched ]; then
 	[ ! -e /oldroot ] && [ ! -e /guest ] && [ -f /pid1-test.sh ] && [ "$(hash /pid1-test.sh)" = "$SCRIPT_SHA" ] || fail 'old root retained or switched script invalid'
 	[ "$(hash /bin/busybox)" = "$NATIVE_SHA" ] && [ "$(hash /bin/distro-busybox)" = "$DISTRO_SHA" ] || fail 'native or distro BusyBox changed'
 	[ -c /dev/null ] && [ -c /dev/tty ] && [ "$($BB readlink /dev/ptmx)" = pts/ptmx ] || fail 'guest devices invalid'
+	[ ! -e /run/openrc/softlevel ] && [ "$($BB readlink /etc/runlevels/default/local)" = /etc/init.d/local ] || fail 'unexpected OpenRC state before cutover runlevels'
+	/sbin/openrc sysinit >/run/openrc.log 2>&1 &&
+		/sbin/openrc boot >>/run/openrc.log 2>&1 &&
+		/sbin/openrc default >>/run/openrc.log 2>&1 &&
+		[ "$($BB cat /run/openrc/softlevel)" = default ] &&
+		/sbin/rc-service local status >>/run/openrc.log 2>&1 &&
+		[ "$(/bin/rc-status --crashed)" = '' ] || { $BB cat /run/openrc.log >&2; fail 'post-cutover OpenRC default/local failed'; }
 	[ -f /run/pid1-guard/armed ] && [ "$($BB cat /run/pid1-guard/armed)" = "$BOOT_ID" ] &&
 		[ "$(hash /run/pid1-guard/mock-restart2)" = "$MOCK_SHA" ] &&
 		[ ! -e /bin/restart2 ] && [ ! -L /bin/restart2 ] || fail 'real guard was not safely mock-armed before switch_root'
@@ -238,6 +245,10 @@ if [ "${1:-}" = --inner ]; then
 	export DISTRO_SHA
 	$BB mv "$ROOT/guest/bin/busybox" "$ROOT/guest/bin/distro-busybox"
 	$BB cp /bin/busybox "$ROOT/guest/bin/busybox"
+	[ "$($BB find "$ROOT/guest/etc/runlevels" -type l | $BB wc -l)" -eq 0 ] || fail 'archive has pre-enabled runlevels'
+	[ -x "$ROOT/guest/etc/init.d/local" ] && [ -d "$ROOT/guest/etc/local.d" ] &&
+		[ "$($BB find "$ROOT/guest/etc/local.d" -name '*.start' | $BB wc -l)" -eq 0 ] || fail 'local fixture prerequisites missing'
+	$BB ln -s /etc/init.d/local "$ROOT/guest/etc/runlevels/default/local"
 	$BB cp "$HOST_SCRIPT" "$ROOT/guest/pid1-test.sh"
 	$BB cp /usr/bin/qemu-aarch64 "$ROOT/guest/usr/bin/qemu-aarch64"
 	$BB mkdir -p "$ROOT/guest/root/.ssh" "$ROOT/guest/etc/dropbear" "$ROOT/guest/run" "$ROOT/guest/dev/pts" "$ROOT/guest/proc" "$ROOT/guest/sys"
@@ -348,6 +359,7 @@ MOCK
 		[ "$($BB stat -c '%u:%a' /oldroot/run)" = 0:700 ] &&
 		[ "$($BB stat -c '%d:%i' /guest/run)" != "$($BB stat -c '%d:%i' /oldroot/run)" ] || fail 'pre-cutover Dropbear PID, pinned host key or separate run changed'
 	$BB printf '%s\n' "$state" > /guest/run/service-before
+	[ ! -e /guest/run/openrc/softlevel ] && [ "$($BB readlink /guest/etc/runlevels/default/local)" = /etc/init.d/local ] || fail 'OpenRC fixture changed before cutover'
 	($BB unshare --mount $BB chroot /oldroot /bin/busybox sh "$HOST_SCRIPT" --client "$CASE" || $BB touch /guest/run/client-failed) &
 	client=$!
 	$BB kill -0 "$client" 2>/dev/null || fail 'isolated SSH coordinator exited'
