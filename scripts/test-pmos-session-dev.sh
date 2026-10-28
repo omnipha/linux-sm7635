@@ -19,6 +19,7 @@ if [ "${1:-}" != --inner ]; then
 fi
 
 BB=/bin/busybox
+export BB
 STAGE="$SOURCE/pmos-session-stage.sh"
 TEARDOWN="$SOURCE/pmos-session-teardown.sh"
 TRANSITION="$SOURCE/pmos-pid1-transition.sh"
@@ -95,6 +96,7 @@ stop_guest() {
 }
 expect_stage_failure() {
 	$BB sh "$1" >/run/stage.out 2>&1 && fail "invalid stage succeeded: $1"
+	[ -z "${2:-}" ] || $BB grep -q "FAIL: $2" /run/stage.out || { $BB cat /run/stage.out >&2; fail "stage did not reject: $2"; }
 	outer_intact
 	stop_guest
 }
@@ -248,6 +250,24 @@ stop_guest
 $BB cp "$HOST_ARCHIVE" /run/pmos-session.tar.gz
 mutate_stage missing-root.sh 'log "extracted userspace to $PMOS_ROOT"' '$BB rm "$PMOS_ROOT/sbin/openrc"; log "extracted userspace to $PMOS_ROOT"'
 expect_stage_failure /run/missing-root.sh
+$BB cp "$HOST_ARCHIVE" /run/pmos-session.tar.gz
+mutate_stage missing-local.sh 'log "extracted userspace to $PMOS_ROOT"' '$BB rm "$PMOS_ROOT/etc/init.d/local"; log "extracted userspace to $PMOS_ROOT"'
+expect_stage_failure /run/missing-local.sh 'local OpenRC service or configuration missing'
+$BB cp "$HOST_ARCHIVE" /run/pmos-session.tar.gz
+mutate_stage missing-local-dir.sh 'log "extracted userspace to $PMOS_ROOT"' '$BB rm -r "$PMOS_ROOT/etc/local.d"; log "extracted userspace to $PMOS_ROOT"'
+expect_stage_failure /run/missing-local-dir.sh 'local OpenRC service or configuration missing'
+$BB cp "$HOST_ARCHIVE" /run/pmos-session.tar.gz
+mutate_stage local-hook.sh 'log "extracted userspace to $PMOS_ROOT"' '$BB touch "$PMOS_ROOT/etc/local.d/10-test.start"; log "extracted userspace to $PMOS_ROOT"'
+expect_stage_failure /run/local-hook.sh 'unexpected local startup hook'
+$BB cp "$HOST_ARCHIVE" /run/pmos-session.tar.gz
+mutate_stage preenabled-ssh.sh 'log "extracted userspace to $PMOS_ROOT"' '$BB ln -s /etc/init.d/sshd "$PMOS_ROOT/etc/runlevels/default/sshd"; log "extracted userspace to $PMOS_ROOT"'
+expect_stage_failure /run/preenabled-ssh.sh 'unexpected enabled OpenRC service'
+$BB cp "$HOST_ARCHIVE" /run/pmos-session.tar.gz
+mutate_stage preenabled-udev.sh 'log "extracted userspace to $PMOS_ROOT"' '$BB ln -s /etc/init.d/udev "$PMOS_ROOT/etc/runlevels/sysinit/udev"; log "extracted userspace to $PMOS_ROOT"'
+expect_stage_failure /run/preenabled-udev.sh 'unexpected enabled OpenRC service'
+$BB cp "$HOST_ARCHIVE" /run/pmos-session.tar.gz
+mutate_stage bad-local-link.sh '$BB ln -s /etc/init.d/local "$PMOS_ROOT/etc/runlevels/default/local"' '$BB ln -s /etc/init.d/missing "$PMOS_ROOT/etc/runlevels/default/local"'
+expect_stage_failure /run/bad-local-link.sh 'local OpenRC service link invalid'
 $BB cp "$HOST_ARCHIVE" /run/pmos-session.tar.gz
 mutate_stage corrupt-root.sh 'log "extracted userspace to $PMOS_ROOT"' '$BB printf x > "$PMOS_ROOT/bin/busybox"; log "extracted userspace to $PMOS_ROOT"'
 expect_stage_failure /run/corrupt-root.sh
@@ -458,9 +478,15 @@ $BB awk '$5 == "/run/pmos" {n++; guest = $3} $5 == "/run" {run[$3] = 1} $5 == "/
 [ -x /run/pmos/sbin/openrc ] && [ ! -L /run/pmos/sbin/openrc ] && [ -x /run/pmos/bin/busybox ] && [ ! -L /run/pmos/bin/busybox ] || fail 'missing distro init binaries'
 [ "$($BB readlink /run/pmos/sbin/init)" = ../bin/busybox ] || fail 'guest init symlink'
 $BB printf '::sysinit:/sbin/openrc sysinit\n::sysinit:/sbin/openrc boot\n::wait:/sbin/openrc default\n' | $BB cmp - /run/pmos/etc/inittab || fail 'guest inittab includes unwanted services'
-for level in /run/pmos/etc/runlevels/*; do
-	[ -d "$level" ] || continue
-	[ ! -e "$level/dropbear" ] && [ ! -L "$level/dropbear" ] && [ ! -e "$level/sshd" ] && [ ! -L "$level/sshd" ] || fail 'conflicting OpenRC SSH service'
+actual=$($BB find /run/pmos/etc/runlevels -mindepth 1 | $BB sort)
+expected=$($BB printf '%s\n' /run/pmos/etc/runlevels/boot /run/pmos/etc/runlevels/default /run/pmos/etc/runlevels/default/local /run/pmos/etc/runlevels/nonetwork /run/pmos/etc/runlevels/shutdown /run/pmos/etc/runlevels/sysinit)
+[ "$actual" = "$expected" ] || fail 'unexpected OpenRC runlevel inventory'
+[ "$($BB readlink /run/pmos/etc/runlevels/default/local)" = /etc/init.d/local ] &&
+	[ -x /run/pmos/etc/init.d/local ] && [ -d /run/pmos/etc/local.d ] || fail 'enabled local service not backed by distro script'
+for service in dropbear sshd networking wpa_supplicant udev devfs tmpfs zram-init; do
+	for level in /run/pmos/etc/runlevels/*; do
+		[ ! -e "$level/$service" ] && [ ! -L "$level/$service" ] || fail "forbidden OpenRC service $service"
+	done
 done
 [ -c /run/pmos/dev/console ] && [ "$($BB stat -c '%t:%T %a' /run/pmos/dev/console)" = '5:1 600' ] &&
 	[ -c /run/pmos/dev/kmsg ] && [ "$($BB stat -c '%t:%T %a' /run/pmos/dev/kmsg)" = '1:b 600' ] || fail 'guest console/kmsg invalid'
@@ -521,9 +547,27 @@ $BB awk '{print "[172.16.42.2]:2222 " $0}' /run/bad_host_key.pub > /run/bad-know
 ssh -q -T -p 2222 -i /run/bad_key -o BatchMode=yes -o IdentitiesOnly=yes -o IdentityAgent=none -o PasswordAuthentication=no -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/run/known_hosts root@172.16.42.2 true >/run/ssh-reject.out 2>&1 && fail 'wrong client key authenticated'
 ssh -q -T -p 2222 -i /run/client_key -o BatchMode=yes -o IdentitiesOnly=yes -o IdentityAgent=none -o PasswordAuthentication=no -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/run/bad-known_hosts root@172.16.42.2 true >/run/ssh-reject.out 2>&1 && fail 'wrong server key authenticated'
 ssh -q -T -p 2222 -i /run/client_key -o BatchMode=yes -o IdentitiesOnly=yes -o IdentityAgent=none -o PasswordAuthentication=no -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/run/known_hosts root@172.16.42.2 \
-	'test "$(id -u)" = 0 && test ! -t 0 && test -c /dev/tty && test "$(cat /etc/alpine-release)" = 3.21.9' || fail 'non-PTY key-only command'
+	'test "$(id -u)" = 0 && test ! -t 0 && test -c /dev/tty && test "$(cat /etc/alpine-release)" = 3.21.9 && test ! -e /run/openrc/softlevel' || fail 'non-PTY key-only command'
 ($BB sleep 5) | ssh -q -tt -p 2222 -i /run/client_key -o BatchMode=yes -o IdentitiesOnly=yes -o IdentityAgent=none -o PasswordAuthentication=no -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/run/known_hosts root@172.16.42.2 \
 	'test -t 0 && test -t 1 && test -c /dev/tty && test -c /dev/pts/0 && test "$(/bin/busybox readlink /dev/ptmx)" = pts/ptmx' >/run/pty.out 2>&1 || { $BB cat /run/pty.out >&2; $BB grep -E 'pty|PTY|tty|TIOCS|Child connection|auth|Exit|signal' /run/pmos-stage.log >&2; fail 'key-only guest PTY allocation'; }
+$BB unshare --mount $BB sh -c '
+	$BB mount --make-rprivate / || exit 1
+	$BB chroot /run/pmos /sbin/openrc sysinit &&
+		$BB chroot /run/pmos /sbin/openrc boot &&
+		$BB chroot /run/pmos /sbin/openrc default
+' >/run/openrc.out 2>&1 || { $BB cat /run/openrc.out >&2; fail 'staged OpenRC runlevel pass'; }
+ssh -q -T -p 2222 -i /run/client_key -o BatchMode=yes -o IdentitiesOnly=yes -o IdentityAgent=none -o PasswordAuthentication=no -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/run/known_hosts root@172.16.42.2 \
+	'test "$(cat /run/openrc/softlevel)" = default && /sbin/rc-service local status && test "$(/bin/rc-status --crashed)" = ""' || { $BB cat /run/openrc.out >&2; fail 'OpenRC default softlevel or local service status'; }
+$BB unshare --mount $BB sh -c '$BB mount --make-rprivate /; $BB chroot /run/pmos /sbin/rc-service networking start' >/run/net-neg.out 2>&1 || true
+$BB grep -q 'could not parse /etc/network/interfaces' /run/net-neg.out &&
+	! $BB chroot /run/pmos /sbin/rc-service networking status >/dev/null 2>&1 || { $BB cat /run/net-neg.out >&2; fail 'networking started without /etc/network/interfaces'; }
+$BB unshare --mount $BB sh -c '$BB mount --make-rprivate /; $BB chroot /run/pmos /sbin/rc-service tmpfs start' >/run/tmpfs-neg.out 2>&1 || true
+$BB grep -q 'deviceinfo file is missing' /run/tmpfs-neg.out &&
+	! $BB chroot /run/pmos /sbin/rc-service tmpfs status >/dev/null 2>&1 || { $BB cat /run/tmpfs-neg.out >&2; fail 'tmpfs started without deviceinfo'; }
+$BB unshare --mount $BB sh -c '$BB mount --make-rprivate /; $BB chroot /run/pmos /sbin/rc-service udev start' >/run/udev-neg.out 2>&1 || true
+$BB grep -q 'Udev requires /dev to be a mounted devtmpfs' /run/udev-neg.out &&
+	! $BB chroot /run/pmos /sbin/rc-service udev status >/dev/null 2>&1 || { $BB cat /run/udev-neg.out >&2; fail 'udev started on guest-private /dev tmpfs'; }
+transition_check
 outer_intact
 stop_guest
 $BB kill "$diagnostic_pid"

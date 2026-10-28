@@ -176,6 +176,75 @@ if [ -d "$CACHE" ] && command -v qemu-aarch64 >/dev/null 2>&1 &&
 			fail "staged userspace is not postmarketOS v24.12"
 		[ ! -e "$WORK/rootfs/root/.ssh/authorized_keys" ] ||
 			fail "stage must not contain credentials"
+		python3 -B - "$CACHE" "$WORK/rootfs" <<'PY' || fail "OpenRC rootfs inventory failed"
+import hashlib, pathlib, sys, tarfile
+
+cache, root = (pathlib.Path(a) for a in sys.argv[1:3])
+expected_levels = {
+    "sysinit": {"udev", "udev-trigger", "udev-settle", "devfs", "dmesg"},
+    "boot": {"hwclock", "modules", "sysctl", "hostname", "bootmisc", "logbookd", "tmpfs"},
+    "default": {"udev-postmount", "sshd", "swapfile", "local", "zram-init", "kill-pbsplash"},
+    "shutdown": {"mount-ro", "killprocs", "savecache"},
+    "nonetwork": set(),
+}
+expected_hooks = {
+    "postmarketos-base-openrc-38-r3.apk": "af5c4996cac282ae57212a1750ecff1e9f88c64ba16b8ec7a9ad3e284a0602bc",
+    "postmarketos-bootsplash-openrc-0.2.3-r0.apk": "8a3af9ff1529e30c042bc5b72dc123732dc7ea92a82ad743a4456084a2290eca",
+    "busybox-1.37.0-r14.apk": "13c120a1c714ecafa7fe1fc748406a89dfffc549118ebce324b53d4bbb4ba75f",
+}
+for apk, digest in expected_hooks.items():
+    with tarfile.open(cache / apk) as archive:
+        hook = archive.extractfile(".post-install").read()
+    assert hashlib.sha256(hook).hexdigest() == digest, apk
+
+def check_inventory(stage):
+    levels = stage / "etc/runlevels"
+    if {p.name for p in levels.iterdir() if p.is_dir() and not p.is_symlink()} != set(expected_levels):
+        raise ValueError("unexpected OpenRC runlevel directory set")
+    for level in expected_levels:
+        if list((levels / level).iterdir()):
+            raise ValueError(f"archive runlevel {level} is not empty")
+    scripts = {p.name for p in (stage / "etc/init.d").iterdir() if p.is_file() and not p.is_symlink()}
+    if len(scripts) != 67:
+        raise ValueError("unexpected OpenRC init.d script count")
+    for services in expected_levels.values():
+        if not services <= scripts:
+            raise ValueError("skipped post-install service script missing")
+    for required in ("sbin/openrc", "sbin/openrc-run", "sbin/rc-service", "bin/rc-status", "etc/init.d/local", "etc/hostname", "etc/ssh/sshd_config"):
+        path = stage / required
+        if not path.is_file() or path.is_symlink():
+            raise ValueError(f"missing required service input {required}")
+    local_d = stage / "etc/local.d"
+    if not local_d.is_dir() or local_d.is_symlink() or list(local_d.glob("*.start")):
+        raise ValueError("invalid local.d configuration")
+    for absent in ("sbin/init", "sbin/openrc-init", "etc/network/interfaces", "usr/share/deviceinfo/deviceinfo", "etc/wpa_supplicant/wpa_supplicant.conf", "bin/md5sum", "sbin/sysctl"):
+        path = stage / absent
+        if path.exists() or path.is_symlink():
+            raise ValueError(f"unexpected unconfigured input {absent}")
+
+check_inventory(root)
+
+def expect_bad(label, setup, cleanup):
+    setup()
+    try:
+        try:
+            check_inventory(root)
+        except ValueError:
+            return
+        raise AssertionError(label + " was accepted")
+    finally:
+        cleanup()
+
+link = root / "etc/runlevels/default/sshd"
+expect_bad("enabled archive runlevel", lambda: link.symlink_to("/etc/init.d/sshd"), link.unlink)
+local_script = root / "etc/init.d/local"
+local_backup = root / "etc/init.d/local.bak"
+expect_bad("missing local init.d script", lambda: local_script.rename(local_backup), lambda: local_backup.rename(local_script))
+hook_file = root / "etc/local.d/10-bad.start"
+expect_bad("unexpected local.d start hook", hook_file.touch, hook_file.unlink)
+interfaces = root / "etc/network/interfaces"
+expect_bad("unreviewed network interfaces config", interfaces.touch, interfaces.unlink)
+PY
 		echo "pass: offline reproducible build + real chroot smoke (host QEMU/bwrap only)"
 	else
 		cat "$WORK/build1.json"
