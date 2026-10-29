@@ -3,6 +3,13 @@
 Limit 150 lines. Ordered steps only. Results go into `records/`, never here.
 One active step, one active issue. Later steps are not pre-created issues.
 
+## Milestones
+
+1. USB shell on the stock kernel: measured.
+2. WLAN across one reboot without a host push: current gap (#176).
+3. Then one function at a time; the Omnipha slot comes after that.
+   No extra oversight role. This list is the check.
+
 ## Active step
 
 - Step: self-stage the pinned archive from a userdata ext4 image so the second

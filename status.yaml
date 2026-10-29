@@ -25,13 +25,20 @@ subsystems:
   cameras:
     state: untested
     record: null
-attempted_shas:       # never reflash; a new candidate needs a new SHA or a logged reuse decision
-  - fef03008        # init_boot, runs 52-57, measured
-  - 4b83ea24        # init_boot self-stage, run 58, measured
-  - 1bdb7c22        # vendor_boot_b userspace, run 58, measured
-  - bee02ce1        # init_boot self-stage recovery_b, run 61, measured
-  - 41cab142        # recovery_b userspace, run 61, measured
-  - d90b2221        # init_boot, run 51, measured
+attempted_shas:       # cold-start index only; the flash gate is device-op status, not this file
+  - 0b40ac34
+  - 0f998e29
+  - 1bdb7c22        # vendor_boot_b, run 58
+  - 41cab142        # recovery_b, run 61
+  - 4b83ea24        # init_boot, run 58
+  - 8b62520f
+  - bee02ce1        # init_boot, run 61
+  - bf2089c4
+  - d90b2221        # init_boot, run 51
+  - e75c5bd2
+  - ea09444c
+  - fcb0ed91
+  - fef03008        # init_boot, runs 52-57
 notes: >-
   All values refer to coordinator-held, RAM-backed sessions on the stock
   kernel, rolled back afterwards. Not an Omnipha image, not a release.
