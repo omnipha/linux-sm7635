@@ -454,10 +454,15 @@ and `remoteproc3` both reached `running` and `wlan0`/phy0 registered; a scan saw
 The guest profile matched the protected host input, yet its network did not
 appear in 36-, 37- or 30-BSS scans, so no association, address, route, gateway,
 DNS or external reachability was reached. A separate host Wi-Fi scan found zero
-matches for the same designated network among 27 BSS, confirming it is not on
-the air in this RF environment. SSH and capture remain healthy in the still-open
-session; the one-reboot phase has not begun, and the coordinator owns session
-closure and stock rollback.
+matches for the same designated network among 27 BSS, consistent with (not proof
+that) the network was not observable. The one clean guest reboot was then issued:
+the diagnostic USB debug gadget reappeared by itself about 17 s later under new
+interface names, but no host IPv4 was observed on them, USB SSH and capture did
+not return, and the device was found in bootloader fastboot about 148 s after the
+gadget appeared, consistent with the unchanged 150 s recovery timer. Whether the
+`vendor_boot_b` self-stage repeated, and WLAN after reboot, are unmeasured
+because the worker did not check the new host interface during that window. The
+coordinator owns stock restore and the five-hash proof.
 
 ## Inactive `vendor_boot_b` self-staged session (2026-10-29, #164)
 
