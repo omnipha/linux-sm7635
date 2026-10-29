@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
-"""Synced from omnipha/agents scripts/records.py; keep behavior identical.
-
-Record hygiene for work repos: append-only records, lean live files, generated map.
+"""Record hygiene for work repos: append-only records, lean live files, generated map.
 
 Layout of a work repo root:
   records/YYYY-MM-DD-HHMM-<slug>.md   one file per event, immutable once merged
@@ -12,7 +10,11 @@ Layout of a work repo root:
 Commands:
   records.py check <root> [--base <git-ref>]   exit 1 on any violation
   records.py index <root> [--write]            print generated files, or write them
+  records.py new <root> --issue I --subsystem S --result R --slug SLUG [--run N]
+                                               create a record skeleton named with the current UTC time
 """
+
+import datetime
 
 import argparse
 import re
@@ -20,7 +22,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-NAME = re.compile(r"^(\d{4}-\d{2}-\d{2})-(\d{4})-([a-z0-9][a-z0-9-]{0,80})\.md$")
+NAME = re.compile(r"^(\d{4}-\d{2}-\d{2})-(\d{4}|\d{6})-([a-z0-9][a-z0-9-]{0,80})\.md$")
 RESULTS = ("confirmed", "refuted", "inconclusive")
 REQUIRED = ("date", "issue", "subsystem", "result")
 LIVE_LIMITS = {"status.yaml": 80, "PLAN.md": 150, "README.md": 150}
@@ -71,6 +73,11 @@ def load_records(root):
             continue
         if front["date"] != match.group(1):
             errors.append(f"records/{path.name}: date does not match file name")
+        # Four digits are opaque archive IDs from the one-time migration.
+        # Six digits, when used, must be a real UTC HHMMSS.
+        ident = match.group(2)
+        if len(ident) == 6 and (int(ident[:2]) > 23 or int(ident[2:4]) > 59 or int(ident[4:]) > 59):
+            errors.append(f"records/{path.name}: {ident} is not a valid UTC HHMMSS time")
         if front["result"] not in RESULTS:
             errors.append(f"records/{path.name}: result must be one of {', '.join(RESULTS)}")
         lines = text.count("\n") + 1
@@ -117,17 +124,54 @@ def generate(root):
 
 
 def immutability_errors(root, base):
-    result = subprocess.run(["git", "-C", str(root), "diff", "--name-status", "--no-renames", base, "--", "records"],
+    # A pure rename (100% identical content) is allowed so a file name can be
+    # corrected; any content change, deletion or edit is not.
+    result = subprocess.run(["git", "-C", str(root), "diff", "--name-status", "-M100%", base, "--", "records"],
                             capture_output=True, text=True)
     if result.returncode != 0:
         return [f"git diff against {base} failed: {result.stderr.strip()[:120]}"]
     errors = []
     for entry in result.stdout.splitlines():
-        status, _, path = entry.partition("\t")
-        name = Path(path).name
-        if status != "A" and not name.startswith("index-"):
+        parts = entry.split("\t")
+        status, path = parts[0], parts[-1]
+        name = Path(parts[1] if status.startswith("R") else path).name
+        if status != "A" and not status.startswith("R") and not name.startswith("index-"):
             errors.append(f"{path}: existing record changed or removed ({status}); write a new record instead")
     return errors
+
+
+LINK = re.compile(r"records/\d{4}-\d{2}-\d{2}-\d{4}-[a-z0-9-]+\.md")
+
+
+def link_errors(root):
+    errors = []
+    for name in ("status.yaml", "PLAN.md"):
+        path = Path(root) / name
+        if path.is_file():
+            for target in sorted(set(LINK.findall(path.read_text(encoding="utf-8")))):
+                if not (Path(root) / target).is_file():
+                    errors.append(f"{name}: links to missing record {target}")
+    status = Path(root) / "status.yaml"
+    if status.is_file() and "next_question:" not in status.read_text(encoding="utf-8"):
+        errors.append("status.yaml: missing next_question")
+    return errors
+
+
+def new_record(root, issue, subsystem, result, slug, run=None, now=None):
+    if result not in RESULTS:
+        raise ValueError(f"result must be one of {', '.join(RESULTS)}")
+    if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,80}", slug):
+        raise ValueError("slug must be lowercase a-z0-9 and dashes")
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    name = f"{now:%Y-%m-%d-%H%M%S}-{slug}.md"
+    path = Path(root) / "records" / name
+    if path.exists():
+        raise ValueError(f"record exists: {name}; write a new one with another slug")
+    path.parent.mkdir(exist_ok=True)
+    front = ["---", f"date: {now:%Y-%m-%d}"] + ([f"run: {run}"] if run else []) + [
+        f"issue: {issue}", f"subsystem: {subsystem}", f"result: {result}", "---", f"# {slug.replace('-', ' ')}", ""]
+    path.write_text("\n".join(front), encoding="utf-8")
+    return path
 
 
 def check(root, base=None):
@@ -150,6 +194,7 @@ def check(root, base=None):
         stale = [p for p in (root / "records").glob("index-*.md") if f"records/{p.name}" not in expected] \
             if (root / "records").is_dir() else []
         errors += [f"records/{p.name}: stale index without records" for p in stale]
+    errors += link_errors(root)
     if base:
         errors += immutability_errors(root, base)
     return errors
@@ -157,11 +202,25 @@ def check(root, base=None):
 
 def main(argv=None):
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=("check", "index"))
+    parser.add_argument("action", choices=("check", "index", "new"))
     parser.add_argument("root")
     parser.add_argument("--base")
     parser.add_argument("--write", action="store_true")
+    parser.add_argument("--issue")
+    parser.add_argument("--subsystem")
+    parser.add_argument("--result")
+    parser.add_argument("--slug")
+    parser.add_argument("--run")
     args = parser.parse_args(argv)
+    if args.action == "new":
+        try:
+            if not (args.issue and args.subsystem and args.result and args.slug):
+                raise ValueError("new needs --issue --subsystem --result --slug")
+            print(new_record(args.root, args.issue, args.subsystem, args.result, args.slug, args.run))
+        except ValueError as error:
+            print(error, file=sys.stderr)
+            return 1
+        return 0
     if args.action == "check":
         errors = check(args.root, args.base)
         for error in errors:
