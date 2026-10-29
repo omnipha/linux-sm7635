@@ -5,7 +5,7 @@ WORK=${WORK:-$HOME/sm7635-build}
 OUT=${OUT:-$WORK/out}
 STOCK_INIT=${STOCK_INIT:-$HOME/phone-second-life-data/mb003/parts/init_boot_a.img}
 PREVIOUS=${PREVIOUS:-$WORK/out/init_boot-pid1-handoff.img}
-OUTPUT=${OUTPUT:-$OUT/init_boot-self-stage.img}
+OUTPUT=${OUTPUT:-$OUT/init_boot-self-stage-recovery-b.img}
 export PYTHONDONTWRITEBYTECODE=1
 
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
@@ -30,8 +30,8 @@ case "$(realpath -m "$OUTPUT")/" in "$ROOT"/*) die 'output must be outside Git';
 [ "$(sha256sum "$PREVIOUS" | cut -d ' ' -f 1)" = fef030081e04d3a90451bb7d64dcfa7668c41dc4248e6e0b1959fdb40efce948 ] || die 'unpinned previous image'
 exec 9>"$WORK/i164-init-boot.lock"
 flock 9 || die 'another init_boot build is in progress'
-first=$(mktemp "$OUT/init_boot-self-stage.XXXXXXXX.img")
-second=$(mktemp "$OUT/init_boot-self-stage.XXXXXXXX.img")
+first=$(mktemp "$OUT/init_boot-self-stage-recovery-b.XXXXXXXX.img")
+second=$(mktemp "$OUT/init_boot-self-stage-recovery-b.XXXXXXXX.img")
 trap 'rm -f -- "$first" "$second"' EXIT
 for candidate in "$first" "$second"; do
 	python3 -B "$ROOT/scripts/build-init-boot-self-stage.py" --build \

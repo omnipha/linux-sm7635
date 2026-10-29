@@ -7,7 +7,7 @@ LOG=/run/pmos-self-stage.log
 TARBALL=/run/pmos-session.tar.gz
 ARCHIVE_SHA=7a76a11062615387af5eac8f67b7f672d5f9004decac89529396d442ab3c6e26
 ARCHIVE_SIZE=23713302
-PART_SIZE=100663296
+PART_SIZE=104857600
 HEADER_OFFSET=18870272
 ARCHIVE_OFFSET=18874368
 HEADER_SHA=2d09f260bab4b77c51f0639d034c662d01e7e13e821507278cbd571ac038b578
@@ -114,39 +114,39 @@ part_dev=
 part_count=0
 for uevent in /sys/class/block/*/uevent; do
 	[ -r "$uevent" ] || continue
-	if [ "$($BB sed -n 's/^PARTNAME=//p' "$uevent" 2>/dev/null)" = vendor_boot_b ]; then
+	if [ "$($BB sed -n 's/^PARTNAME=//p' "$uevent" 2>/dev/null)" = recovery_b ]; then
 		dir=${uevent%/uevent}
 		part_dev=${dir##*/}
 		part_count=$((part_count + 1))
 	fi
 done
 [ "$part_count" = 1 ] && [ -n "$part_dev" ] ||
-	die "expected one vendor_boot_b PARTNAME in sysfs, found $part_count"
+	die "expected one recovery_b PARTNAME in sysfs, found $part_count"
 devnum=$($BB cat "/sys/class/block/$part_dev/dev" 2>/dev/null) || devnum=
-case "$devnum" in [0-9]*:[0-9]*) :;; *) die 'vendor_boot_b device numbers invalid';; esac
+case "$devnum" in [0-9]*:[0-9]*) :;; *) die 'recovery_b device numbers invalid';; esac
 major=${devnum%%:*}
 minor=${devnum##*:}
 $BB mkdir -p /dev/block
 node="/dev/block/$part_dev"
 if [ -b "$node" ]; then
-	[ ! -L "$node" ] || die 'vendor_boot_b block path is a symlink'
+	[ ! -L "$node" ] || die 'recovery_b block path is a symlink'
 	[ "$($BB stat -c '%t:%T' "$node")" = "$($BB printf '%x:%x' "$major" "$minor")" ] ||
-		die 'vendor_boot_b block node numbers differ from sysfs'
+		die 'recovery_b block node numbers differ from sysfs'
 else
-	[ ! -e "$node" ] && [ ! -L "$node" ] || die 'vendor_boot_b path is not a block node'
-	$BB mknod -m 0400 "$node" b "$major" "$minor" || die 'cannot create vendor_boot_b block node'
+	[ ! -e "$node" ] && [ ! -L "$node" ] || die 'recovery_b path is not a block node'
+	$BB mknod -m 0400 "$node" b "$major" "$minor" || die 'cannot create recovery_b block node'
 fi
 [ "$($BB stat -c '%t:%T' "$node")" = "$($BB printf '%x:%x' "$major" "$minor")" ] ||
-	die 'vendor_boot_b node verification failed'
+	die 'recovery_b node verification failed'
 size=$($BB timeout -k 1 2 $BB blockdev --getsize64 "$node" 2>/dev/null) || size=
-[ "$size" = "$PART_SIZE" ] || die "vendor_boot_b size mismatch (${size:-unknown})"
+[ "$size" = "$PART_SIZE" ] || die "recovery_b size mismatch (${size:-unknown})"
 
-hdr=/run/vendor_boot_b.header
+hdr=/run/recovery_b.header
 $BB rm -f "$hdr"
 $BB timeout -k 1 5 $BB dd if="$node" of="$hdr" bs=4096 skip=$((HEADER_OFFSET / 4096)) count=1 2>/dev/null ||
-	{ $BB rm -f "$hdr"; die 'cannot read vendor_boot_b payload header'; }
+	{ $BB rm -f "$hdr"; die 'cannot read recovery_b payload header'; }
 [ "$(hash "$hdr")" = "$HEADER_SHA" ] ||
-	{ $BB rm -f "$hdr"; die 'vendor_boot_b payload header digest mismatch'; }
+	{ $BB rm -f "$hdr"; die 'recovery_b payload header digest mismatch'; }
 $BB rm -f "$hdr"
 
 [ ! -e "$TARBALL" ] && [ ! -L "$TARBALL" ] || die 'tarball path already exists'
@@ -154,20 +154,20 @@ full_blocks=$((ARCHIVE_SIZE / 4096))
 rem_bytes=$((ARCHIVE_SIZE % 4096))
 skip_blocks=$((ARCHIVE_OFFSET / 4096))
 $BB timeout -k 2 30 $BB dd if="$node" of="$TARBALL" bs=4096 skip="$skip_blocks" count="$full_blocks" 2>/dev/null ||
-	{ $BB rm -f "$TARBALL"; die 'vendor_boot_b archive block copy failed'; }
+	{ $BB rm -f "$TARBALL"; die 'recovery_b archive block copy failed'; }
 if [ "$rem_bytes" -gt 0 ]; then
-	page=/run/vendor_boot_b.page
+	page=/run/recovery_b.page
 	$BB rm -f "$page"
 	$BB timeout -k 1 5 $BB dd if="$node" of="$page" bs=4096 skip=$((skip_blocks + full_blocks)) count=1 2>/dev/null ||
-		{ $BB rm -f "$TARBALL" "$page"; die 'vendor_boot_b archive tail copy failed'; }
+		{ $BB rm -f "$TARBALL" "$page"; die 'recovery_b archive tail copy failed'; }
 	$BB dd if="$page" of="$TARBALL" bs=1 seek="$((full_blocks * 4096))" count="$rem_bytes" conv=notrunc 2>/dev/null ||
-		{ $BB rm -f "$TARBALL" "$page"; die 'vendor_boot_b archive tail copy failed'; }
+		{ $BB rm -f "$TARBALL" "$page"; die 'recovery_b archive tail copy failed'; }
 	$BB rm -f "$page"
 fi
 $BB chmod 600 "$TARBALL"
 [ "$($BB stat -c '%u:%a:%s' "$TARBALL")" = "0:600:$ARCHIVE_SIZE" ] &&
 	[ "$(hash "$TARBALL")" = "$ARCHIVE_SHA" ] ||
-	{ $BB rm -f "$TARBALL"; die 'vendor_boot_b archive digest or size mismatch'; }
+	{ $BB rm -f "$TARBALL"; die 'recovery_b archive digest or size mismatch'; }
 log "copied userspace archive from read-only $node ($part_dev) and verified SHA-256"
 
 $BB sh /run/pmos-session-stage.sh || die 'pmos-session-stage failed'
