@@ -160,7 +160,7 @@ would have come from stock `vendor_boot_a` (`first_stage_ramdisk/fstab.qcom`,
 65. There was no USB gadget; the captured `/init` and stock module-load
 messages are from a later 6.1.84 stock/recovery console, not evidence
 that the 6.1.78 kernel reached init or loaded those modules. The test
-kernel's entry and fallback cause are unresolved. [BOOT.md](BOOT.md) has
+kernel's entry and fallback cause are unresolved. [INDEX.md](INDEX.md) has
 the distinction and the host-only evidence limits.
 
 `scripts/build-bootimg.sh` now also writes `init_boot.img` (header v4,
@@ -296,7 +296,7 @@ lockscreen authentication path. In this historical #8 set, the generic
 ramdisks in `boot.img` and `init_boot.img` and the PLATFORM ramdisk in
 `vendor_boot.img` were byte-identical. The later #16 packaging change keeps
 the generic ramdisk only in `init_boot.img` while preserving the PLATFORM vendor
-ramdisk; see [BOOT.md](BOOT.md). `scripts/verify-bootimg.sh` unpacks the
+ramdisk; see [INDEX.md](INDEX.md). `scripts/verify-bootimg.sh` unpacks the
 init_boot ramdisk and checks the binary, license notices, public key,
 startup bind address and matching vendor ramdisk. Built on the host only;
 no physical boot or SSH measurement.
@@ -314,7 +314,7 @@ references. Final hashes (artifacts are outside this repository):
 ### #10 full-chain diagnosis and host-only DTB correction (2026-10-20)
 
 The failed #8 physical attempt and the distinction between evidence and
-hypotheses are recorded in [BOOT.md](BOOT.md). These are parsed structural
+hypotheses are recorded in [INDEX.md](INDEX.md). These are parsed structural
 facts from SHA-256-verified read-only stock slot-A backups versus the #8 images;
 no backup or raw capture is published. `$WORK/out/bootimg-verify.txt` and
 `$WORK/out/issue-10-verify.log` are host-only verification references, not
@@ -399,7 +399,7 @@ five seconds despite successful writes. Stock rollback was verified and stock
 Android booted. The attempt's host-only recovery pstore contains only a later
 stock 6.1.84 kernel banner; neither rejection nor attempted-kernel hand-off
 can be inferred. The #10 DTBO correction was not the sole cause of the return.
-`BOOT.md` separates these observations from AVB and early-kernel hypotheses
+`INDEX.md` and its records separate these observations from AVB and early-kernel hypotheses
 and specifies the conditional measurement/rollback boundary. The current
 `verify-bootimg.sh` now also checks the separate 16-KiB stock boot AVB0
 record's salted kernel-prefix hash and the stock zero verification flags,

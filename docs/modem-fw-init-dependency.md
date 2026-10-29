@@ -141,7 +141,7 @@ Kernel-side modem touchpoints and their state in our session:
 | --- | --- | --- |
 | `remoteproc-mss@04080000` PAS node | live-fdt.dts:6808-6851 | bound, started, reached running (kmsg.log:2445) |
 | glink-edge `mpss` + `qcom,modem_qrtr` (IPCRTR) | :6830-6844 | working: `qcom_smd_qrtr_probe` at kmsg.log:2448 |
-| `qcom,smp2p-modem` | :5725-5759 | smp2p.ko loaded in the session supplier phase (run-29 measurement, BOOT.md run-29 section) |
+| `qcom,smp2p-modem` | :5725-5759 | smp2p.ko loaded in the session supplier phase (run-29 measurement, INDEX.md run-29 record) |
 | `qcom,rmtfs_sharedmem@0` (`qcom,sharedmem-uio`, client-id 1) | :6498-6503 | **no driver**: `msm_sharedmem.ko` exists in stock `vendor_dlkm_a` (`lib/modules/msm_sharedmem.ko`, vermagic 6.1.78, alias `of:N*T*Cqcom,sharedmem-uio`) but is in **no** module list of this repo's init (`initramfs/init:40-168`, wlan closure in `scripts/build-init-boot-wlan-closure.sh`); stock boot logs `msm_sharedmem_probe: Device created for client 'rmtfs'` (`console-ramoops-0:2480`); run 34's kmsg contains **zero** `msm_sharedmem` lines |
 | smem (`smem_region@81d00000`) | :224-230 | smem.ko loaded (kmsg.log:1360-1361) |
 
