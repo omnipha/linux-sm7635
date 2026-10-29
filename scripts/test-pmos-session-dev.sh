@@ -596,6 +596,13 @@ ssh -q -T -p 2222 -i /run/client_key -o BatchMode=yes -o IdentitiesOnly=yes -o I
 	export PATH=/bin:/sbin:/usr/bin:/usr/sbin &&
 	/sbin/rc-service -D wpa_supplicant start &&
 	/sbin/rc-service wpa_supplicant status &&
+	n=0
+	for proc in /proc/[0-9]*; do
+		[ "$(/bin/busybox cat "$proc/comm" 2>/dev/null)" = wpa_supplicant ] || continue
+		/bin/busybox tr "\000" "\n" < "$proc/cmdline" | /bin/busybox grep -qx -- -iwlan0 || exit 1
+		n=$((n+1))
+	done
+	[ "$n" = 1 ] &&
 	/sbin/rc-service -D networking start &&
 	/sbin/rc-service networking status &&
 	! /sbin/rc-service sshd status 2>/dev/null &&
