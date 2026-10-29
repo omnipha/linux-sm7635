@@ -406,6 +406,7 @@ $BB printf 'ctrl_interface=/run/wpa_supplicant\nnetwork={\nssid="synthetic"\npsk
 expect "$R/tmp/wpa-fail.out" 'wpa_supplicant first service error' 'first failed service not reported'
 [ "$($BB cat "$R/run/radio-bringup/order")" = wpa ] && [ ! -e "$R/run/radio-bringup/networking.started" ] || fail 'networking attempted after wpa failure'
 $BB rm "$R/run/radio-bringup/wpa-fail" "$R/run/radio-bringup/order" "$R/run/radio-bringup/services.attempted" "$R/etc/network/interfaces" "$R/etc/wpa_supplicant/wpa_supplicant.conf" "$R/etc/conf.d/networking" "$R/bin/run-parts" "$R/sbin/udhcpc" "$R/run/radio-bringup/ifquery-wlan" "$R/run/radio-bringup/lease-wrapper.sh" "$R/etc/runlevels/default/wpa_supplicant" "$R/etc/runlevels/default/networking"
+$BB printf 'wpa_supplicant_args=""\n' > "$R/etc/conf.d/wpa_supplicant"
 $BB printf 'ctrl_interface=/run/wpa_supplicant\nnetwork={\nssid="synthetic"\npsk="synthetic-only"\n}\n' | $BB chroot "$R" /bin/busybox sh /radio.sh "$BOOT" services capture-ok > "$R/tmp/services-ok.out" 2>&1 || { $BB cat "$R/tmp/services-ok.out" >&2; fail 'services stage failed'; }
 expect "$R/tmp/services-ok.out" 'OpenRC wpa_supplicant then networking started' 'services stage summary missing'
 [ "$($BB cat "$R/run/radio-bringup/order")" = 'wpa
@@ -413,6 +414,7 @@ net' ] || fail 'services did not start wpa_supplicant then networking'
 [ "$($BB stat -c '%u:%a' "$R/etc/wpa_supplicant/wpa_supplicant.conf")" = 0:600 ] &&
 	[ "$($BB stat -c '%u:%a' "$R/etc/network/interfaces")" = 0:600 ] &&
 	[ "$($BB stat -c '%u:%a' "$R/etc/conf.d/networking")" = 0:600 ] || fail 'service config permissions'
+$BB grep -q '^wpa_supplicant_if="wlan0"$' "$R/etc/conf.d/wpa_supplicant" || fail 'supplicant not pinned to wlan0'
 $BB grep -q '^IP_CMD=/sbin/ip$' "$R/run/radio-bringup/lease-wrapper.sh" &&
 	$BB grep -q 'dhcp-script /run/radio-bringup/lease-wrapper.sh' "$R/etc/network/interfaces" &&
 	[ "$($BB stat -c '%u:%a' "$R/run/radio-bringup/lease-wrapper.sh")" = 0:700 ] || fail 'IP_CMD=/sbin/ip lease wrapper missing'

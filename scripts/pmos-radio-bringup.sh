@@ -329,6 +329,7 @@ install_service_config() {
 	$BB printf 'auto wlan0\niface wlan0 inet dhcp\n\tdhcp-script /run/radio-bringup/lease-wrapper.sh\n\tudhcpc-opts -t 5 -T 3 -A 5 -n\n' > /etc/network/interfaces
 	$BB chmod 600 /etc/network/interfaces
 	$BB printf 'ifquery=/run/radio-bringup/ifquery-wlan\n' > /etc/conf.d/networking
+	$BB printf 'wpa_supplicant_args=""\nwpa_supplicant_if="wlan0"\n' > /etc/conf.d/wpa_supplicant
 	$BB chmod 600 /etc/conf.d/networking
 	$BB printf '#!/bin/busybox sh\nif [ "$#" = 4 ] && [ "$1" = -i ] && [ "$2" = /etc/network/interfaces ] && [ "$3" = --list ] && [ "$4" = -a ]; then /bin/busybox printf "wlan0\\n"; exit 0; fi\nexec /sbin/ifquery "$@"\n' > "$STATE/ifquery-wlan"
 	$BB chmod 700 "$STATE/ifquery-wlan"
