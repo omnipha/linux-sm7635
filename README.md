@@ -453,9 +453,11 @@ and `remoteproc3` both reached `running` and `wlan0`/phy0 registered; a scan saw
 `-iwlan0` but stayed `SCANNING`, and `networking` stopped with no DHCP lease.
 The guest profile matched the protected host input, yet its network did not
 appear in 36-, 37- or 30-BSS scans, so no association, address, route, gateway,
-DNS or external reachability was reached. SSH and capture remain healthy in the
-still-open session; the one-reboot phase has not begun, and the coordinator owns
-session closure and stock rollback.
+DNS or external reachability was reached. A separate host Wi-Fi scan found zero
+matches for the same designated network among 27 BSS, confirming it is not on
+the air in this RF environment. SSH and capture remain healthy in the still-open
+session; the one-reboot phase has not begun, and the coordinator owns session
+closure and stock rollback.
 
 ## Inactive `vendor_boot_b` self-staged session (2026-10-29, #164)
 
