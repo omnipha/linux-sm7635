@@ -42,5 +42,5 @@ attempted_shas:       # cold-start index only; the flash gate is device-op statu
   - fef03008        # init_boot, runs 52-57
 notes: >-
   All values refer to coordinator-held, RAM-backed sessions on the stock
-  kernel. Run 62 ended in fastboot after its one guest reboot; the coordinator
-  owns the stock rollback. Not an Omnipha image, not a release.
+  kernel. Linux stays on the phone between runs; stock/Android is emergency
+  or operator request only. Not an Omnipha image, not a release.
