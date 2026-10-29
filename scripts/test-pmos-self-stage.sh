@@ -2,17 +2,17 @@
 set -eu
 HERE=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 ARCHIVE=${ARCHIVE:-$HOME/sm7635-build/i139-userspace/out/postmarketos-session-aarch64.tar.gz}
-IMAGE=${IMAGE:-$HOME/sm7635-build/out/vendor_boot_b-userspace.img}
-STOCK=${STOCK:-$HOME/phone-second-life-data/mb003/parts/vendor_boot_b.img}
+IMAGE=${IMAGE:-$HOME/sm7635-build/out/recovery_b-userspace.img}
+STOCK=${STOCK:-$HOME/phone-second-life-data/mb003/parts/recovery_b.img}
 BY_NAME=${BY_NAME:-$HOME/phone-second-life-data/mb003/by-name.txt}
-BUILDER="$HERE/build-vendor-boot-b-userspace-payload.py"
+BUILDER="$HERE/build-recovery-b-userspace-payload.py"
 ARCHIVE_SHA=7a76a11062615387af5eac8f67b7f672d5f9004decac89529396d442ab3c6e26
 ARCHIVE_SIZE=23713302
-PART_SIZE=100663296
+PART_SIZE=104857600
 HEADER_OFFSET=18870272
 ARCHIVE_OFFSET=18874368
 HEADER_SHA=2d09f260bab4b77c51f0639d034c662d01e7e13e821507278cbd571ac038b578
-STOCK_SHA=237259404601045205715a71b88016744c73729d4513349cfe90c754b0dc1253
+STOCK_SHA=6065f68502838b3cb20a51eb6a6aa1b250f3a58553246d9c4259593a3769874b
 SESSION_SHA=cb8fa873c7a51915a661d91d3cd70ea50d4d19b656ac5eff8e0a87b016a50b55
 TRANSITION_SHA=0b85d1dc3c05b58f703618994363a9d0dbd09ecf8139573d2db15628d2497549
 GUARD_SHA=dc37428ec10330c89fa8f559626be735013004b87d0bd9a7271d9b88dfc47fe3
@@ -34,8 +34,8 @@ if [ "${1:-}" != --inner ]; then
 		[ -f "$path" ] && [ ! -L "$path" ] || fail "missing fixture input: $path"
 	done
 	[ "$(stat -c %s "$ARCHIVE")" = "$ARCHIVE_SIZE" ] && [ "$(hash "$ARCHIVE")" = "$ARCHIVE_SHA" ] || fail 'unpinned userspace archive'
-	[ "$(stat -c %s "$STOCK")" = "$PART_SIZE" ] && [ "$(hash "$STOCK")" = "$STOCK_SHA" ] || fail 'unpinned stock vendor_boot_b'
-	[ "$(stat -c %s "$IMAGE")" = "$PART_SIZE" ] || fail 'built vendor_boot_b size'
+	[ "$(stat -c %s "$STOCK")" = "$PART_SIZE" ] && [ "$(hash "$STOCK")" = "$STOCK_SHA" ] || fail 'unpinned stock recovery_b'
+	[ "$(stat -c %s "$IMAGE")" = "$PART_SIZE" ] || fail 'built recovery_b size'
 	[ "$(hash "$HERE/pmos-session-stage.sh")" = "$SESSION_SHA" ] || fail 'session stage pin changed'
 	[ "$(hash "$HERE/pmos-pid1-transition.sh")" = "$TRANSITION_SHA" ] || fail 'transition pin changed'
 	[ "$(hash "$HERE/pmos-pid1-guard.sh")" = "$GUARD_SHA" ] || fail 'guard pin changed'
@@ -50,9 +50,9 @@ if [ "${1:-}" != --inner ]; then
 	}
 	trap cleanup EXIT
 	python3 -B "$BUILDER" --self-test "$STOCK" "$ARCHIVE" "$IMAGE" >"$WORK/builder.out" ||
-		{ cat "$WORK/builder.out" >&2; fail 'vendor_boot_b builder self-test'; }
-	[ "$(awk '$(NF-2) == "vendor_boot_b" && $(NF-1) == "->" {n++; print $NF} END {if (n != 1) exit 1}' "$BY_NAME")" = /dev/block/sde51 ] ||
-		fail 'measured by-name table does not place vendor_boot_b on sde51'
+		{ cat "$WORK/builder.out" >&2; fail 'recovery_b builder self-test'; }
+	[ "$(awk '$(NF-2) == "recovery_b" && $(NF-1) == "->" {n++; print $NF} END {if (n != 1) exit 1}' "$BY_NAME")" = /dev/block/sde53 ] ||
+		fail 'measured by-name table does not place recovery_b on sde53'
 	before=$(hash "$IMAGE")
 	python3 -B - "$IMAGE" "$ARCHIVE" "$WORK" "$HEADER_OFFSET" "$ARCHIVE_OFFSET" "$HEADER_SHA" "$ARCHIVE_SHA" "$ARCHIVE_SIZE" <<'PY' || fail 'image windows or fixture build'
 import hashlib, pathlib, shutil, sys
@@ -94,10 +94,10 @@ PY
 		env HOST_ARCHIVE="$ARCHIVE" SOURCE="$HERE" GOOD="$good" BAD_HEADER="$bad_header" \
 		BAD_FIRST="$bad_first" BAD_LAST="$bad_last" \
 		/bin/busybox sh "$0" --inner || fail 'isolated self-stage fixture'
-	[ "$(hash "$IMAGE")" = "$before" ] || fail 'built vendor_boot_b image changed'
+	[ "$(hash "$IMAGE")" = "$before" ] || fail 'built recovery_b image changed'
 	[ "$(hash "$ARCHIVE")" = "$ARCHIVE_SHA" ] || fail 'archive changed'
 	python3 -B "$BUILDER" --verify "$STOCK" "$ARCHIVE" "$IMAGE" >/dev/null || fail 'built image no longer verifies'
-	printf 'pass: host-only vendor_boot_b self-stage fixture; builder self-test, read-only loop partition, by-name/PARTNAME, node, size, header and archive negatives rejected before staging; positive copy verified; no partition write\n'
+	printf 'pass: host-only recovery_b self-stage fixture; builder self-test, read-only loop partition, by-name/PARTNAME, node, size, header and archive negatives rejected before staging; positive copy verified; no partition write\n'
 	exit 0
 fi
 
@@ -167,7 +167,7 @@ mk_node() {
 	$BB mknod -m 0400 "$1" b "${2%%:*}" "${2##*:}"
 }
 use_image() {
-	sysfs_part sde51 vendor_boot_b "$1"
+	sysfs_part sde51 recovery_b "$1"
 	mk_node /dev/block/sde51 "$1"
 }
 install_inputs() {
@@ -216,7 +216,7 @@ profile_sig() {
 not_published() {
 	[ ! -e /run/pmos ] && [ ! -L /run/pmos ] || fail "$1 published a guest root"
 	[ ! -e /run/pmos-pid1-request ] && [ ! -L /run/pmos-pid1-request ] || fail "$1 armed a PID 1 request"
-	[ ! -e /run/radio-bringup ] && [ ! -e /run/vendor_boot_b.header ] || fail "$1 published radio or header state"
+	[ ! -e /run/radio-bringup ] && [ ! -e /run/recovery_b.header ] || fail "$1 published radio or header state"
 	[ "$(profile_sig)" = "$PROFILE_SIG" ] || fail "$1 moved or changed the protected profile"
 	network_state /run/net.after
 	$BB cmp -s /run/net.base.link /run/net.after.link &&
@@ -248,7 +248,7 @@ reject() {
 	printf 'rejected: %s\n' "$label"
 }
 
-PART_SIZE=100663296
+PART_SIZE=104857600
 HEADER_OFFSET=18870272
 ARCHIVE_OFFSET=18874368
 ARCHIVE_SIZE=23713302
@@ -260,11 +260,11 @@ ip addr add 172.16.42.2/32 dev lo
 start_listener
 install_inputs
 sysfs_part sda6 super 259:600
-$BB ln -s /dev/block/sda6 /dev/block/by-name/vendor_boot_b
+$BB ln -s /dev/block/sda6 /dev/block/by-name/recovery_b
 use_image "$GOOD"
 network_state /run/net.base
 $BB sh -n "$STAGE" && $BB sh -n "$POST" || fail 'self-stage or post script syntax'
-[ "$($BB sed -n 's/^PARTNAME=//p' /sys/class/block/sde51/uevent)" = vendor_boot_b ] || fail 'sde51 PARTNAME model'
+[ "$($BB sed -n 's/^PARTNAME=//p' /sys/class/block/sde51/uevent)" = recovery_b ] || fail 'sde51 PARTNAME model'
 [ "$($BB cat /sys/class/block/sde51/dev)" = "$GOOD" ] && [ "$($BB stat -c '%t:%T' /dev/block/sde51)" = "$($BB printf '%x:%x' "${GOOD%%:*}" "${GOOD##*:}")" ] || fail 'sde51 numbers model'
 [ "$($BB blockdev --getsize64 /dev/block/sde51)" = "$PART_SIZE" ] && [ "$($BB blockdev --getro /dev/block/sde51)" = 1 ] || fail 'sde51 size or read-only model'
 $BB dd if=/dev/block/sde51 of=/run/model.header bs=4096 skip=$((HEADER_OFFSET / 4096)) count=1 2>/dev/null
@@ -316,49 +316,53 @@ reject 'diagnostic :22 listener absent'
 start_listener
 
 $BB rm /sys/class/block/sde51/uevent
-reject 'expected one vendor_boot_b PARTNAME in sysfs, found 0'
-$BB printf 'PARTNAME=vendor_boot_a\n' > /sys/class/block/sde51/uevent
-reject 'expected one vendor_boot_b PARTNAME in sysfs, found 0'
+reject 'expected one recovery_b PARTNAME in sysfs, found 0'
 $BB printf 'PARTNAME=vendor_boot_b\n' > /sys/class/block/sde51/uevent
-$BB printf 'PARTNAME=vendor_boot_b\n' > /sys/class/block/sda6/uevent
-reject 'expected one vendor_boot_b PARTNAME in sysfs, found 2'
+reject 'expected one recovery_b PARTNAME in sysfs, found 0'
+$BB printf 'PARTNAME=recovery_a\n' > /sys/class/block/sde51/uevent
+reject 'expected one recovery_b PARTNAME in sysfs, found 0'
+$BB printf 'PARTNAME=recovery_b\n' > /sys/class/block/sde51/uevent
+$BB printf 'PARTNAME=recovery_b\n' > /sys/class/block/sda6/uevent
+reject 'expected one recovery_b PARTNAME in sysfs, found 2'
 $BB printf 'PARTNAME=super\n' > /sys/class/block/sda6/uevent
 $BB rm /sys/class/block/sde51/dev
-reject 'vendor_boot_b device numbers invalid'
+reject 'recovery_b device numbers invalid'
 $BB printf 'nope\n' > /sys/class/block/sde51/dev
-reject 'vendor_boot_b device numbers invalid'
+reject 'recovery_b device numbers invalid'
 use_image "$GOOD"
 
 $BB rm /dev/block/sde51
 $BB mknod -m 0400 /dev/block/sde51 b 259 601
-reject 'vendor_boot_b block node numbers differ from sysfs'
+reject 'recovery_b block node numbers differ from sysfs'
 $BB rm /dev/block/sde51
 $BB mknod -m 0400 /dev/block/sde51 c "${GOOD%%:*}" "${GOOD##*:}"
-reject 'vendor_boot_b path is not a block node'
+reject 'recovery_b path is not a block node'
 $BB rm /dev/block/sde51
 : > /dev/block/sde51
-reject 'vendor_boot_b path is not a block node'
+reject 'recovery_b path is not a block node'
 $BB rm /dev/block/sde51
 mk_node /dev/block/real "$GOOD"
 $BB ln -s real /dev/block/sde51
-reject 'vendor_boot_b block path is a symlink'
+reject 'recovery_b block path is a symlink'
 $BB rm /dev/block/sde51 /dev/block/real
 use_image "$GOOD"
 
 $BB printf '1\n' > /run/wrap.size
-reject 'vendor_boot_b size mismatch (1)'
-$BB printf '100663295\n' > /run/wrap.size
-reject 'vendor_boot_b size mismatch (100663295)'
-$BB printf '100663297\n' > /run/wrap.size
-reject 'vendor_boot_b size mismatch (100663297)'
+reject 'recovery_b size mismatch (1)'
+$BB printf '100663296\n' > /run/wrap.size
+reject 'recovery_b size mismatch (100663296)'
+$BB printf '104857599\n' > /run/wrap.size
+reject 'recovery_b size mismatch (104857599)'
+$BB printf '104857601\n' > /run/wrap.size
+reject 'recovery_b size mismatch (104857601)'
 $BB rm /run/wrap.size
 
 use_image "$BAD_HEADER"
-reject 'vendor_boot_b payload header digest mismatch'
+reject 'recovery_b payload header digest mismatch'
 use_image "$BAD_FIRST"
-reject 'vendor_boot_b archive digest or size mismatch' yes
+reject 'recovery_b archive digest or size mismatch' yes
 use_image "$BAD_LAST"
-reject 'vendor_boot_b archive digest or size mismatch' yes
+reject 'recovery_b archive digest or size mismatch' yes
 
 use_image "$GOOD"
 $BB rm /dev/block/sde51
@@ -375,7 +379,7 @@ $BB grep -qF 'copied userspace archive from read-only /dev/block/sde51 (sde51) a
 [ "$($BB sed -n 1p /run/wrap.session.out)" = "0:600:$ARCHIVE_SIZE" ] && [ "$($BB sed -n 2p /run/wrap.session.out)" = "$ARCHIVE_SHA" ] || fail 'copied archive metadata or digest'
 [ -b /dev/block/sde51 ] && [ ! -L /dev/block/sde51 ] && [ "$($BB stat -c '%a' /dev/block/sde51)" = 400 ] &&
 	[ "$($BB stat -c '%t:%T' /dev/block/sde51)" = "$($BB printf '%x:%x' "${GOOD%%:*}" "${GOOD##*:}")" ] || fail 'script-created node'
-[ ! -e /run/vendor_boot_b.header ] || fail 'header scratch retained'
+[ ! -e /run/recovery_b.header ] || fail 'header scratch retained'
 $BB grep -qF 'if=/dev/block/sde51' /run/wrap.dd || fail 'positive path did not read the by-sysfs node'
 ! $BB grep -qE ' of=/dev/| of=/sys/| of=/dev/block' /run/wrap.dd || fail 'positive path wrote a partition'
 [ ! -e /run/pmos ] && [ ! -e /run/pmos-pid1-request ] && [ ! -e /run/radio-bringup ] || fail 'stubbed positive path published guest state'

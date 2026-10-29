@@ -71,6 +71,8 @@ def check_candidate(candidate, stock, previous, found, private, library, decode_
     require(entries[-1]["mode"] & 0o170777 == 0o100600 and
             entries[-1]["data"] == builder.checked_bundle(
                 builder.bundle_bytes(found, private), found, private), BUNDLE_MSG)
+    builder.carrier_delta(found["pmos-self-stage.sh"])
+    builder.measured_delta(stock, original, trailer, found, private, library)
     original_init = next(entry["data"] for entry in original if entry["name"] == "init")
     init = next(entry["data"] for entry in entries if entry["name"] == "init")
     require(init == builder.expected_init(original_init, found, private) and
@@ -152,6 +154,26 @@ def self_test(candidate, stock, previous, found, private, library, decode_frame)
     changed = dict(found)
     changed["pmos-self-stage.sh"] += b"\n"
     bad("bundle mismatch", BUNDLE_MSG, candidate, changed)
+    stage = found["pmos-self-stage.sh"]
+    old_carrier = dict(found)
+    old_carrier["pmos-self-stage.sh"] = stage.replace(b"recovery_b", b"vendor_boot_b").replace(
+        b"PART_SIZE=104857600\n", b"PART_SIZE=100663296\n")
+    marker_only = stage.replace(b"\numask 077\n", b"\n# marker\numask 077\n", 1)
+    other_carrier = stage.replace(b"recovery_b", b"dtbo_b")
+    wrong_size = stage.replace(b"PART_SIZE=104857600\n", b"PART_SIZE=100663296\n", 1)
+    longer_wait = stage.replace(b'"$wait_n" -lt 145', b'"$wait_n" -lt 146', 1)
+    for label, script in (("measured vendor_boot_b carrier", old_carrier["pmos-self-stage.sh"]),
+                          ("marker-only script delta", marker_only),
+                          ("other carrier name", other_carrier),
+                          ("old carrier size", wrong_size),
+                          ("changed hold wait", longer_wait)):
+        require(script != stage, f"{label}: fixture unchanged")
+        try:
+            builder.carrier_delta(script)
+        except ValueError as exc:
+            require(str(exc) == builder.CARRIER_MSG, f"{label}: unexpected failure: {exc}")
+        else:
+            raise ValueError(f"{label}: invalid carrier delta accepted")
     leaked = dict(found)
     leaked["pmos-self-post.sh"] = b"#!/bin/busybox sh\n# " + private[:16] + b"\n"
     bad("profile bytes inside bundle", BUNDLE_MSG, candidate, leaked)

@@ -26,18 +26,19 @@ if [ "$#" -gt 0 ]; then
 	esac
 	[ "$#" -le 2 ] || die 'usage: verify-bootimg.sh [init-boot-self-stage [--fixture]]'
 	STOCK_VENDOR_B=${STOCK_VENDOR_B:-$HOME/phone-second-life-data/mb003/parts/vendor_boot_b.img}
+	STOCK_RECOVERY_B=${STOCK_RECOVERY_B:-$HOME/phone-second-life-data/mb003/parts/recovery_b.img}
 	USERSPACE_ARCHIVE=${USERSPACE_ARCHIVE:-$WORK/i139-userspace/out/postmarketos-session-aarch64.tar.gz}
 	PID1_HANDOFF=${PID1_HANDOFF:-$OUT/init_boot-pid1-handoff.img}
-	SELF_STAGE_IMAGE=${SELF_STAGE_IMAGE:-$OUT/init_boot-self-stage.img}
-	VENDOR_B_IMAGE=${VENDOR_B_IMAGE:-$OUT/vendor_boot_b-userspace.img}
+	SELF_STAGE_IMAGE=${SELF_STAGE_IMAGE:-$OUT/init_boot-self-stage-recovery-b.img}
+	RECOVERY_B_IMAGE=${RECOVERY_B_IMAGE:-$OUT/recovery_b-userspace.img}
 	for tool in python3 sha256sum realpath git; do
 		need "$tool"
 	done
-	for path in "$STOCK_INIT" "$STOCK_VENDOR" "$STOCK_VENDOR_B" "$USERSPACE_ARCHIVE" \
-		"$PID1_HANDOFF" "$SELF_STAGE_IMAGE" "$VENDOR_B_IMAGE"; do
+	for path in "$STOCK_INIT" "$STOCK_VENDOR" "$STOCK_VENDOR_B" "$STOCK_RECOVERY_B" "$USERSPACE_ARCHIVE" \
+		"$PID1_HANDOFF" "$SELF_STAGE_IMAGE" "$RECOVERY_B_IMAGE"; do
 		[ -f "$path" ] && [ ! -L "$path" ] || die "missing or symlinked input: $path"
 	done
-	for path in "$SELF_STAGE_IMAGE" "$VENDOR_B_IMAGE"; do
+	for path in "$SELF_STAGE_IMAGE" "$RECOVERY_B_IMAGE"; do
 		case "$(realpath -m "$path")/" in
 			"$ROOT"/*) die "candidate must stay outside this repository: $path" ;;
 		esac
@@ -47,32 +48,37 @@ if [ "$#" -gt 0 ]; then
 		'fef030081e04d3a90451bb7d64dcfa7668c41dc4248e6e0b1959fdb40efce948  '"$PID1_HANDOFF" \
 		'237259404601045205715a71b88016744c73729d4513349cfe90c754b0dc1253  '"$STOCK_VENDOR" \
 		'237259404601045205715a71b88016744c73729d4513349cfe90c754b0dc1253  '"$STOCK_VENDOR_B" \
+		'6065f68502838b3cb20a51eb6a6aa1b250f3a58553246d9c4259593a3769874b  '"$STOCK_RECOVERY_B" \
 		'7a76a11062615387af5eac8f67b7f672d5f9004decac89529396d442ab3c6e26  '"$USERSPACE_ARCHIVE" |
-		sha256sum -c - || die 'init_boot/vendor_boot/archive inputs differ from the pinned #164 references'
+		sha256sum -c - || die 'init_boot/recovery_b/archive inputs differ from the pinned references'
 	candidate_init=$(sha256sum "$SELF_STAGE_IMAGE" | cut -d ' ' -f 1)
-	candidate_vendor=$(sha256sum "$VENDOR_B_IMAGE" | cut -d ' ' -f 1)
+	candidate_recovery=$(sha256sum "$RECOVERY_B_IMAGE" | cut -d ' ' -f 1)
 	case "$candidate_init" in
 		baa33fd43c3da1d9f3358ced9249c42abecc704fc5707a5241ea69e77c1e3193 | \
-		fef030081e04d3a90451bb7d64dcfa7668c41dc4248e6e0b1959fdb40efce948)
-			die "init_boot self-stage candidate repeats stock or previous image $candidate_init" ;;
+		fef030081e04d3a90451bb7d64dcfa7668c41dc4248e6e0b1959fdb40efce948 | \
+		4b83ea24c305d731b168c2e2f12bd0ebd5d4a18de9039eaf8b0e0ca452b464f7)
+			die "init_boot self-stage candidate repeats stock or measured image $candidate_init" ;;
 	esac
-	[ "$candidate_vendor" != 237259404601045205715a71b88016744c73729d4513349cfe90c754b0dc1253 ] ||
-		die "vendor_boot_b candidate repeats stock image $candidate_vendor"
+	case "$candidate_recovery" in
+		6065f68502838b3cb20a51eb6a6aa1b250f3a58553246d9c4259593a3769874b | \
+		1bdb7c2252b3192127aed0a2f8953d928be0f36a00a259582e7a75a98a029f5f)
+			die "recovery_b candidate repeats stock or measured payload $candidate_recovery" ;;
+	esac
 	export PYTHONDONTWRITEBYTECODE=1
 	python3 -B "$ROOT/scripts/verify-init-boot-self-stage.py" --self-test \
 		"$SELF_STAGE_IMAGE" "$STOCK_INIT" "$PID1_HANDOFF"
 	python3 -B "$ROOT/scripts/verify-init-boot-self-stage.py" \
 		"$SELF_STAGE_IMAGE" "$STOCK_INIT" "$PID1_HANDOFF"
-	python3 -B "$ROOT/scripts/build-vendor-boot-b-userspace-payload.py" --self-test \
-		"$STOCK_VENDOR_B" "$USERSPACE_ARCHIVE" "$VENDOR_B_IMAGE" "$STOCK_VENDOR"
-	python3 -B "$ROOT/scripts/build-vendor-boot-b-userspace-payload.py" --verify \
-		"$STOCK_VENDOR_B" "$USERSPACE_ARCHIVE" "$VENDOR_B_IMAGE" "$STOCK_VENDOR"
+	python3 -B "$ROOT/scripts/build-recovery-b-userspace-payload.py" --self-test \
+		"$STOCK_RECOVERY_B" "$USERSPACE_ARCHIVE" "$RECOVERY_B_IMAGE"
+	python3 -B "$ROOT/scripts/build-recovery-b-userspace-payload.py" --verify \
+		"$STOCK_RECOVERY_B" "$USERSPACE_ARCHIVE" "$RECOVERY_B_IMAGE"
 	if [ "$fixture" = yes ]; then
-		ARCHIVE=$USERSPACE_ARCHIVE IMAGE=$VENDOR_B_IMAGE STOCK=$STOCK_VENDOR_B \
+		ARCHIVE=$USERSPACE_ARCHIVE IMAGE=$RECOVERY_B_IMAGE STOCK=$STOCK_RECOVERY_B \
 			sh "$ROOT/scripts/test-pmos-self-stage.sh"
 	fi
-	printf 'host-only #164 verification passed: init_boot %s vendor_boot_b %s; nothing built, written or flashed\n' \
-		"$candidate_init" "$candidate_vendor"
+	printf 'host-only #171 verification passed: init_boot %s recovery_b %s; nothing built, written or flashed\n' \
+		"$candidate_init" "$candidate_recovery"
 	exit 0
 fi
 for tool in unpack_bootimg python3 cpio gzip sha256sum file mktemp fdtget dtc \

@@ -36,6 +36,9 @@ FRAME_MSG = "ramdisk is not one reproducible LZ4 HC-12 block inside the stock en
 CPIO_MSG = "cpio must change only /init and add one root-only self-stage bundle"
 INIT_MSG = "init must keep the measured handoff and append one distinct self-stage hook"
 SHA_MSG = "candidate repeats a stock, measured or refused image SHA-256"
+RUN58_INIT = "4b83ea24c305d731b168c2e2f12bd0ebd5d4a18de9039eaf8b0e0ca452b464f7"
+RUN58_PAYLOAD = "1bdb7c2252b3192127aed0a2f8953d928be0f36a00a259582e7a75a98a029f5f"
+CARRIER_MSG = "self-stage script differs from the measured vendor_boot_b script by more than the recovery_b carrier"
 PROFILE_MSG = "private profile must be a regular non-symlink file owned by the current uid with mode 0600"
 BUNDLE_MSG = "self-stage bundle is not one reproducible root-only xz tar of the pinned scripts"
 SCRIPT_MSG = "bundled script does not match its reviewed digest"
@@ -76,7 +79,7 @@ prior = load("build-init-boot-pid1-handoff.py", "self_stage_prior")
 modules = prior.modules
 base = prior.base
 vendor = prior.vendor
-REFUSED = frozenset((*prior.REFUSED, prior.EXPECTED_SHA256))
+REFUSED = frozenset((*prior.REFUSED, prior.EXPECTED_SHA256, RUN58_INIT, RUN58_PAYLOAD))
 
 
 def require(condition, message):
@@ -94,6 +97,17 @@ def profile_bytes():
             PROFILE.stat().st_uid == os.getuid() and regular(PROFILE, 0o600) and
             PROFILE.stat().st_size > 0, PROFILE_MSG)
     return PROFILE.read_bytes()
+
+
+def carrier_delta(data):
+    old = data.replace(b"recovery_b", b"vendor_boot_b").replace(
+        b"PART_SIZE=104857600\n", b"PART_SIZE=100663296\n")
+    require(hashlib.sha256(old).hexdigest() ==
+            "356d8792346357694882c8cf8ce7f693a457cd1d36bbe9b04749bd351af9204a" and
+            data == old.replace(b"PART_SIZE=100663296\n", b"PART_SIZE=104857600\n", 1).replace(
+                b"vendor_boot_b", b"recovery_b") and
+            data.count(b"vendor_boot_b") == 0 and data.count(b"recovery_b") == 17 and
+            data.count(b"PART_SIZE=104857600\n") == 1, CARRIER_MSG)
 
 
 def script_bytes(name):
@@ -243,8 +257,19 @@ def frame_budget(cpio, library):
     return frame
 
 
+def measured_delta(stock, entries, trailer, found, private, library):
+    old = dict(found)
+    old["pmos-self-stage.sh"] = found["pmos-self-stage.sh"].replace(
+        b"recovery_b", b"vendor_boot_b").replace(
+            b"PART_SIZE=104857600\n", b"PART_SIZE=100663296\n")
+    old_frame = frame_budget(candidate_cpio(entries, trailer, old, private), library)
+    require(vendor.assemble(stock, old_frame)[1] == RUN58_INIT, CARRIER_MSG)
+
+
 def build(stock, previous, found, private, library, decode_frame, ready):
+    carrier_delta(found["pmos-self-stage.sh"])
     entries, trailer = source_entries(stock, previous, library, decode_frame)
+    measured_delta(stock, entries, trailer, found, private, library)
     cpio = candidate_cpio(entries, trailer, found, private)
     frame = frame_budget(cpio, library)
     if not ready:
