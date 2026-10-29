@@ -12,24 +12,24 @@ One active step, one active issue. Later steps are not pre-created issues.
 
 ## Active step
 
-- Step: self-stage the pinned archive from a userdata ext4 image so the second
-  boot can be observed (single image variable: staging source).
+- Step: create the root-only /run/keep hold over diagnostic :22 as soon as the
+  gadget and capture return after a reboot, so the proven userdata self-stage
+  can repeat and WLAN autoconnect can be measured. Host-side fix; no new image.
 - Issue: omnipha/linux-sm7635#176
 - Done when: a coordinator-held session shows the second self-stage and WLAN
-  autoconnect, or names the first missing line; recorded as a new record.
+  autoconnect, or names the next first missing line; recorded as a new record.
 
 ## Next (ordered, not issues yet)
 
-1. Persistence and cold boot once the second boot is observed (depends on active step).
-2. Host re-addresses the re-enumerated USB gadget within the 150 s guard
-   window so SSH returns after reboot (#169 host part merged in PR #170;
-   the device measurement waits for a new SHA or a logged reuse decision).
-3. Interactive PTY (`ssh -tt`) in the isolated staged guest (#144).
-4. Only if a boot regression reappears: reopen the boot-boundary question
+1. Persistence and cold boot once the second self-stage is observed (depends on active step).
+2. Interactive PTY (`ssh -tt`) in the isolated staged guest (#144).
+3. Only if a boot regression reappears: reopen the boot-boundary question
    (#12); otherwise leave closed-history alone.
 
 ## Done (pointers, newest first)
 
+- Run 62: userdata self-stage on first boot; host re-addressing, fresh boot ID
+  and diagnostic :22 return after the guest reboot -> records/ (userspace)
 - Run 57: OpenRC wpa_supplicant + networking on postmarketOS PID 1 -> records/ (subsystem wlan)
 - Run 56: in-session WLAN association and reachability -> records/
 - Run 55: modem holds past EFS request -> records/
