@@ -2,17 +2,12 @@
 set -eu
 HERE=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 ARCHIVE=${ARCHIVE:-$HOME/sm7635-build/i139-userspace/out/postmarketos-session-aarch64.tar.gz}
-IMAGE=${IMAGE:-$HOME/sm7635-build/out/recovery_b-userspace.img}
-STOCK=${STOCK:-$HOME/phone-second-life-data/mb003/parts/recovery_b.img}
+IMAGE=${IMAGE:-$HOME/sm7635-build/out/userdata-userspace.img}
 BY_NAME=${BY_NAME:-$HOME/phone-second-life-data/mb003/by-name.txt}
-BUILDER="$HERE/build-recovery-b-userspace-payload.py"
+BUILDER="$HERE/build-userdata-userspace-payload.py"
 ARCHIVE_SHA=7a76a11062615387af5eac8f67b7f672d5f9004decac89529396d442ab3c6e26
 ARCHIVE_SIZE=23713302
-PART_SIZE=104857600
-HEADER_OFFSET=18870272
-ARCHIVE_OFFSET=18874368
-HEADER_SHA=2d09f260bab4b77c51f0639d034c662d01e7e13e821507278cbd571ac038b578
-STOCK_SHA=6065f68502838b3cb20a51eb6a6aa1b250f3a58553246d9c4259593a3769874b
+PART_SIZE=33554432
 SESSION_SHA=cb8fa873c7a51915a661d91d3cd70ea50d4d19b656ac5eff8e0a87b016a50b55
 TRANSITION_SHA=0b85d1dc3c05b58f703618994363a9d0dbd09ecf8139573d2db15628d2497549
 GUARD_SHA=dc37428ec10330c89fa8f559626be735013004b87d0bd9a7271d9b88dfc47fe3
@@ -26,7 +21,7 @@ if [ "${1:-}" != --inner ]; then
 	for tool in python3 sudo unshare timeout cmp stat mktemp; do
 		command -v "$tool" >/dev/null 2>&1 || fail "missing tool: $tool"
 	done
-	for path in "$ARCHIVE" "$IMAGE" "$STOCK" "$BY_NAME" "$BUILDER" \
+	for path in "$ARCHIVE" "$IMAGE" "$BY_NAME" "$BUILDER" \
 		"$HERE/pmos-self-stage.sh" "$HERE/pmos-self-post.sh" \
 		"$HERE/pmos-session-stage.sh" "$HERE/pmos-pid1-transition.sh" \
 		"$HERE/pmos-pid1-guard.sh" "$HERE/pmos-radio-bringup.sh" \
@@ -34,8 +29,7 @@ if [ "${1:-}" != --inner ]; then
 		[ -f "$path" ] && [ ! -L "$path" ] || fail "missing fixture input: $path"
 	done
 	[ "$(stat -c %s "$ARCHIVE")" = "$ARCHIVE_SIZE" ] && [ "$(hash "$ARCHIVE")" = "$ARCHIVE_SHA" ] || fail 'unpinned userspace archive'
-	[ "$(stat -c %s "$STOCK")" = "$PART_SIZE" ] && [ "$(hash "$STOCK")" = "$STOCK_SHA" ] || fail 'unpinned stock recovery_b'
-	[ "$(stat -c %s "$IMAGE")" = "$PART_SIZE" ] || fail 'built recovery_b size'
+	[ "$(stat -c %s "$IMAGE")" = "$PART_SIZE" ] || fail 'built userdata size'
 	[ "$(hash "$HERE/pmos-session-stage.sh")" = "$SESSION_SHA" ] || fail 'session stage pin changed'
 	[ "$(hash "$HERE/pmos-pid1-transition.sh")" = "$TRANSITION_SHA" ] || fail 'transition pin changed'
 	[ "$(hash "$HERE/pmos-pid1-guard.sh")" = "$GUARD_SHA" ] || fail 'guard pin changed'
@@ -49,33 +43,51 @@ if [ "${1:-}" != --inner ]; then
 		rm -rf -- "$WORK"
 	}
 	trap cleanup EXIT
-	python3 -B "$BUILDER" --self-test "$STOCK" "$ARCHIVE" "$IMAGE" >"$WORK/builder.out" ||
-		{ cat "$WORK/builder.out" >&2; fail 'recovery_b builder self-test'; }
-	[ "$(awk '$(NF-2) == "recovery_b" && $(NF-1) == "->" {n++; print $NF} END {if (n != 1) exit 1}' "$BY_NAME")" = /dev/block/sde53 ] ||
-		fail 'measured by-name table does not place recovery_b on sde53'
+	python3 -B "$BUILDER" --self-test "$ARCHIVE" "$IMAGE" >"$WORK/builder.out" ||
+		{ cat "$WORK/builder.out" >&2; fail 'userdata builder self-test'; }
+	[ "$(awk '$(NF-2) == "userdata" && $(NF-1) == "->" {n++; print $NF} END {if (n != 1) exit 1}' "$BY_NAME")" = /dev/block/sda13 ] ||
+		fail 'measured by-name table does not place userdata on sda13'
 	before=$(hash "$IMAGE")
-	python3 -B - "$IMAGE" "$ARCHIVE" "$WORK" "$HEADER_OFFSET" "$ARCHIVE_OFFSET" "$HEADER_SHA" "$ARCHIVE_SHA" "$ARCHIVE_SIZE" <<'PY' || fail 'image windows or fixture build'
-import hashlib, pathlib, shutil, sys
-image, archive, work, header_off, archive_off, header_sha, archive_sha, archive_size = sys.argv[1:]
-header_off, archive_off, archive_size = map(int, (header_off, archive_off, archive_size))
+	python3 -B - "$HERE" "$ARCHIVE" "$IMAGE" "$WORK" <<'PY' || fail 'negative image fixtures'
+import importlib.util, io, pathlib, sys, tarfile
+here, archive, image, work = sys.argv[1:]
+spec = importlib.util.spec_from_file_location("builder", pathlib.Path(here) / "build-userdata-userspace-payload.py")
+builder = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(builder)
 work = pathlib.Path(work)
-data = pathlib.Path(image).read_bytes()
-header = data[header_off:header_off + 4096]
-body = header.rstrip(b"\x00")
-assert hashlib.sha256(header).hexdigest() == header_sha
-assert body.startswith(b"OMNIPHA_VENDOR_BOOT_B_USERSPACE_V1\n") and b"psk=" not in body and b"ssid=" not in body
-payload = data[archive_off:archive_off + archive_size]
-assert payload == pathlib.Path(archive).read_bytes() and hashlib.sha256(payload).hexdigest() == archive_sha
-with open(work / "bad-header.img", "wb") as handle:
-    handle.truncate(len(data))
-    handle.seek(header_off)
-    handle.write(bytes([header[0] ^ 1]) + header[1:])
-for name, index in (("bad-archive-first.img", archive_off), ("bad-archive-last.img", archive_off + archive_size - 1)):
-    target = work / name
-    shutil.copyfile(image, target)
-    with open(target, "r+b") as handle:
-        handle.seek(index)
-        handle.write(bytes([data[index] ^ 1]))
+payload = pathlib.Path(archive).read_bytes()
+good = pathlib.Path(image).read_bytes()
+assert builder.makefs(payload, work / "repro.img") == good
+(work / "bad-fs.img").write_bytes(bytes(len(good)))
+at = good.index(payload[:4096])
+assert good.count(payload[:4096]) == 1
+flipped = bytearray(good)
+flipped[at + 1000] ^= 1
+(work / "bad-byte.img").write_bytes(bytes(flipped))
+
+def pack(members):
+    raw = io.BytesIO()
+    with tarfile.open(fileobj=raw, mode="w", format=tarfile.USTAR_FORMAT) as bundle:
+        for name, kind, data, extra in members:
+            info = tarfile.TarInfo(name)
+            info.mtime = builder.TIMESTAMP
+            if kind == "dir":
+                info.type, info.mode = tarfile.DIRTYPE, 0o700
+                bundle.addfile(info)
+            elif kind == "link":
+                info.type, info.linkname = tarfile.SYMTYPE, extra
+                bundle.addfile(info)
+            else:
+                info.size, info.mode = len(data), extra
+                bundle.addfile(info, io.BytesIO(data))
+    return raw.getvalue()
+
+d = builder.DIRECTORY
+p = builder.ARCHIVE_PATH
+builder.makefs_tar(pack([(d, "dir", b"", 0), (d + "/real.tar.gz", "file", payload, 0o444), (p, "link", b"", "real.tar.gz")]), work / "bad-link.img")
+builder.makefs_tar(pack([(d, "dir", b"", 0), (p, "file", payload[:-1], 0o444)]), work / "bad-short.img")
+builder.makefs_tar(pack([(d, "dir", b"", 0), (p, "file", payload, 0o644)]), work / "bad-mode.img")
+builder.makefs_tar(pack([(d, "dir", b"", 0)]), work / "bad-missing.img")
 PY
 	sudo -n true || fail 'passwordless sudo required'
 	attach() {
@@ -87,17 +99,24 @@ PY
 		printf '%s:%s' "$((0x$t))" "$((0x$m))"
 	}
 	good=$(attach "$IMAGE")
-	bad_header=$(attach "$WORK/bad-header.img")
-	bad_first=$(attach "$WORK/bad-archive-first.img")
-	bad_last=$(attach "$WORK/bad-archive-last.img")
-	sudo -n timeout -k 2 40 unshare --mount --pid --net --fork --kill-child --mount-proc \
-		env HOST_ARCHIVE="$ARCHIVE" SOURCE="$HERE" GOOD="$good" BAD_HEADER="$bad_header" \
-		BAD_FIRST="$bad_first" BAD_LAST="$bad_last" \
+	bad_fs=$(attach "$WORK/bad-fs.img")
+	bad_byte=$(attach "$WORK/bad-byte.img")
+	bad_link=$(attach "$WORK/bad-link.img")
+	bad_short=$(attach "$WORK/bad-short.img")
+	bad_mode=$(attach "$WORK/bad-mode.img")
+	bad_missing=$(attach "$WORK/bad-missing.img")
+	rw_dev=$(sudo -n /sbin/losetup -f --show "$WORK/repro.img") || fail 'cannot attach writable fixture copy'
+	printf '%s\n' "$rw_dev" >> "$WORK/loops"
+	bad_rw="$((0x$(stat -c %t "$rw_dev"))):$((0x$(stat -c %T "$rw_dev")))"
+	sudo -n timeout -k 2 120 unshare --mount --pid --net --fork --kill-child --mount-proc \
+		env HOST_ARCHIVE="$ARCHIVE" SOURCE="$HERE" GOOD="$good" BAD_FS="$bad_fs" \
+		BAD_BYTE="$bad_byte" BAD_LINK="$bad_link" BAD_SHORT="$bad_short" \
+		BAD_MODE="$bad_mode" BAD_MISSING="$bad_missing" BAD_RW="$bad_rw" \
 		/bin/busybox sh "$0" --inner || fail 'isolated self-stage fixture'
-	[ "$(hash "$IMAGE")" = "$before" ] || fail 'built recovery_b image changed'
+	[ "$(hash "$IMAGE")" = "$before" ] || fail 'built userdata image changed'
 	[ "$(hash "$ARCHIVE")" = "$ARCHIVE_SHA" ] || fail 'archive changed'
-	python3 -B "$BUILDER" --verify "$STOCK" "$ARCHIVE" "$IMAGE" >/dev/null || fail 'built image no longer verifies'
-	printf 'pass: host-only recovery_b self-stage fixture; builder self-test, read-only loop partition, by-name/PARTNAME, node, size, header and archive negatives rejected before staging; positive copy verified; no partition write\n'
+	python3 -B "$BUILDER" --verify "$ARCHIVE" "$IMAGE" >/dev/null || fail 'built image no longer verifies'
+	printf 'pass: host-only userdata self-stage fixture; builder self-test, read-only loop ext4 mounted ro,noload, PARTNAME, node, size, filesystem, file-content, symlink, mode and missing-file negatives rejected before staging; positive copy verified; no partition write\n'
 	exit 0
 fi
 
@@ -129,6 +148,11 @@ $BB cat > /run/wrap <<'WRAP'
 R=/run/busybox.real
 case "${1:-}" in
 	dd) "$R" printf '%s\n' "$*" >> /run/wrap.dd;;
+	mount)
+		"$R" printf '%s\n' "$*" >> /run/wrap.mount
+		if [ -f /run/wrap.rw ] && [ "${2:-}" = -t ] && [ "${4:-}" = -o ]; then
+			exec "$R" mount -t "$3" -o rw,noload "$6" "$7"
+		fi;;
 	blockdev)
 		if [ -f /run/wrap.size ] && [ "${2:-}" = --getsize64 ]; then exec "$R" cat /run/wrap.size; fi;;
 	sleep) [ ! -f /run/wrap.nosleep ] || exit 0;;
@@ -167,8 +191,8 @@ mk_node() {
 	$BB mknod -m 0400 "$1" b "${2%%:*}" "${2##*:}"
 }
 use_image() {
-	sysfs_part sde51 recovery_b "$1"
-	mk_node /dev/block/sde51 "$1"
+	sysfs_part sda13 userdata "$1"
+	mk_node /dev/block/sda13 "$1"
 }
 install_inputs() {
 	umask 077
@@ -216,7 +240,11 @@ profile_sig() {
 not_published() {
 	[ ! -e /run/pmos ] && [ ! -L /run/pmos ] || fail "$1 published a guest root"
 	[ ! -e /run/pmos-pid1-request ] && [ ! -L /run/pmos-pid1-request ] || fail "$1 armed a PID 1 request"
-	[ ! -e /run/radio-bringup ] && [ ! -e /run/recovery_b.header ] || fail "$1 published radio or header state"
+	[ ! -e /run/radio-bringup ] || fail "$1 published radio state"
+	if [ "$1" != 'userdata mount path already exists before' ] && [ "$1" != 'userdata mount path already exists' ]; then
+		[ ! -e /run/omnipha-userspace ] || fail "$1 left the mount path"
+	fi
+	! $BB grep -qF /run/omnipha-userspace /proc/mounts || fail "$1 left userdata mounted"
 	[ "$(profile_sig)" = "$PROFILE_SIG" ] || fail "$1 moved or changed the protected profile"
 	network_state /run/net.after
 	$BB cmp -s /run/net.base.link /run/net.after.link &&
@@ -224,11 +252,12 @@ not_published() {
 	[ ! -e /run/pmos-self-scan.raw ] && [ ! -e /run/radio-bringup/scan.raw ] || fail "$1 published a scan"
 	[ ! -f /run/reject.out ] || ! $BB grep -qF fixture-only-secret /run/reject.out || fail "$1 leaked the protected profile"
 	[ ! -s /run/wrap.dd ] || ! $BB grep -qE ' of=/dev/| of=/sys/' /run/wrap.dd || fail "$1 wrote a device or sysfs path"
+	[ ! -s /run/wrap.mount ] || ! $BB grep -E 'ext4' /run/wrap.mount | $BB grep -qvF -- 'mount -t ext4 -o ro,noload /dev/block/sda13 /run/omnipha-userspace' || fail "$1 mounted userdata other than ro,noload"
 }
 reject() {
 	label=$1
-	copy=${2:-no}
 	: > /run/wrap.dd
+	: > /run/wrap.mount
 	$BB rm -f /run/reject.out
 	PROFILE_SIG=$(profile_sig)
 	not_published "$label before"
@@ -240,41 +269,31 @@ reject() {
 	$BB grep -qF "FAIL: $label" /run/reject.out || { $BB cat /run/reject.out >&2; fail "$label did not name its failure"; }
 	[ ! -e /run/pmos-session.tar.gz ] && [ ! -L /run/pmos-session.tar.gz ] || fail "$label left the archive staged"
 	not_published "$label"
-	if [ "$copy" = no ]; then
-		! $BB grep -qF "skip=$((ARCHIVE_OFFSET / 4096))" /run/wrap.dd || fail "$label read the archive before rejecting"
-	else
-		$BB grep -qF "skip=$((ARCHIVE_OFFSET / 4096))" /run/wrap.dd || fail "$label never reached the archive window"
-	fi
 	printf 'rejected: %s\n' "$label"
 }
 
-PART_SIZE=104857600
-HEADER_OFFSET=18870272
-ARCHIVE_OFFSET=18874368
+PART_SIZE=33554432
 ARCHIVE_SIZE=23713302
 ARCHIVE_SHA=7a76a11062615387af5eac8f67b7f672d5f9004decac89529396d442ab3c6e26
-HEADER_SHA=2d09f260bab4b77c51f0639d034c662d01e7e13e821507278cbd571ac038b578
 
 ip link set lo up
 ip addr add 172.16.42.2/32 dev lo
 start_listener
 install_inputs
 sysfs_part sda6 super 259:600
-$BB ln -s /dev/block/sda6 /dev/block/by-name/recovery_b
+$BB ln -s /dev/block/sda6 /dev/block/by-name/userdata
 use_image "$GOOD"
 network_state /run/net.base
 $BB sh -n "$STAGE" && $BB sh -n "$POST" || fail 'self-stage or post script syntax'
-[ "$($BB sed -n 's/^PARTNAME=//p' /sys/class/block/sde51/uevent)" = recovery_b ] || fail 'sde51 PARTNAME model'
-[ "$($BB cat /sys/class/block/sde51/dev)" = "$GOOD" ] && [ "$($BB stat -c '%t:%T' /dev/block/sde51)" = "$($BB printf '%x:%x' "${GOOD%%:*}" "${GOOD##*:}")" ] || fail 'sde51 numbers model'
-[ "$($BB blockdev --getsize64 /dev/block/sde51)" = "$PART_SIZE" ] && [ "$($BB blockdev --getro /dev/block/sde51)" = 1 ] || fail 'sde51 size or read-only model'
-$BB dd if=/dev/block/sde51 of=/run/model.header bs=4096 skip=$((HEADER_OFFSET / 4096)) count=1 2>/dev/null
-[ "$(hash /run/model.header)" = "$HEADER_SHA" ] || fail 'model header digest'
-$BB dd if=/dev/block/sde51 of=/run/model.archive bs=4096 skip=$((ARCHIVE_OFFSET / 4096)) count=$((ARCHIVE_SIZE / 4096)) 2>/dev/null
-$BB dd if=/dev/block/sde51 bs=4096 skip=$((ARCHIVE_OFFSET / 4096 + ARCHIVE_SIZE / 4096)) count=1 2>/dev/null |
-	$BB dd of=/run/model.archive bs=1 seek=$((ARCHIVE_SIZE / 4096 * 4096)) count=$((ARCHIVE_SIZE % 4096)) conv=notrunc 2>/dev/null
-[ "$(hash /run/model.archive)" = "$ARCHIVE_SHA" ] || fail 'model archive digest'
-$BB rm -f /run/model.header /run/model.archive
-$BB dd if=/dev/zero of=/dev/block/sde51 bs=512 count=1 2>/dev/null && fail 'read-only partition model accepted a write'
+[ "$($BB sed -n 's/^PARTNAME=//p' /sys/class/block/sda13/uevent)" = userdata ] || fail 'sda13 PARTNAME model'
+[ "$($BB cat /sys/class/block/sda13/dev)" = "$GOOD" ] && [ "$($BB stat -c '%t:%T' /dev/block/sda13)" = "$($BB printf '%x:%x' "${GOOD%%:*}" "${GOOD##*:}")" ] || fail 'sda13 numbers model'
+[ "$($BB blockdev --getsize64 /dev/block/sda13)" = "$PART_SIZE" ] && [ "$($BB blockdev --getro /dev/block/sda13)" = 1 ] || fail 'sda13 size or read-only model'
+$BB dd if=/dev/zero of=/dev/block/sda13 bs=512 count=1 2>/dev/null && fail 'read-only partition model accepted a write'
+$BB mkdir -m 700 /run/rwprobe
+$BB mount -t ext4 -o rw /dev/block/sda13 /run/rwprobe 2>/dev/null || fail 'probe mount failed'
+$BB awk '$2 == "/run/rwprobe" && $4 ~ /(^|,)ro(,|$)/ {ok=1} END {exit(ok != 1)}' /proc/mounts || fail 'read-only loop mounted read-write'
+$BB umount /run/rwprobe && $BB rmdir /run/rwprobe || fail 'probe unmount failed'
+: > /run/wrap.mount
 
 $BB rm /run/keep
 $BB touch /run/wrap.nosleep
@@ -315,59 +334,79 @@ stop_listener
 reject 'diagnostic :22 listener absent'
 start_listener
 
-$BB rm /sys/class/block/sde51/uevent
-reject 'expected one recovery_b PARTNAME in sysfs, found 0'
-$BB printf 'PARTNAME=vendor_boot_b\n' > /sys/class/block/sde51/uevent
-reject 'expected one recovery_b PARTNAME in sysfs, found 0'
-$BB printf 'PARTNAME=recovery_a\n' > /sys/class/block/sde51/uevent
-reject 'expected one recovery_b PARTNAME in sysfs, found 0'
-$BB printf 'PARTNAME=recovery_b\n' > /sys/class/block/sde51/uevent
-$BB printf 'PARTNAME=recovery_b\n' > /sys/class/block/sda6/uevent
-reject 'expected one recovery_b PARTNAME in sysfs, found 2'
+$BB rm /sys/class/block/sda13/uevent
+reject 'expected one userdata PARTNAME in sysfs, found 0'
+$BB printf 'PARTNAME=vendor_boot_b\n' > /sys/class/block/sda13/uevent
+reject 'expected one userdata PARTNAME in sysfs, found 0'
+$BB printf 'PARTNAME=recovery_b\n' > /sys/class/block/sda13/uevent
+reject 'expected one userdata PARTNAME in sysfs, found 0'
+$BB printf 'PARTNAME=userdata\n' > /sys/class/block/sda13/uevent
+$BB printf 'PARTNAME=userdata\n' > /sys/class/block/sda6/uevent
+reject 'expected one userdata PARTNAME in sysfs, found 2'
 $BB printf 'PARTNAME=super\n' > /sys/class/block/sda6/uevent
-$BB rm /sys/class/block/sde51/dev
-reject 'recovery_b device numbers invalid'
-$BB printf 'nope\n' > /sys/class/block/sde51/dev
-reject 'recovery_b device numbers invalid'
+$BB rm /sys/class/block/sda13/dev
+reject 'userdata device numbers invalid'
+$BB printf 'nope\n' > /sys/class/block/sda13/dev
+reject 'userdata device numbers invalid'
 use_image "$GOOD"
 
-$BB rm /dev/block/sde51
-$BB mknod -m 0400 /dev/block/sde51 b 259 601
-reject 'recovery_b block node numbers differ from sysfs'
-$BB rm /dev/block/sde51
-$BB mknod -m 0400 /dev/block/sde51 c "${GOOD%%:*}" "${GOOD##*:}"
-reject 'recovery_b path is not a block node'
-$BB rm /dev/block/sde51
-: > /dev/block/sde51
-reject 'recovery_b path is not a block node'
-$BB rm /dev/block/sde51
+$BB rm /dev/block/sda13
+$BB mknod -m 0400 /dev/block/sda13 b 259 601
+reject 'userdata block node numbers differ from sysfs'
+$BB rm /dev/block/sda13
+$BB mknod -m 0400 /dev/block/sda13 c "${GOOD%%:*}" "${GOOD##*:}"
+reject 'userdata path is not a block node'
+$BB rm /dev/block/sda13
+: > /dev/block/sda13
+reject 'userdata path is not a block node'
+$BB rm /dev/block/sda13
 mk_node /dev/block/real "$GOOD"
-$BB ln -s real /dev/block/sde51
-reject 'recovery_b block path is a symlink'
-$BB rm /dev/block/sde51 /dev/block/real
+$BB ln -s real /dev/block/sda13
+reject 'userdata block path is a symlink'
+$BB rm /dev/block/sda13 /dev/block/real
 use_image "$GOOD"
 
 $BB printf '1\n' > /run/wrap.size
-reject 'recovery_b size mismatch (1)'
-$BB printf '100663296\n' > /run/wrap.size
-reject 'recovery_b size mismatch (100663296)'
-$BB printf '104857599\n' > /run/wrap.size
-reject 'recovery_b size mismatch (104857599)'
-$BB printf '104857601\n' > /run/wrap.size
-reject 'recovery_b size mismatch (104857601)'
+reject 'userdata size below image (1)'
+$BB printf '33554431\n' > /run/wrap.size
+reject 'userdata size below image (33554431)'
 $BB rm /run/wrap.size
 
-use_image "$BAD_HEADER"
-reject 'recovery_b payload header digest mismatch'
-use_image "$BAD_FIRST"
-reject 'recovery_b archive digest or size mismatch' yes
-use_image "$BAD_LAST"
-reject 'recovery_b archive digest or size mismatch' yes
+$BB mkdir /run/omnipha-userspace
+reject 'userdata mount path already exists'
+$BB rmdir /run/omnipha-userspace
+: > /run/pmos-session.tar.gz
+set +e
+/bin/busybox sh "$STAGE" >/run/reject.out 2>&1
+rc=$?
+set -e
+[ "$rc" != 0 ] && $BB grep -qF 'FAIL: tarball path already exists' /run/reject.out || { $BB cat /run/reject.out >&2; fail 'preexisting tarball path accepted'; }
+! $BB grep -qF /run/omnipha-userspace /proc/mounts && [ ! -e /run/omnipha-userspace ] || fail 'preexisting tarball path left userdata mounted'
+$BB rm -f /run/pmos-session.tar.gz
+printf 'rejected: tarball path already exists\n'
 
+use_image "$BAD_FS"
+reject 'cannot mount userdata read-only without journal replay'
+use_image "$BAD_BYTE"
+reject 'userdata archive digest mismatch'
+use_image "$BAD_LINK"
+reject 'userdata archive missing, symlinked or wrong size'
+use_image "$BAD_SHORT"
+reject 'userdata archive missing, symlinked or wrong size'
+use_image "$BAD_MODE"
+reject 'userdata archive missing, symlinked or wrong size'
+use_image "$BAD_MISSING"
+reject 'userdata archive missing, symlinked or wrong size'
+
+use_image "$BAD_RW"
+$BB touch /run/wrap.rw
+reject 'userdata mount is not read-only ext4 with noload'
+$BB rm /run/wrap.rw
 use_image "$GOOD"
-$BB rm /dev/block/sde51
+$BB rm /dev/block/sda13
 $BB touch /run/wrap.session
 : > /run/wrap.dd
+: > /run/wrap.mount
 PROFILE_SIG=$(profile_sig)
 set +e
 /bin/busybox sh "$STAGE" >/run/accept.out 2>&1
@@ -375,13 +414,13 @@ rc=$?
 set -e
 [ "$rc" != 0 ] || fail 'stubbed session stage unexpectedly succeeded'
 $BB grep -qF 'FAIL: pmos-session-stage failed' /run/accept.out || { $BB cat /run/accept.out >&2; fail 'positive path did not reach the session stage'; }
-$BB grep -qF 'copied userspace archive from read-only /dev/block/sde51 (sde51) and verified SHA-256' /run/accept.out || fail 'positive archive copy not reported'
+$BB grep -qF 'copied userspace archive from read-only /dev/block/sda13 (sda13) and verified SHA-256' /run/accept.out || fail 'positive archive copy not reported'
 [ "$($BB sed -n 1p /run/wrap.session.out)" = "0:600:$ARCHIVE_SIZE" ] && [ "$($BB sed -n 2p /run/wrap.session.out)" = "$ARCHIVE_SHA" ] || fail 'copied archive metadata or digest'
-[ -b /dev/block/sde51 ] && [ ! -L /dev/block/sde51 ] && [ "$($BB stat -c '%a' /dev/block/sde51)" = 400 ] &&
-	[ "$($BB stat -c '%t:%T' /dev/block/sde51)" = "$($BB printf '%x:%x' "${GOOD%%:*}" "${GOOD##*:}")" ] || fail 'script-created node'
-[ ! -e /run/recovery_b.header ] || fail 'header scratch retained'
-$BB grep -qF 'if=/dev/block/sde51' /run/wrap.dd || fail 'positive path did not read the by-sysfs node'
-! $BB grep -qE ' of=/dev/| of=/sys/| of=/dev/block' /run/wrap.dd || fail 'positive path wrote a partition'
+[ -b /dev/block/sda13 ] && [ ! -L /dev/block/sda13 ] && [ "$($BB stat -c '%a' /dev/block/sda13)" = 400 ] &&
+	[ "$($BB stat -c '%t:%T' /dev/block/sda13)" = "$($BB printf '%x:%x' "${GOOD%%:*}" "${GOOD##*:}")" ] || fail 'script-created node'
+[ "$($BB wc -l < /run/wrap.mount)" = 1 ] && $BB grep -qxF -- 'mount -t ext4 -o ro,noload /dev/block/sda13 /run/omnipha-userspace' /run/wrap.mount || fail 'positive path did not mount userdata ro,noload'
+[ ! -e /run/omnipha-userspace ] && ! $BB grep -qF /run/omnipha-userspace /proc/mounts || fail 'positive path left userdata mounted'
+[ ! -s /run/wrap.dd ] || ! $BB grep -qE ' of=' /run/wrap.dd || fail 'positive path wrote a partition'
 [ ! -e /run/pmos ] && [ ! -e /run/pmos-pid1-request ] && [ ! -e /run/radio-bringup ] || fail 'stubbed positive path published guest state'
 [ "$(profile_sig)" = "$PROFILE_SIG" ] || fail 'positive path changed the profile before staging'
 network_state /run/net.after

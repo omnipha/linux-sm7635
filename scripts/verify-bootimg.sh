@@ -29,16 +29,16 @@ if [ "$#" -gt 0 ]; then
 	STOCK_RECOVERY_B=${STOCK_RECOVERY_B:-$HOME/phone-second-life-data/mb003/parts/recovery_b.img}
 	USERSPACE_ARCHIVE=${USERSPACE_ARCHIVE:-$WORK/i139-userspace/out/postmarketos-session-aarch64.tar.gz}
 	PID1_HANDOFF=${PID1_HANDOFF:-$OUT/init_boot-pid1-handoff.img}
-	SELF_STAGE_IMAGE=${SELF_STAGE_IMAGE:-$OUT/init_boot-self-stage-recovery-b.img}
-	RECOVERY_B_IMAGE=${RECOVERY_B_IMAGE:-$OUT/recovery_b-userspace.img}
+	SELF_STAGE_IMAGE=${SELF_STAGE_IMAGE:-$OUT/init_boot-self-stage-userdata.img}
+	USERDATA_IMAGE=${USERDATA_IMAGE:-$OUT/userdata-userspace.img}
 	for tool in python3 sha256sum realpath git; do
 		need "$tool"
 	done
 	for path in "$STOCK_INIT" "$STOCK_VENDOR" "$STOCK_VENDOR_B" "$STOCK_RECOVERY_B" "$USERSPACE_ARCHIVE" \
-		"$PID1_HANDOFF" "$SELF_STAGE_IMAGE" "$RECOVERY_B_IMAGE"; do
+		"$PID1_HANDOFF" "$SELF_STAGE_IMAGE" "$USERDATA_IMAGE"; do
 		[ -f "$path" ] && [ ! -L "$path" ] || die "missing or symlinked input: $path"
 	done
-	for path in "$SELF_STAGE_IMAGE" "$RECOVERY_B_IMAGE"; do
+	for path in "$SELF_STAGE_IMAGE" "$USERDATA_IMAGE"; do
 		case "$(realpath -m "$path")/" in
 			"$ROOT"/*) die "candidate must stay outside this repository: $path" ;;
 		esac
@@ -50,35 +50,37 @@ if [ "$#" -gt 0 ]; then
 		'237259404601045205715a71b88016744c73729d4513349cfe90c754b0dc1253  '"$STOCK_VENDOR_B" \
 		'6065f68502838b3cb20a51eb6a6aa1b250f3a58553246d9c4259593a3769874b  '"$STOCK_RECOVERY_B" \
 		'7a76a11062615387af5eac8f67b7f672d5f9004decac89529396d442ab3c6e26  '"$USERSPACE_ARCHIVE" |
-		sha256sum -c - || die 'init_boot/recovery_b/archive inputs differ from the pinned references'
+		sha256sum -c - || die 'init_boot/userdata/archive inputs differ from the pinned references'
 	candidate_init=$(sha256sum "$SELF_STAGE_IMAGE" | cut -d ' ' -f 1)
-	candidate_recovery=$(sha256sum "$RECOVERY_B_IMAGE" | cut -d ' ' -f 1)
-	case "$candidate_init" in
-		baa33fd43c3da1d9f3358ced9249c42abecc704fc5707a5241ea69e77c1e3193 | \
-		fef030081e04d3a90451bb7d64dcfa7668c41dc4248e6e0b1959fdb40efce948 | \
-		4b83ea24c305d731b168c2e2f12bd0ebd5d4a18de9039eaf8b0e0ca452b464f7)
-			die "init_boot self-stage candidate repeats stock or measured image $candidate_init" ;;
-	esac
-	case "$candidate_recovery" in
-		6065f68502838b3cb20a51eb6a6aa1b250f3a58553246d9c4259593a3769874b | \
-		1bdb7c2252b3192127aed0a2f8953d928be0f36a00a259582e7a75a98a029f5f)
-			die "recovery_b candidate repeats stock or measured payload $candidate_recovery" ;;
-	esac
+	candidate_userdata=$(sha256sum "$USERDATA_IMAGE" | cut -d ' ' -f 1)
+	for sha in "$candidate_init" "$candidate_userdata"; do
+		case "$sha" in
+			baa33fd43c3da1d9f3358ced9249c42abecc704fc5707a5241ea69e77c1e3193 | \
+			fef030081e04d3a90451bb7d64dcfa7668c41dc4248e6e0b1959fdb40efce948 | \
+			4b83ea24c305d731b168c2e2f12bd0ebd5d4a18de9039eaf8b0e0ca452b464f7 | \
+			1bdb7c2252b3192127aed0a2f8953d928be0f36a00a259582e7a75a98a029f5f | \
+			bee02ce1f31d628fd95879fb519d4b131f3d8a3298530d1fc31c390db528f412 | \
+			41cab142203b4ccf894f7bea24398d21ff959ab72d3473e88379d2780bdc9afd | \
+			237259404601045205715a71b88016744c73729d4513349cfe90c754b0dc1253 | \
+			6065f68502838b3cb20a51eb6a6aa1b250f3a58553246d9c4259593a3769874b)
+				die "self-stage candidate repeats stock, measured or refused SHA-256 $sha" ;;
+		esac
+	done
 	export PYTHONDONTWRITEBYTECODE=1
 	python3 -B "$ROOT/scripts/verify-init-boot-self-stage.py" --self-test \
 		"$SELF_STAGE_IMAGE" "$STOCK_INIT" "$PID1_HANDOFF"
 	python3 -B "$ROOT/scripts/verify-init-boot-self-stage.py" \
 		"$SELF_STAGE_IMAGE" "$STOCK_INIT" "$PID1_HANDOFF"
-	python3 -B "$ROOT/scripts/build-recovery-b-userspace-payload.py" --self-test \
-		"$STOCK_RECOVERY_B" "$USERSPACE_ARCHIVE" "$RECOVERY_B_IMAGE"
-	python3 -B "$ROOT/scripts/build-recovery-b-userspace-payload.py" --verify \
-		"$STOCK_RECOVERY_B" "$USERSPACE_ARCHIVE" "$RECOVERY_B_IMAGE"
+	python3 -B "$ROOT/scripts/build-userdata-userspace-payload.py" --self-test \
+		"$USERSPACE_ARCHIVE" "$USERDATA_IMAGE"
+	python3 -B "$ROOT/scripts/build-userdata-userspace-payload.py" --verify \
+		"$USERSPACE_ARCHIVE" "$USERDATA_IMAGE"
 	if [ "$fixture" = yes ]; then
-		ARCHIVE=$USERSPACE_ARCHIVE IMAGE=$RECOVERY_B_IMAGE STOCK=$STOCK_RECOVERY_B \
+		ARCHIVE=$USERSPACE_ARCHIVE IMAGE=$USERDATA_IMAGE \
 			sh "$ROOT/scripts/test-pmos-self-stage.sh"
 	fi
-	printf 'host-only #171 verification passed: init_boot %s recovery_b %s; nothing built, written or flashed\n' \
-		"$candidate_init" "$candidate_recovery"
+	printf 'host-only #176 verification passed: init_boot %s userdata %s; nothing built, written or flashed\n' \
+		"$candidate_init" "$candidate_userdata"
 	exit 0
 fi
 for tool in unpack_bootimg python3 cpio gzip sha256sum file mktemp fdtget dtc \

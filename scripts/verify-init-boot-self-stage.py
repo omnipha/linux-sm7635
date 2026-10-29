@@ -155,17 +155,20 @@ def self_test(candidate, stock, previous, found, private, library, decode_frame)
     changed["pmos-self-stage.sh"] += b"\n"
     bad("bundle mismatch", BUNDLE_MSG, candidate, changed)
     stage = found["pmos-self-stage.sh"]
-    old_carrier = dict(found)
-    old_carrier["pmos-self-stage.sh"] = stage.replace(b"recovery_b", b"vendor_boot_b").replace(
+    recovery = builder.carrier_delta(stage)
+    vendor_boot = recovery.replace(b"recovery_b", b"vendor_boot_b").replace(
         b"PART_SIZE=104857600\n", b"PART_SIZE=100663296\n")
     marker_only = stage.replace(b"\numask 077\n", b"\n# marker\numask 077\n", 1)
-    other_carrier = stage.replace(b"recovery_b", b"dtbo_b")
-    wrong_size = stage.replace(b"PART_SIZE=104857600\n", b"PART_SIZE=100663296\n", 1)
+    writable = stage.replace(b"-o ro,noload", b"-o rw,noload", 1)
+    wrong_size = stage.replace(b"ARCHIVE_SIZE=23713302\n", b"ARCHIVE_SIZE=23713303\n", 1)
+    wrong_hash = stage.replace(b"7a76a110", b"7a76a111", 1)
     longer_wait = stage.replace(b'"$wait_n" -lt 145', b'"$wait_n" -lt 146', 1)
-    for label, script in (("measured vendor_boot_b carrier", old_carrier["pmos-self-stage.sh"]),
+    for label, script in (("measured recovery_b carrier", recovery),
+                          ("measured vendor_boot_b carrier", vendor_boot),
                           ("marker-only script delta", marker_only),
-                          ("other carrier name", other_carrier),
-                          ("old carrier size", wrong_size),
+                          ("writable mount", writable),
+                          ("wrong archive size", wrong_size),
+                          ("wrong archive hash", wrong_hash),
                           ("changed hold wait", longer_wait)):
         require(script != stage, f"{label}: fixture unchanged")
         try:

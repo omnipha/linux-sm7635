@@ -5,17 +5,17 @@ One active step, one active issue. Later steps are not pre-created issues.
 
 ## Active step
 
-- Step: prove the host-owned guard ack is delivered and accepted after the
-  self-stage PID-1 handoff (run 61 timed out waiting for it).
-- Issue: omnipha/linux-sm7635#173
+- Step: self-stage the archive from a read-only ext4 image on `userdata`, accept
+  the host-owned guard ack, then measure one clean guest reboot and WLAN
+  autoconnect (host delivery done, physical session pending).
+- Issue: omnipha/linux-sm7635#176
 - Done when: a coordinator-held session shows `pid1-ack: accepted on boot
-  <BOOT_ID>` and `pmos-self-post: host-owned guard ack accepted` in capture,
-  recorded as a new record.
+  <BOOT_ID>`, the second self-stage from `userdata` after the reboot and the
+  first missing line (or WLAN autoconnect), recorded as a new record.
 
 ## Next (ordered, not issues yet)
 
-1. Self-stage repeats across one clean guest reboot on the `recovery_b`
-   carrier (depends on active step; relates to closed host prep #171).
+1. Persistence and cold boot after a successful userdata self-stage repeat.
 2. Host re-addresses the re-enumerated USB gadget within the 150 s guard
    window so SSH returns after reboot (host rule from #169).
 3. Interactive PTY (`ssh -tt`) in the isolated staged guest (#144).

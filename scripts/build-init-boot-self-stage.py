@@ -38,7 +38,81 @@ INIT_MSG = "init must keep the measured handoff and append one distinct self-sta
 SHA_MSG = "candidate repeats a stock, measured or refused image SHA-256"
 RUN58_INIT = "4b83ea24c305d731b168c2e2f12bd0ebd5d4a18de9039eaf8b0e0ca452b464f7"
 RUN58_PAYLOAD = "1bdb7c2252b3192127aed0a2f8953d928be0f36a00a259582e7a75a98a029f5f"
-CARRIER_MSG = "self-stage script differs from the measured vendor_boot_b script by more than the recovery_b carrier"
+RUN61_INIT = "bee02ce1f31d628fd95879fb519d4b131f3d8a3298530d1fc31c390db528f412"
+RUN61_PAYLOAD = "41cab142203b4ccf894f7bea24398d21ff959ab72d3473e88379d2780bdc9afd"
+RECOVERY_SCRIPT_SHA = "af5e4c53872267504e36fe5863735fdf534f834673a2c9bce0a5c802a0d18f13"
+CARRIER_MSG = "self-stage script differs from the measured recovery_b script by more than the userdata staging block"
+OLD_STAGING = b'''PART_SIZE=104857600
+HEADER_OFFSET=18870272
+ARCHIVE_OFFSET=18874368
+HEADER_SHA=2d09f260bab4b77c51f0639d034c662d01e7e13e821507278cbd571ac038b578
+'''
+NEW_START = b'''PART_SIZE=33554432
+ARCHIVE_PATH=/omnipha-userspace/postmarketos-session-aarch64.tar.gz
+MOUNT=/run/omnipha-userspace
+'''
+OLD_BODY = b'''part_dev=
+part_count=0
+for uevent in /sys/class/block/*/uevent; do
+	[ -r "$uevent" ] || continue
+	if [ "$($BB sed -n 's/^PARTNAME=//p' "$uevent" 2>/dev/null)" = recovery_b ]; then
+		dir=${uevent%/uevent}
+		part_dev=${dir##*/}
+		part_count=$((part_count + 1))
+	fi
+done
+[ "$part_count" = 1 ] && [ -n "$part_dev" ] ||
+	die "expected one recovery_b PARTNAME in sysfs, found $part_count"
+devnum=$($BB cat "/sys/class/block/$part_dev/dev" 2>/dev/null) || devnum=
+case "$devnum" in [0-9]*:[0-9]*) :;; *) die 'recovery_b device numbers invalid';; esac
+major=${devnum%%:*}
+minor=${devnum##*:}
+$BB mkdir -p /dev/block
+node="/dev/block/$part_dev"
+if [ -b "$node" ]; then
+	[ ! -L "$node" ] || die 'recovery_b block path is a symlink'
+	[ "$($BB stat -c '%t:%T' "$node")" = "$($BB printf '%x:%x' "$major" "$minor")" ] ||
+		die 'recovery_b block node numbers differ from sysfs'
+else
+	[ ! -e "$node" ] && [ ! -L "$node" ] || die 'recovery_b path is not a block node'
+	$BB mknod -m 0400 "$node" b "$major" "$minor" || die 'cannot create recovery_b block node'
+fi
+[ "$($BB stat -c '%t:%T' "$node")" = "$($BB printf '%x:%x' "$major" "$minor")" ] ||
+	die 'recovery_b node verification failed'
+size=$($BB timeout -k 1 2 $BB blockdev --getsize64 "$node" 2>/dev/null) || size=
+[ "$size" = "$PART_SIZE" ] || die "recovery_b size mismatch (${size:-unknown})"
+
+hdr=/run/recovery_b.header
+$BB rm -f "$hdr"
+$BB timeout -k 1 5 $BB dd if="$node" of="$hdr" bs=4096 skip=$((HEADER_OFFSET / 4096)) count=1 2>/dev/null ||
+	{ $BB rm -f "$hdr"; die 'cannot read recovery_b payload header'; }
+[ "$(hash "$hdr")" = "$HEADER_SHA" ] ||
+	{ $BB rm -f "$hdr"; die 'recovery_b payload header digest mismatch'; }
+$BB rm -f "$hdr"
+
+[ ! -e "$TARBALL" ] && [ ! -L "$TARBALL" ] || die 'tarball path already exists'
+full_blocks=$((ARCHIVE_SIZE / 4096))
+rem_bytes=$((ARCHIVE_SIZE % 4096))
+skip_blocks=$((ARCHIVE_OFFSET / 4096))
+$BB timeout -k 2 30 $BB dd if="$node" of="$TARBALL" bs=4096 skip="$skip_blocks" count="$full_blocks" 2>/dev/null ||
+	{ $BB rm -f "$TARBALL"; die 'recovery_b archive block copy failed'; }
+if [ "$rem_bytes" -gt 0 ]; then
+	page=/run/recovery_b.page
+	$BB rm -f "$page"
+	$BB timeout -k 1 5 $BB dd if="$node" of="$page" bs=4096 skip=$((skip_blocks + full_blocks)) count=1 2>/dev/null ||
+		{ $BB rm -f "$TARBALL" "$page"; die 'recovery_b archive tail copy failed'; }
+	$BB dd if="$page" of="$TARBALL" bs=1 seek="$((full_blocks * 4096))" count="$rem_bytes" conv=notrunc 2>/dev/null ||
+		{ $BB rm -f "$TARBALL" "$page"; die 'recovery_b archive tail copy failed'; }
+	$BB rm -f "$page"
+fi
+$BB chmod 600 "$TARBALL"
+[ "$($BB stat -c '%u:%a:%s' "$TARBALL")" = "0:600:$ARCHIVE_SIZE" ] &&
+	[ "$(hash "$TARBALL")" = "$ARCHIVE_SHA" ] ||
+	{ $BB rm -f "$TARBALL"; die 'recovery_b archive digest or size mismatch'; }
+log "copied userspace archive from read-only $node ($part_dev) and verified SHA-256"
+'''
+BODY_START = b"part_dev=\npart_count=0\n"
+BODY_END = b'log "copied userspace archive from read-only $node ($part_dev) and verified SHA-256"\n'
 PROFILE_MSG = "private profile must be a regular non-symlink file owned by the current uid with mode 0600"
 BUNDLE_MSG = "self-stage bundle is not one reproducible root-only xz tar of the pinned scripts"
 SCRIPT_MSG = "bundled script does not match its reviewed digest"
@@ -79,7 +153,8 @@ prior = load("build-init-boot-pid1-handoff.py", "self_stage_prior")
 modules = prior.modules
 base = prior.base
 vendor = prior.vendor
-REFUSED = frozenset((*prior.REFUSED, prior.EXPECTED_SHA256, RUN58_INIT, RUN58_PAYLOAD))
+REFUSED = frozenset((*prior.REFUSED, prior.EXPECTED_SHA256, RUN58_INIT, RUN58_PAYLOAD,
+                      RUN61_INIT, RUN61_PAYLOAD))
 
 
 def require(condition, message):
@@ -100,14 +175,22 @@ def profile_bytes():
 
 
 def carrier_delta(data):
-    old = data.replace(b"recovery_b", b"vendor_boot_b").replace(
-        b"PART_SIZE=104857600\n", b"PART_SIZE=100663296\n")
-    require(hashlib.sha256(old).hexdigest() ==
-            "356d8792346357694882c8cf8ce7f693a457cd1d36bbe9b04749bd351af9204a" and
-            data == old.replace(b"PART_SIZE=100663296\n", b"PART_SIZE=104857600\n", 1).replace(
-                b"vendor_boot_b", b"recovery_b") and
-            data.count(b"vendor_boot_b") == 0 and data.count(b"recovery_b") == 17 and
-            data.count(b"PART_SIZE=104857600\n") == 1, CARRIER_MSG)
+    original = (HERE / "pmos-self-stage.sh").read_bytes()
+    require(data == original and data.count(NEW_START) == 1 and
+            data.count(BODY_START) == 1 and data.count(BODY_END) == 1 and
+            data.count(b"recovery_b") == 0 and data.count(b"vendor_boot_b") == 0,
+            CARRIER_MSG)
+    start = data.index(BODY_START)
+    end = data.index(BODY_END, start) + len(BODY_END)
+    require(start < end and data.count(b"PART_SIZE=33554432\n") == 1 and
+            data.count(b"ARCHIVE_PATH=/omnipha-userspace/postmarketos-session-aarch64.tar.gz\n") == 1,
+            CARRIER_MSG)
+    old = data[:start] + OLD_BODY + data[end:]
+    old = old.replace(NEW_START, OLD_STAGING, 1)
+    require(hashlib.sha256(old).hexdigest() == RECOVERY_SCRIPT_SHA and
+            old.count(b"recovery_b") == 17 and old.count(OLD_STAGING) == 1,
+            CARRIER_MSG)
+    return old
 
 
 def script_bytes(name):
@@ -259,11 +342,15 @@ def frame_budget(cpio, library):
 
 def measured_delta(stock, entries, trailer, found, private, library):
     old = dict(found)
-    old["pmos-self-stage.sh"] = found["pmos-self-stage.sh"].replace(
+    old["pmos-self-stage.sh"] = carrier_delta(found["pmos-self-stage.sh"])
+    old_frame = frame_budget(candidate_cpio(entries, trailer, old, private), library)
+    require(vendor.assemble(stock, old_frame)[1] == RUN61_INIT, CARRIER_MSG)
+    run58 = dict(old)
+    run58["pmos-self-stage.sh"] = old["pmos-self-stage.sh"].replace(
         b"recovery_b", b"vendor_boot_b").replace(
             b"PART_SIZE=104857600\n", b"PART_SIZE=100663296\n")
-    old_frame = frame_budget(candidate_cpio(entries, trailer, old, private), library)
-    require(vendor.assemble(stock, old_frame)[1] == RUN58_INIT, CARRIER_MSG)
+    run58_frame = frame_budget(candidate_cpio(entries, trailer, run58, private), library)
+    require(vendor.assemble(stock, run58_frame)[1] == RUN58_INIT, CARRIER_MSG)
 
 
 def build(stock, previous, found, private, library, decode_frame, ready):

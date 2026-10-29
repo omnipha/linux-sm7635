@@ -30,7 +30,7 @@
 - [2026-10-29-2206-host-re-address-of-a-renamed-diagnostic-gadget-2](records/2026-10-29-2206-host-re-address-of-a-renamed-diagnostic-gadget-2.md) | usb | inconclusive | omnipha/linux-sm7635#169 | host-re-address-of-a-renamed-diagnostic-gadget-2
 - [2026-10-28-2284-run-52-measured-postmarketos-pid-1-cutover-and-u](records/2026-10-28-2284-run-52-measured-postmarketos-pid-1-cutover-and-u.md) | usb run 52 | confirmed | omnipha/linux-sm7635#145 | run-52-measured-postmarketos-pid-1-cutover-and-u
 
-### userspace [15]
+### userspace [16]
 - [2026-10-29-2299-self-stage-guard-ack-lifecycle-and-preflight-gat](records/2026-10-29-2299-self-stage-guard-ack-lifecycle-and-preflight-gat.md) | userspace | inconclusive | omnipha/linux-sm7635#173 | self-stage-guard-ack-lifecycle-and-preflight-gat
 - [2026-10-29-2298-host-only-recovery-b-self-stage-payload-and-init](records/2026-10-29-2298-host-only-recovery-b-self-stage-payload-and-init.md) | userspace | inconclusive | omnipha/linux-sm7635#171 | host-only-recovery-b-self-stage-payload-and-init
 - [2026-10-29-2295-host-only-inactive-vendor-boot-b-userspace-paylo](records/2026-10-29-2295-host-only-inactive-vendor-boot-b-userspace-paylo.md) | userspace | inconclusive | omnipha/linux-sm7635#164 | host-only-inactive-vendor-boot-b-userspace-paylo
@@ -42,4 +42,4 @@
 
 ## By month
 
-- [2026-10](records/index-2026-10.md) [118]
+- [2026-10](records/index-2026-10.md) [119]
