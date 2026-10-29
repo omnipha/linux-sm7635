@@ -72,7 +72,7 @@ make_nodes() {
 
 if [ "${1:-}" = --client ]; then
 	[ "$#" -eq 2 ] || fail 'client usage'
-	case "$2" in ack|timeout|preplanted|symlinked) :;; *) fail 'invalid client case';; esac
+	case "$2" in ack|late|stale|timeout|preplanted|symlinked) :;; *) fail 'invalid client case';; esac
 	ssh_guest() {
 		$BB timeout -k 1 20 ssh -F /dev/null -q -T -p 2222 -i "/run/$1" \
 			-o BatchMode=yes -o IdentitiesOnly=yes -o IdentityAgent=none \
@@ -115,14 +115,49 @@ if [ "${1:-}" = --client ]; then
 	[ "$identity" = pmos-pid1-host-ok ] || fail 'post-cutover distro identity'
 	[ "$before" = "$(service_state /proc/1/root/.)" ] || fail 'post-cutover service restarted after SSH'
 	case "$2" in
-		ack)
+		ack|late)
 			[ ! -e /proc/1/root/run/pid1-guard/ack ] && [ ! -L /proc/1/root/run/pid1-guard/ack ] || fail 'unauthenticated ack accepted'
 			sh "$HOST_ACK" "$BOOT_ID" /run/bad-known_hosts /run/client_key >/dev/null 2>&1 && fail 'ack accepted wrong host key'
 			sh "$HOST_ACK" "$BOOT_ID" /run/known_hosts /run/bad_key >/dev/null 2>&1 && fail 'ack accepted wrong client key'
 			sh "$HOST_ACK" 00000000-0000-0000-0000-000000000000 /run/known_hosts /run/client_key >/dev/null 2>&1 && fail 'ack accepted wrong boot ID'
+			if [ "$2" = late ]; then
+				attempt=0
+				until [ -f /proc/1/root/run/self-post-waiting ]; do
+					[ "$attempt" -lt 20 ] || fail 'post-cutover waiter did not start'
+					$BB sleep 1
+					attempt=$((attempt + 1))
+				done
+				$BB sleep 8
+				[ ! -e /proc/1/root/run/pid1-guard/accepted ] || fail 'late case accepted before the documented ack'
+				[ ! -e /proc/1/root/run/pid1-guard/recovery-request ] || fail 'late case reached the deadline before the documented ack'
+			fi
 			sh "$HOST_ACK" "$BOOT_ID" /run/known_hosts /run/client_key || fail 'actual ack script failed'
 			[ "$(ssh_guest client_key known_hosts 'cat /run/pid1-guard/accepted')" = "$BOOT_ID" ] || fail 'ack not accepted'
 			[ ! -e /proc/1/root/run/pid1-guard/recovery-request ] || fail 'ack triggered recovery'
+			if [ "$2" = late ]; then
+				attempt=0
+				until [ -f /proc/1/root/run/self-post-accepted ]; do
+					[ "$attempt" -lt 20 ] || fail 'post-cutover waiter rejected the documented late ack'
+					$BB sleep 1
+					attempt=$((attempt + 1))
+				done
+				[ ! -e /proc/1/root/run/self-post-failed ] || fail 'post-cutover waiter failed after acceptance'
+			fi
+			;;
+		stale)
+			attempt=0
+			until [ -f /proc/1/root/run/pid1-guard/recovery-request ]; do
+				[ "$attempt" -lt 35 ] || fail 'real mock guard missed the deadline'
+				$BB sleep 1
+				attempt=$((attempt + 1))
+			done
+			nonce=$(ssh_guest client_key known_hosts 'cat /run/pid1-guard/nonce')
+			[ "${#nonce}" = 64 ] || fail 'stale case has no guard nonce'
+			ssh_guest client_key known_hosts "umask 077; printf '%s %s\n' '$nonce' '$BOOT_ID' > /run/pid1-guard/ack"
+			$BB sleep 1
+			[ ! -e /proc/1/root/run/pid1-guard/accepted ] || fail 'late ack accepted after the deadline'
+			[ ! -e /proc/1/root/run/self-post-accepted ] || fail 'post-cutover waiter accepted a late ack'
+			sh "$HOST_ACK" "$BOOT_ID" /run/known_hosts /run/client_key >/dev/null 2>&1 && fail 'host ack accepted after the deadline'
 			;;
 		timeout)
 			attempt=0
@@ -148,7 +183,7 @@ if [ "${1:-}" = --client ]; then
 			[ ! -e /proc/1/root/run/pid1-guard/nonce ] || fail 'symlinked ack issued a nonce'
 			;;
 	esac
-	if [ "$2" != ack ]; then
+	if [ "$2" != ack ] && [ "$2" != late ] && [ "$2" != stale ]; then
 		attempt=0
 		until [ -f /proc/1/root/run/pid1-guard/recovery-request ]; do
 			[ "$attempt" -lt 35 ] || fail 'real mock guard missed recovery request'
@@ -208,7 +243,7 @@ fi
 if [ "${1:-}" = --inner ]; then
 	[ "$#" -eq 2 ] && [ "$$" = 1 ] || fail 'fixture did not enter a PID namespace'
 	CASE=$2
-	case "$CASE" in ack|timeout|preplanted|symlinked) :;; *) fail 'invalid case';; esac
+	case "$CASE" in ack|late|stale|timeout|preplanted|symlinked) :;; *) fail 'invalid case';; esac
 	export CASE
 	$BB mount --make-rprivate / || fail 'private mount namespace unavailable'
 	$BB mount -t tmpfs -o mode=0755 tmpfs /dev || fail 'private host dev'
@@ -333,7 +368,8 @@ MOCK
 	[ ! -e /guest/run/pid1-guard ] && [ ! -L /guest/run/pid1-guard ] || fail 'rejected guard created state'
 	$BB chroot /guest /usr/bin/qemu-aarch64 -0 sh /bin/distro-busybox -c 'test "$(/bin/busybox cat /etc/alpine-release)" = 3.21.9' || fail 'distro BusyBox smoke before switch_root'
 	valid_root /guest || fail 'private guest root or nested mounts invalid'
-	if [ "$CASE" = ack ]; then budget=50; else budget=12; fi
+	if [ "$CASE" = ack ] || [ "$CASE" = late ]; then budget=50; else budget=12; fi
+	if [ "$CASE" = stale ]; then budget=10; fi
 	$BB sh /oldroot"$HOST_GUARD" mock-arm /guest "$budget" /guest/run/mock "$MOCK_SHA" >/guest/run/mock-guard.log 2>&1 || fail 'real guard mock-arm failed'
 	[ "$(hash /guest/run/pid1-guard/guard.sh)" = "$(hash /oldroot"$HOST_GUARD")" ] &&
 		[ "$(hash /guest/run/pid1-guard/mock-restart2)" = "$MOCK_SHA" ] &&
@@ -360,6 +396,26 @@ MOCK
 		[ "$($BB stat -c '%d:%i' /guest/run)" != "$($BB stat -c '%d:%i' /oldroot/run)" ] || fail 'pre-cutover Dropbear PID, pinned host key or separate run changed'
 	$BB printf '%s\n' "$state" > /guest/run/service-before
 	[ ! -e /guest/run/openrc/softlevel ] && [ "$($BB readlink /guest/etc/runlevels/default/local)" = /etc/init.d/local ] || fail 'OpenRC fixture changed before cutover'
+	if [ "$CASE" = late ] || [ "$CASE" = stale ]; then
+		[ -d /guest/etc/local.d ] || fail 'archive local.d missing'
+		$BB cat > /guest/etc/local.d/10-omnipha-self-stage.start <<'LATE'
+#!/bin/busybox sh
+( /bin/busybox setsid /bin/busybox sh /run/radio-bringup/pmos-self-post.sh >/dev/null 2>&1 & )
+LATE
+		$BB chmod 700 /guest/etc/local.d/10-omnipha-self-stage.start
+		$BB mkdir -m 700 /guest/run/radio-bringup
+		wait_loop=$($BB sed -n '/^until \[ -f "\$GUARD\/accepted" \]/,/^done$/p' /oldroot"$HOST_POST")
+		[ "$($BB printf '%s\n' "$wait_loop" | $BB wc -l)" = 8 ] &&
+			$BB printf '%s\n' "$wait_loop" | $BB grep -qF "die 'host-owned guard ack not seen before the guard deadline'" &&
+			$BB printf '%s\n' "$wait_loop" | $BB grep -qF '"$i" -lt 150' || fail 'reviewed guard-ack wait loop changed shape'
+		$BB printf '%s\n' '#!/bin/busybox sh' 'set -eu' 'BB=/bin/busybox' \
+			'export PATH=/bin:/sbin:/usr/bin:/usr/sbin' 'GUARD=/run/pid1-guard' \
+			'die() { $BB touch /run/self-post-failed; exit 1; }' \
+			'boot=$($BB cat /proc/sys/kernel/random/boot_id)' \
+			'$BB touch /run/self-post-waiting' 'i=0' "$wait_loop" \
+			'$BB touch /run/self-post-accepted' > /guest/run/radio-bringup/pmos-self-post.sh
+		$BB chmod 700 /guest/run/radio-bringup/pmos-self-post.sh
+	fi
 	($BB unshare --mount $BB chroot /oldroot /bin/busybox sh "$HOST_SCRIPT" --client "$CASE" || $BB touch /guest/run/client-failed) &
 	client=$!
 	$BB kill -0 "$client" 2>/dev/null || fail 'isolated SSH coordinator exited'
@@ -381,9 +437,10 @@ HERE=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 ARCHIVE=${ARCHIVE:-$HOME/sm7635-build/i139-userspace/out/postmarketos-session-aarch64.tar.gz}
 archive_ok "$ARCHIVE" || fail 'missing or corrupt public postmarketOS session archive'
 sudo -n true || fail 'passwordless sudo required'
-for case in ack timeout preplanted symlinked; do
+for case in ack late stale timeout preplanted symlinked; do
 	sudo -n unshare --mount --pid --net --fork --kill-child --mount-proc \
 		env HOST_ARCHIVE="$ARCHIVE" HOST_SCRIPT="$HERE/test-pmos-pid1.sh" \
 		HOST_GUARD="$HERE/pmos-pid1-guard.sh" HOST_ACK="$HERE/pmos-pid1-ack.sh" \
+		HOST_POST="$HERE/pmos-self-post.sh" \
 		/bin/busybox sh "$HERE/test-pmos-pid1.sh" --inner "$case" || fail "$case isolated switch_root fixture"
 done
