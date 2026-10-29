@@ -129,11 +129,12 @@ if [ "$stage" = prepare ]; then
 	$BB printf '%s\n' "$rmtfs_pid" > /run/pmos/run/radio-bringup/rmtfs.pid
 	$BB chmod 600 /run/pmos/run/radio-bringup/rmtfs.pid
 	report "pinned rmtfs pid $rmtfs_pid holds the mapped sharedmem UIO and has its read-only modemst paths before cutover"
-	if [ -c /dev/wlan ]; then
+	if [ -e /dev/wlan ] || [ -L /dev/wlan ]; then
+		[ -c /dev/wlan ] && [ ! -L /dev/wlan ] || fail 'init-created /dev/wlan is not a character node'
 		wlan_id=$($BB stat -c '%t %T' /dev/wlan)
 		set -- $wlan_id
 		$BB mknod -m 0600 /run/pmos/dev/wlan c "$((0x$1))" "$((0x$2))" || fail 'cannot copy the init-created wlan control node'
-		[ "$($BB stat -c '%t:%T' /run/pmos/dev/wlan)" = "$($BB stat -c '%t:%T' /dev/wlan)" ] || fail 'copied wlan node differs'
+		[ "$($BB stat -c '%t:%T:%a' /run/pmos/dev/wlan)" = "$1:$2:600" ] || fail 'copied wlan node differs'
 		report 'guest wlan control node copied from the init-created node'
 	else
 		report 'no init-created /dev/wlan to copy; the wpss stage will derive it from the live class device or stop'
@@ -240,15 +241,18 @@ wpss() {
 	bind_firmware_mnt
 	[ ! -e /run/wpss-once.attempted ] || fail 'wpss-once already attempted'
 	[ -f "$STATE/wpss-once" ] && [ ! -L "$STATE/wpss-once" ] && [ "$(hash "$STATE/wpss-once")" = "$HELPER_SHA" ] || fail 'staged helper missing or digest mismatch'
-	if [ ! -c /dev/wlan ]; then
-		numbers=$($BB cat /sys/class/wlan/wlan/dev 2>/dev/null) || numbers=
-		case "$numbers" in [0-9]*:[0-9]*) :;; *) fail 'no /dev/wlan and no live wlan class device; input needed: wlan control node';; esac
-		major=${numbers%%:*}
-		minor=${numbers##*:}
-		case "$major$minor" in *[!0-9]*) fail 'malformed wlan class numbers';; esac
-		$BB awk -v m="$major" '$1 == m && $2 == "qcwlanstate" {n++} END {exit(n != 1)}' /proc/devices || fail 'wlan class major does not match qcwlanstate'
-		$BB timeout -k 1 2 $BB mknod -m 0600 /dev/wlan c "$major" "$minor" || fail 'mknod /dev/wlan failed'
-		[ "$($BB stat -c '%t:%T' /dev/wlan)" = "$($BB printf '%x:%x' "$major" "$minor")" ] || { $BB rm -f /dev/wlan; fail '/dev/wlan numbers differ'; }
+	numbers=$($BB cat /sys/class/wlan/wlan/dev 2>/dev/null) || numbers=
+	case "$numbers" in ''|*[!0-9:]*|*:*:*|*:|:*) fail 'no /dev/wlan and no valid live wlan class device; input needed: wlan control node';; *:*) :;; *) fail 'no /dev/wlan and no valid live wlan class device; input needed: wlan control node';; esac
+	major=${numbers%%:*}
+	minor=${numbers##*:}
+	$BB awk -v m="$major" '$1 == "Character" {s=1} $1 == "Block" {s=0} s && $1 == m && $2 == "qcwlanstate" {n++} END {exit(n != 1)}' /proc/devices || fail 'wlan class major does not match one character qcwlanstate'
+	if [ -c /dev/wlan ]; then
+		[ ! -L /dev/wlan ] && [ "$($BB stat -c '%t:%T:%a' /dev/wlan)" = "$($BB printf '%x:%x:600' "$major" "$minor")" ] || fail 'existing /dev/wlan differs from live wlan class device or is not root-only'
+	else
+		[ ! -e /dev/wlan ] && [ ! -L /dev/wlan ] || fail '/dev/wlan is not a character node; no replacement'
+		$BB timeout -k 1 2 $BB mknod -m 0600 /dev/wlan c "$major" "$minor" || { $BB rm -f /dev/wlan; fail 'mknod /dev/wlan failed; node removed'; }
+		[ -c /dev/wlan ] && [ "$($BB stat -c '%t:%T:%a' /dev/wlan)" = "$($BB printf '%x:%x:600' "$major" "$minor")" ] || { $BB rm -f /dev/wlan; fail '/dev/wlan numbers or permissions differ; node removed'; }
+		report "derived /dev/wlan character $major:$minor from the live qcwlanstate class device"
 	fi
 	once wpss
 	rc=0

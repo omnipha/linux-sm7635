@@ -447,7 +447,8 @@ records one coordinator-held stock-kernel session: the merged rmtfs script
 restored only the two lost `/boot/modemst*` backing links, then one guarded
 modem start reached `now up` and remained `running` past +73 s with QMI DMS
 connected, no EFS fatal and live key-only SSH/capture. WPSS and WLAN were not
-started. Coordinator stock rollback and five-hash proof are still pending.
+started. Run 55 is closed after coordinator-verified five-partition stock
+rollback and Android; #155 is closed.
 
 ## Post-cutover rmtfs EFS backing store (2026-10-29, #155)
 
@@ -470,12 +471,16 @@ records `scripts/pmos-radio-bringup.sh`, the hash-checked reproduction of the
 run-53 radio order. Before `switch_root` it stages the read-only stock WLAN INI
 (`57989aba…`), the measured one-shot WPSS helper (`fef7e5da…`) and the service
 markers into the guest tmpfs. After cutover it runs one guarded modem start, one
-WPSS trigger, one `qca_cld3` insmod with at most one reload, and one 20 s-bounded
+WPSS trigger (copying `/dev/wlan` before cutover or deriving it fail-closed from
+`/sys/class/wlan/wlan/dev` and the single character `qcwlanstate` major in
+`/proc/devices`), one `qca_cld3` insmod with at most one reload, and one 20 s-bounded
 scan, each gated on the current boot, `/run/keep` and a fresh capture marker.
-`sh scripts/test-pmos-radio-bringup.sh` checks those pins and one-shot guards in
-an isolated tmpfs. No new image is built: the unchanged `fef03008…` image stays
+`sh scripts/test-pmos-radio-bringup.sh` checks those pins, the fail-closed
+`/dev/wlan` derivation and negative fixtures, and the one-shot guards in an
+isolated tmpfs. No new image is built: the unchanged `fef03008…` image stays
 the only reusable changed image. This is a host script, not a device result;
-association and reachability remain unmeasured.
+WPSS/wlan0 after the #155 rmtfs fix and association/reachability with the
+regenerated profile remain unmeasured and await the coordinator-held session.
 
 ## Post-cutover `default/local` host fixture and reuse review (2026-10-28, #150)
 

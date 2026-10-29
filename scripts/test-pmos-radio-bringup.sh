@@ -203,7 +203,7 @@ for part in mdt b00 b01 b02 b03 b04 b05 b06 b07 b08 b09 b10 b12; do
 done
 $BB printf 'pd-mapper\ntqftpserv\nrmtfs\n' > "$R/tmp/ps.txt"
 $BB printf 'capture-ok\nicnss2_qmi: QMI DMS service connected\nicnss2: WLAN FW is ready\n' > "$R/tmp/dmesg.txt"
-$BB mkdir -p "$R/sys/bus/platform/devices/17110040.qcom,wcn6750/driver" "$R/sys/kernel/icnss"
+$BB mkdir -p "$R/sys/bus/platform/devices/17110040.qcom,wcn6750/driver" "$R/sys/kernel/icnss" "$R/sys/class/wlan/wlan"
 $BB touch "$R/sys/kernel/icnss/wpss_boot"
 $BB cat > "$R/sbin/ip" <<'IP'
 #!/bin/busybox.real sh
@@ -279,8 +279,29 @@ $BB printf 'offline\n' > "$R/sys/class/remoteproc/remoteproc2/state"
 reject_stage modem "$BOOT" modem capture-ok
 $BB printf 'running\n' > "$R/sys/class/remoteproc/remoteproc2/state"
 
+$BB rm "$R/dev/wlan"
+reject_stage wpss "$BOOT" wpss capture-ok
+expect "$R/tmp/wpss.out" 'no /dev/wlan and no valid live wlan class device' 'missing wlan class device accepted'
+$BB printf '495:0\n' > "$R/sys/class/wlan/wlan/dev"
+$BB printf 'Character devices:\n 496 qcwlanstate\nBlock devices:\n 495 qcwlanstate\n' > "$R/proc/devices"
+reject_stage wpss "$BOOT" wpss capture-ok
+expect "$R/tmp/wpss.out" 'wlan class major does not match one character qcwlanstate' 'block or mismatched qcwlanstate major accepted'
+[ ! -e "$R/dev/wlan" ] && [ ! -e "$R/run/radio-bringup/wpss.attempted" ] || fail 'wpss armed or left node on qcwlanstate major mismatch'
+$BB printf 'Character devices:\n 495 qcwlanstate\nBlock devices:\n' > "$R/proc/devices"
+$BB touch "$R/dev/wlan"
+reject_stage wpss "$BOOT" wpss capture-ok
+expect "$R/tmp/wpss.out" '/dev/wlan is not a character node' 'non-character /dev/wlan accepted'
+[ ! -e "$R/run/radio-bringup/wpss.attempted" ] || fail 'wpss armed with non-character /dev/wlan'
+$BB rm "$R/dev/wlan"
+$BB mknod -m 0600 "$R/dev/wlan" c 494 0
+reject_stage wpss "$BOOT" wpss capture-ok
+expect "$R/tmp/wpss.out" 'existing /dev/wlan differs from live wlan class device or is not root-only' 'mismatched copied /dev/wlan accepted'
+[ ! -e "$R/run/radio-bringup/wpss.attempted" ] || fail 'wpss armed with a mismatched /dev/wlan node'
+$BB rm "$R/dev/wlan"
 run_stage wpss capture-ok
+expect "$R/tmp/wpss.out" 'derived /dev/wlan character 495:0' 'wpss did not derive /dev/wlan from class device'
 expect "$R/tmp/wpss.out" 'helper exit 10' 'wpss did not accept helper exit 10'
+[ -c "$R/dev/wlan" ] && [ "$($BB stat -c '%t:%T:%a' "$R/dev/wlan")" = '1ef:0:600' ] || fail 'derived /dev/wlan node invalid'
 [ "$($BB cat "$R/sys/class/remoteproc/remoteproc3/state")" = running ] || fail 'wpss not running'
 $BB printf 'offline\n' > "$R/sys/class/remoteproc/remoteproc3/state"
 reject_stage wpss "$BOOT" wpss capture-ok
@@ -298,4 +319,4 @@ run_stage scan
 expect "$R/tmp/scan.out" 'BSS count 2' 'scan count not reported'
 [ "$($BB stat -c '%a' "$R/run/radio-bringup/scan.raw")" = 600 ] || fail 'scan output not root-only'
 reject_stage scan "$BOOT" scan
-$BB printf 'pass: host-only radio bring-up stages, one-shot guards, helper exit 10, single reload and root-only scan verified\n'
+$BB printf 'pass: host-only radio bring-up stages, one-shot guards, fail-closed /dev/wlan derivation, helper exit 10, single reload and root-only scan verified\n'
