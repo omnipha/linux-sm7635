@@ -6,7 +6,7 @@ next_question: >-
   Can the host create the root-only /run/keep hold over diagnostic :22 inside
   the 145 s window after a guest reboot, so the userdata self-stage repeats and
   WLAN autoconnect can be measured (host-side fix, no new image)?
-active_issue: omnipha/linux-sm7635#176
+active_issue: omnipha/linux-sm7635#184
 subsystems:
   boot:
     state: partial        # RAM postmarketOS PID 1 on stock 6.1.84 kernel; run 62 second boot stops at the missing hold before self-stage

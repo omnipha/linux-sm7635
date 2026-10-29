@@ -116,7 +116,8 @@ PY
 	[ "$(hash "$IMAGE")" = "$before" ] || fail 'built userdata image changed'
 	[ "$(hash "$ARCHIVE")" = "$ARCHIVE_SHA" ] || fail 'archive changed'
 	python3 -B "$BUILDER" --verify "$ARCHIVE" "$IMAGE" >/dev/null || fail 'built image no longer verifies'
-	printf 'pass: host-only userdata self-stage fixture; builder self-test, read-only loop ext4 mounted ro,noload, PARTNAME, node, size, filesystem, file-content, symlink, mode and missing-file negatives rejected before staging; positive copy verified; no partition write\n'
+	sh "$HERE/test-pmos-reboot-hold.sh" || fail 'reboot-hold fixture'
+	printf 'pass: host-only userdata self-stage fixture; builder self-test, read-only loop ext4 mounted ro,noload, PARTNAME, node, size, filesystem, file-content, symlink, mode and missing-file negatives rejected before staging; positive copy verified; reboot-hold over diagnostic :22 inside 145 s with wrong-boot, stale-key, symlink and late negatives; no partition write\n'
 	exit 0
 fi
 
