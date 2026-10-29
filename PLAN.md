@@ -6,7 +6,7 @@ One active step, one active issue. Later steps are not pre-created issues.
 ## Milestones
 
 1. USB shell on the stock kernel: measured.
-2. WLAN across one reboot without a host push: current gap (#176).
+2. WLAN across one reboot without a host push: current gap (#184).
 3. Then one function at a time; the Omnipha slot comes after that.
    No extra oversight role. This list is the check.
 
@@ -15,7 +15,7 @@ One active step, one active issue. Later steps are not pre-created issues.
 - Step: create the root-only /run/keep hold over diagnostic :22 as soon as the
   gadget and capture return after a reboot, so the proven userdata self-stage
   can repeat and WLAN autoconnect can be measured. Host-side fix; no new image.
-- Issue: omnipha/linux-sm7635#176
+- Issue: omnipha/linux-sm7635#184
 - Done when: a coordinator-held session shows the second self-stage and WLAN
   autoconnect, or names the next first missing line; recorded as a new record.
 
