@@ -1,0 +1,49 @@
+#!/bin/sh
+set -u
+log=${OMNIPHA_USB_LOG:-/run/omnipha-usb-addr.log}
+root=${OMNIPHA_SYS_ROOT:-/sys}
+umask 077
+record() {
+	printf '%s\n' "$*" >>"$log"
+}
+stamp() {
+	date -u +%Y-%m-%dT%H:%M:%SZ
+}
+gadget() {
+	node=$1
+	while [ "$node" != / ]; do
+		if [ -r "$node/idVendor" ] && [ -r "$node/idProduct" ] && [ -r "$node/manufacturer" ]; then
+			[ "$(cat "$node/idVendor")" = 18d1 ] &&
+				[ "$(cat "$node/idProduct")" = 4ee2 ] &&
+				[ "$(cat "$node/manufacturer")" = omnipha ] && return 0
+			return 1
+		fi
+		node=$(dirname "$node")
+	done
+	return 1
+}
+record "$(stamp) run"
+for iface in "$root"/class/net/*; do
+	[ -e "$iface" ] || continue
+	name=${iface##*/}
+	driver=$(readlink -f "$iface/device/driver" 2>/dev/null) || driver=
+	driver=${driver##*/}
+	case $driver in
+	cdc_ncm) address=172.16.42.1/24 ;;
+	cdc_ether) address=172.16.43.1/24 ;;
+	*) continue ;;
+	esac
+	if ! gadget "$(readlink -f "$iface/device")"; then
+		record "$(stamp) skip interface=$name driver=$driver result=not-gadget"
+		continue
+	fi
+	if ip -4 -o addr show dev "$name" 2>/dev/null | grep -Fq " $address "; then
+		record "$(stamp) keep interface=$name driver=$driver address=$address result=already-present"
+	elif out=$(ip addr add "$address" dev "$name" 2>&1); then
+		record "$(stamp) add interface=$name driver=$driver address=$address result=added"
+	else
+		record "$(stamp) add interface=$name driver=$driver address=$address result=failed detail=$out"
+	fi
+	ip link set "$name" up 2>/dev/null || true
+done
+exit 0

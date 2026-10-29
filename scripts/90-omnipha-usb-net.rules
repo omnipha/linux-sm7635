@@ -1,0 +1,1 @@
+SUBSYSTEM=="net", ACTION=="add", DRIVERS=="?*", ATTRS{manufacturer}=="omnipha", ATTRS{idVendor}=="18d1", ATTRS{idProduct}=="4ee2", RUN+="/usr/local/sbin/omnipha-usb-addr"
