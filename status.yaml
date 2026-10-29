@@ -1,0 +1,30 @@
+# Current measured state only. Limit 80 lines. No protocol text: link records.
+# Public claims: omnipha/ports devices/nothing-asteroids/device.yaml (updated separately).
+device: nothing-asteroids
+updated: 2026-10-29
+next_question: >-
+  Does the host-owned guard ack arrive and get accepted in the next
+  coordinator-held self-stage session, after run 61 timed out at that step?
+active_issue: omnipha/linux-sm7635#173
+subsystems:
+  boot:
+    state: partial        # RAM postmarketOS PID 1 on stock 6.1.84 kernel in a held session; no cold boot, no install
+    record: records/2026-10-28-2284-run-52-measured-postmarketos-pid-1-cutover-and-u.md
+  ssh:
+    state: partial        # key-only USB SSH measured in held sessions, incl. post-cutover :2222
+    record: records/2026-10-28-2284-run-52-measured-postmarketos-pid-1-cutover-and-u.md
+  wifi:
+    state: partial        # association, DHCP, gateway, DNS and external reachability measured in-session (runs 56/57); not persistent, not after reboot
+    record: records/2026-10-29-2294-run-57-measured-openrc-wpa-supplicant-and-networ.md
+  modem:
+    state: partial        # stays running past the EFS request after PID-1 cutover (run 55); no voice/SIM/data claim
+    record: records/2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the.md
+  display:
+    state: untested
+    record: null
+  cameras:
+    state: untested
+    record: null
+notes: >-
+  All values refer to coordinator-held, RAM-backed sessions on the stock
+  kernel, rolled back afterwards. Not an Omnipha image, not a release.

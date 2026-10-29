@@ -1100,7 +1100,7 @@ echo 'init_boot wlan-closure control: same stock baa33fd4 prefix and signed tail
 	echo 'stock AVB footers and hashed image prefixes match embedded metadata; vbmeta_a init_boot/vendor_boot/dtbo hashes match stock; boot is chained'
 	echo 'stock boot separate 16KiB AVB0 record hashes the shorter kernel-only prefix; stock verification flags and vbmeta_a rollback index are zero'
 	echo 'built images are not authenticated by stock vbmeta_a: no AVB footer, stock hashes do not match; bootloader policy during attempt unknown'
-	echo 'post-flash model: libavb model, not an observed ABL verdict; see BOOT.md for the per-SHA metadata table'
+	echo 'post-flash model: libavb model, not an observed ABL verdict; see INDEX.md and records/ for the per-SHA metadata'
 	echo "stock DTBO entry 65: $model; board-id <$board>; oem-id <$oem>"
 	echo "built DTBO: $built_model; board-id <$built_board>; oem-id <$built_oem>"
 	echo "built vendor DTBs: all 20 byte-identical to stock; DTBO 65 applies to index 9; ramoops reg <$ramoops>; console-size 0x$console_size"
