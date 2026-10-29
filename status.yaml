@@ -13,7 +13,7 @@ subsystems:
   ssh:
     state: partial        # key-only USB SSH measured in held sessions, incl. post-cutover :2222
     record: records/2026-10-28-2284-run-52-measured-postmarketos-pid-1-cutover-and-u.md
-  wifi:
+  wlan:
     state: partial        # association, DHCP, gateway, DNS and external reachability measured in-session (runs 56/57); not persistent, not after reboot
     record: records/2026-10-29-2294-run-57-measured-openrc-wpa-supplicant-and-networ.md
   modem:
@@ -25,6 +25,13 @@ subsystems:
   cameras:
     state: untested
     record: null
+attempted_shas:       # never reflash; a new candidate needs a new SHA or a logged reuse decision
+  - fef03008        # init_boot, runs 52-57, measured
+  - 4b83ea24        # init_boot self-stage, run 58, measured
+  - 1bdb7c22        # vendor_boot_b userspace, run 58, measured
+  - bee02ce1        # init_boot self-stage recovery_b, run 61, measured
+  - 41cab142        # recovery_b userspace, run 61, measured
+  - d90b2221        # init_boot, run 51, measured
 notes: >-
   All values refer to coordinator-held, RAM-backed sessions on the stock
   kernel, rolled back afterwards. Not an Omnipha image, not a release.

@@ -39,7 +39,7 @@ phone needs its own device tree, firmware and boot test.
 - [PLAN.md](PLAN.md): ordered next steps, one active issue.
 - [INDEX.md](INDEX.md): generated map of all run and work records.
 - [records/](records/): one immutable dated file per run, measurement or finding.
-- [BOOT.md](BOOT.md): historical pointer; its sections live in `records/`.
+- BOOT.md: historical pointer only; its sections live in `records/` (see INDEX.md).
 
 Binding rules from `omnipha/agents` `docs/records-and-lean-files.md`: every
 protocol is a NEW dated file in `records/` with front matter. Never append to

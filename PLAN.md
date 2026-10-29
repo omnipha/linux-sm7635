@@ -15,7 +15,8 @@ One active step, one active issue. Later steps are not pre-created issues.
 
 1. Persistence and cold boot once the second boot is observed (depends on active step).
 2. Host re-addresses the re-enumerated USB gadget within the 150 s guard
-   window so SSH returns after reboot (host rule from #169).
+   window so SSH returns after reboot (#169 host part merged in PR #170;
+   the device measurement waits for a new SHA or a logged reuse decision).
 3. Interactive PTY (`ssh -tt`) in the isolated staged guest (#144).
 4. Only if a boot regression reappears: reopen the boot-boundary question
    (#12); otherwise leave closed-history alone.
