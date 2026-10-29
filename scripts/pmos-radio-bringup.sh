@@ -10,6 +10,10 @@ KO=mnt/vendor_dlkm/lib/modules/qca_cld3_qca6750.ko
 KO_SHA=c2dbdcd119955b7212d61eeb00528b8b69012a3e7f9528ceb1738b6081ee6e0b
 RMTFS_SHA=d66204e7895a6fd4cf78af369a45cee5bf1c88fa3f8cdad27e24690f233251bd
 HELPER_SHA=fef7e5da780d59a02a558b912d30fccb905ceb3b4e6a964ed666d1897f3987d2
+LEASE_SHA=86ebff20670faaa066685b1674f085a5e391676788a45a671f32a2c214fe3896
+NETWORKING_SHA=334b685600b13549bb852aa5bc8f7942caf314155a481b5984a557af867df50c
+WPA_SERVICE_SHA=a648c2306b296f8bbba61fcc2d0433c514f45ff4bdda68a88b22948acc9eb75f
+WPA_CONF_SHA=1600be060d3cdebb0663363f791fc1927ca1463f7a09e1f1f26b6e3ce390d1a1
 MSS=/sys/class/remoteproc/remoteproc2
 WPSS=/sys/class/remoteproc/remoteproc3
 
@@ -18,11 +22,11 @@ report() { $BB printf 'radio-bringup: %s\n' "$*" >&2; }
 hash() { $BB sha256sum "$1" 2>/dev/null | $BB cut -d ' ' -f 1; }
 state() { $BB timeout -k 1 2 $BB cat "$1/state" 2>/dev/null; }
 
-[ "$#" -ge 2 ] && [ "$#" -le 3 ] || { $BB printf 'usage: BOOT_ID prepare|modem|wpss|driver|scan|all [CAPTURE_MARKER]\n' >&2; exit 2; }
+[ "$#" -ge 2 ] && [ "$#" -le 3 ] || { $BB printf 'usage: BOOT_ID prepare|modem|wpss|driver|scan|services|all [CAPTURE_MARKER]\n' >&2; exit 2; }
 boot=$1
 stage=$2
 marker=${3:-}
-case "$stage" in prepare|modem|wpss|driver|scan|all) :;; *) fail 'unknown stage';; esac
+case "$stage" in prepare|modem|wpss|driver|scan|services|all) :;; *) fail 'unknown stage';; esac
 [ "$($BB cat /proc/sys/kernel/random/boot_id)" = "$boot" ] || fail 'boot ID mismatch'
 [ -f /run/keep ] && [ ! -L /run/keep ] || fail 'diagnostic or guest hold absent'
 [ "$($BB id -u)" = 0 ] || fail 'not root'
@@ -106,6 +110,8 @@ if [ "$stage" = prepare ]; then
 		$BB awk '$2 == "/vendor" && $4 ~ /(^|,)ro(,|$)/ {n++} END {exit(n < 1)}' /proc/mounts || fail 'stock vendor_a not bound read-only at /vendor'
 	[ "$(hash "/vendor/$INI")" = "$INI_SHA" ] || fail 'stock INI digest mismatch'
 	[ -f /bin/wpss-once ] && [ ! -L /bin/wpss-once ] && [ "$(hash /bin/wpss-once)" = "$HELPER_SHA" ] || fail 'diagnostic one-shot helper digest mismatch'
+	[ -f /run/wlan-udhcpc-lease.sh ] && [ ! -L /run/wlan-udhcpc-lease.sh ] &&
+		[ "$(hash /run/wlan-udhcpc-lease.sh)" = "$LEASE_SHA" ] || fail 'diagnostic lease helper digest mismatch'
 	for service in pd-mapper tqftpserv rmtfs; do
 		[ -f "/run/$service.log" ] && $BB grep -q "$service: published QRTR service" "/run/$service.log" || fail "$service has not published"
 	done
@@ -122,6 +128,9 @@ if [ "$stage" = prepare ]; then
 	$BB cp /bin/wpss-once /run/pmos/run/radio-bringup/wpss-once
 	$BB chmod 700 /run/pmos/run/radio-bringup/wpss-once
 	[ "$(hash /run/pmos/run/radio-bringup/wpss-once)" = "$HELPER_SHA" ] || fail 'staged helper digest mismatch'
+	$BB cp /run/wlan-udhcpc-lease.sh /run/pmos/run/radio-bringup/wlan-udhcpc-lease.sh
+	$BB chmod 700 /run/pmos/run/radio-bringup/wlan-udhcpc-lease.sh
+	[ "$(hash /run/pmos/run/radio-bringup/wlan-udhcpc-lease.sh)" = "$LEASE_SHA" ] || fail 'staged lease helper digest mismatch'
 	$BB printf 'qrtr-published\n' > /run/pmos/run/qrtr-services.status
 	$BB printf 'rmtfs-published\n' > /run/pmos/run/rmtfs.status
 	$BB cp /run/rmtfs.log /run/pmos/run/radio-bringup/rmtfs.log
@@ -307,10 +316,91 @@ scan() {
 	report "bounded scan exit 0; BSS count $count (raw scan stays root-only in guest RAM)"
 }
 
+install_service_config() {
+	umask 077
+	$BB cat > /etc/wpa_supplicant/wpa_supplicant.conf || fail 'profile transfer failed'
+	[ -s /etc/wpa_supplicant/wpa_supplicant.conf ] &&
+		[ "$($BB stat -c '%u:%a' /etc/wpa_supplicant/wpa_supplicant.conf)" = 0:600 ] || {
+		$BB rm -f /etc/wpa_supplicant/wpa_supplicant.conf
+		fail 'profile missing or not root-only'
+	}
+	$BB printf '#!/bin/busybox sh\nIP_CMD=/sbin/ip\nexport IP_CMD\nexec /bin/busybox sh /run/radio-bringup/wlan-udhcpc-lease.sh "$@"\n' > "$STATE/lease-wrapper.sh"
+	$BB chmod 700 "$STATE/lease-wrapper.sh"
+	$BB printf 'auto wlan0\niface wlan0 inet dhcp\n\tdhcp-script /run/radio-bringup/lease-wrapper.sh\n\tudhcpc-opts -t 5 -T 3 -A 5 -n\n' > /etc/network/interfaces
+	$BB chmod 600 /etc/network/interfaces
+	$BB printf 'ifquery=/run/radio-bringup/ifquery-wlan\n' > /etc/conf.d/networking
+	$BB chmod 600 /etc/conf.d/networking
+	$BB printf '#!/bin/busybox sh\nif [ "$#" = 4 ] && [ "$1" = -i ] && [ "$2" = /etc/network/interfaces ] && [ "$3" = --list ] && [ "$4" = -a ]; then /bin/busybox printf "wlan0\\n"; exit 0; fi\nexec /sbin/ifquery "$@"\n' > "$STATE/ifquery-wlan"
+	$BB chmod 700 "$STATE/ifquery-wlan"
+	$BB ln -s busybox /bin/run-parts
+	$BB ln -s ../bin/busybox /sbin/udhcpc
+	[ "$(/sbin/ifquery -i /etc/network/interfaces --list -a)" = 'lo
+wlan0' ] || fail 'unexpected ifupdown interface inventory'
+	[ "$("$STATE/ifquery-wlan" -i /etc/network/interfaces --list -a)" = wlan0 ] || fail 'WLAN-only interface selector failed'
+	[ "$($BB stat -c '%u:%a' /etc/network/interfaces)" = 0:600 ] &&
+		[ "$($BB stat -c '%u:%a' /etc/conf.d/networking)" = 0:600 ] || fail 'service config not root-only'
+	$BB ln -s /etc/init.d/wpa_supplicant /etc/runlevels/default/wpa_supplicant
+	$BB ln -s /etc/init.d/networking /etc/runlevels/default/networking
+}
+
+services() {
+	stage=services
+	capture_gate
+	wlan_present && [ "$(state "$MSS")" = running ] && [ "$(state "$WPSS")" = running ] || fail 'radio not ready for OpenRC services'
+	$BB dmesg > "$STATE/services-kmsg" 2>/dev/null || fail 'radio kmsg unavailable'
+	if $BB grep -Eiq 'fatal error received:|fs_device_efs_rmts.c|hdd_psoc_idle_timeout_callback|kernel panic' "$STATE/services-kmsg"; then fail 'radio fatal in this boot'; fi
+	$BB rm "$STATE/services-kmsg"
+	[ -f /run/dropbear-session.pid ] && [ ! -L /run/dropbear-session.pid ] || fail 'guest :2222 pidfile absent'
+	pid=$($BB cat /run/dropbear-session.pid)
+	case "$pid" in ''|*[!0-9]*) fail 'guest :2222 pid invalid';; esac
+	[ -r "/proc/$pid/cmdline" ] && [ "$($BB stat -Lc '%d:%i' "/proc/$pid/root" 2>/dev/null)" = "$($BB stat -c '%d:%i' /)" ] &&
+		$BB tr '\000' ' ' < "/proc/$pid/cmdline" | $BB grep -q 'dropbear -s -g -j -k -E -r /etc/dropbear/session_host_key -p 172.16.42.2:2222 -P /run/dropbear-session.pid ' &&
+		$BB awk '$2 == "022A10AC:08AE" && $4 == "0A" {n++} END {exit(n != 1)}' /proc/net/tcp || fail 'guest :2222 not healthy'
+	[ ! -t 0 ] || fail 'profile must arrive on standard input from pinned key-only SSH'
+	[ -f "$STATE/wlan-udhcpc-lease.sh" ] && [ ! -L "$STATE/wlan-udhcpc-lease.sh" ] &&
+		[ "$($BB stat -c '%u:%a' "$STATE/wlan-udhcpc-lease.sh")" = 0:700 ] &&
+		[ "$(hash "$STATE/wlan-udhcpc-lease.sh")" = "$LEASE_SHA" ] || fail 'pinned lease helper absent'
+	for spec in "networking $NETWORKING_SHA" "wpa_supplicant $WPA_SERVICE_SHA"; do
+		set -- $spec
+		[ -f "/etc/init.d/$1" ] && [ ! -L "/etc/init.d/$1" ] && [ "$(hash "/etc/init.d/$1")" = "$2" ] || fail "unexpected $1 service"
+	done
+	[ -f /etc/conf.d/wpa_supplicant ] && [ ! -L /etc/conf.d/wpa_supplicant ] &&
+		[ "$(hash /etc/conf.d/wpa_supplicant)" = "$WPA_CONF_SHA" ] || fail 'unexpected supplicant arguments; no -f supported'
+	[ -x /sbin/rc-service ] && [ -x /sbin/ifup ] && [ -x /sbin/ip ] &&
+		[ -x /sbin/wpa_supplicant ] && [ ! -e /bin/ip ] && [ ! -L /bin/ip ] || fail 'OpenRC or /sbin/ip prerequisites changed'
+	for level in sysinit boot default nonetwork shutdown; do
+		path=/etc/runlevels/$level
+		[ -d "$path" ] && [ ! -L "$path" ] || fail 'unsafe runlevel'
+		for entry in "$path"/* "$path"/.[!.]* "$path"/..?*; do
+			[ ! -e "$entry" ] && [ ! -L "$entry" ] || {
+				[ "$entry" = /etc/runlevels/default/local ] && [ "$($BB readlink "$entry")" = /etc/init.d/local ] || fail 'another OpenRC service enabled'
+			}
+		done
+	done
+	/sbin/rc-service local status >/dev/null 2>&1 &&
+		! /sbin/rc-service networking status >/dev/null 2>&1 &&
+		! /sbin/rc-service wpa_supplicant status >/dev/null 2>&1 || fail 'unexpected OpenRC service state'
+	for path in /etc/network /etc/wpa_supplicant /etc/conf.d /etc/runlevels/default; do
+		[ -d "$path" ] && [ ! -L "$path" ] && [ "$($BB stat -c %u "$path")" = 0 ] || fail 'unsafe guest config directory'
+	done
+	for path in /etc/network/interfaces /etc/wpa_supplicant/wpa_supplicant.conf /etc/conf.d/networking /bin/run-parts /sbin/udhcpc "$STATE/ifquery-wlan" "$STATE/lease-wrapper.sh" "$STATE/services.attempted"; do
+		[ ! -e "$path" ] && [ ! -L "$path" ] || fail 'service input already exists; no overwrite'
+	done
+	install_service_config
+	$BB printf '%s\n' "$boot" > "$STATE/services.attempted"
+	/sbin/rc-service -D wpa_supplicant start > "$STATE/wpa-service.log" 2>&1 || fail 'wpa_supplicant first service error (private guest RAM log)'
+	$BB sleep 2
+	/sbin/rc-service wpa_supplicant status >/dev/null 2>&1 || fail 'wpa_supplicant did not stay started (private guest RAM log)'
+	/sbin/rc-service -D networking start > "$STATE/networking-service.log" 2>&1 || fail 'networking first service error (private guest RAM log)'
+	/sbin/rc-service networking status >/dev/null 2>&1 || fail 'networking did not stay started (private guest RAM log)'
+	report 'OpenRC wpa_supplicant then networking started; no dependency service started; private service logs remain in guest RAM'
+}
+
 case "$stage" in
 	modem) modem;;
 	wpss) wpss;;
 	driver) driver;;
 	scan) scan;;
+	services) services;;
 	all) modem; wpss; driver; scan;;
 esac

@@ -24,6 +24,8 @@ STAGE="$SOURCE/pmos-session-stage.sh"
 TEARDOWN="$SOURCE/pmos-session-teardown.sh"
 TRANSITION="$SOURCE/pmos-pid1-transition.sh"
 GUARD="$SOURCE/pmos-pid1-guard.sh"
+RADIO="$SOURCE/pmos-radio-bringup.sh"
+LEASE="$SOURCE/wlan-udhcpc-lease.sh"
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 mounts_clear() {
 	$BB awk '$2 == "/run/pmos" || index($2, "/run/pmos/") == 1 {bad++} END {exit(bad != 0)}' /proc/mounts || fail 'guest mounts remain'
@@ -567,6 +569,47 @@ $BB grep -q 'deviceinfo file is missing' /run/tmpfs-neg.out &&
 $BB unshare --mount $BB sh -c '$BB mount --make-rprivate /; $BB chroot /run/pmos /sbin/rc-service udev start' >/run/udev-neg.out 2>&1 || true
 $BB grep -q 'Udev requires /dev to be a mounted devtmpfs' /run/udev-neg.out &&
 	! $BB chroot /run/pmos /sbin/rc-service udev status >/dev/null 2>&1 || { $BB cat /run/udev-neg.out >&2; fail 'udev started on guest-private /dev tmpfs'; }
+$BB chroot /run/pmos /sbin/wpa_supplicant -f /run/wpa-bad.log >/run/wpa-f-neg.out 2>&1 || true
+$BB grep -q 'usage:' /run/wpa-f-neg.out && [ ! -e /run/pmos/bin/ip ] && [ -x /run/pmos/sbin/ip ] || fail 'run-56 wpa_supplicant -f or /sbin/ip constraint changed'
+$BB mkdir -p -m 700 /run/pmos/run/radio-bringup
+$BB cp "$LEASE" /run/pmos/run/radio-bringup/wlan-udhcpc-lease.sh
+$BB chmod 700 /run/pmos/run/radio-bringup/wlan-udhcpc-lease.sh
+ip link add wlan0 type dummy
+$BB sed -n '/^install_service_config()/,/^}/p' "$RADIO" > /run/pmos/run/radio-bringup/install.sh
+$BB printf 'STATE=/run/radio-bringup\nBB=/bin/busybox\nfail() { /bin/busybox printf "FAIL: %%s\\n" "$*" >&2; exit 1; }\ninstall_service_config\n' >> /run/pmos/run/radio-bringup/install.sh
+$BB printf 'ctrl_interface=/run/wpa_supplicant\nnetwork={\n\tssid="synthetic"\n\tpsk="12345678"\n}\n' |
+	ssh -q -T -p 2222 -i /run/client_key -o BatchMode=yes -o IdentitiesOnly=yes -o IdentityAgent=none -o PasswordAuthentication=no -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/run/known_hosts root@172.16.42.2 \
+		'/bin/busybox sh /run/radio-bringup/install.sh' || fail 'SSH service config install failed'
+$BB rm /run/pmos/sbin/udhcpc
+$BB cat > /run/pmos/sbin/udhcpc <<'UDHCPC'
+#!/bin/busybox sh
+case "$*" in
+	'-b -R -p /var/run/udhcpc.wlan0.pid -i wlan0 -t 5 -T 3 -A 5 -n'*' -s /run/radio-bringup/lease-wrapper.sh') :;;
+	*) exit 1;;
+esac
+[ -z "${IP_CMD:-}" ] || exit 1
+/bin/busybox printf '%s\n' "$$" > /var/run/udhcpc.wlan0.pid
+interface=wlan0 ip=192.0.2.9 subnet=255.255.255.0 router=192.0.2.1 dns='192.0.2.53 192.0.2.54' /bin/busybox sh /run/radio-bringup/lease-wrapper.sh bound
+UDHCPC
+$BB chmod 755 /run/pmos/sbin/udhcpc
+ssh -q -T -p 2222 -i /run/client_key -o BatchMode=yes -o IdentitiesOnly=yes -o IdentityAgent=none -o PasswordAuthentication=no -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/run/known_hosts root@172.16.42.2 '
+	export PATH=/bin:/sbin:/usr/bin:/usr/sbin &&
+	/sbin/rc-service -D wpa_supplicant start &&
+	/sbin/rc-service wpa_supplicant status &&
+	/sbin/rc-service -D networking start &&
+	/sbin/rc-service networking status &&
+	! /sbin/rc-service sshd status 2>/dev/null &&
+	! /sbin/rc-service udev status 2>/dev/null &&
+	! /sbin/rc-service tmpfs status 2>/dev/null &&
+	test "$(/bin/rc-status --crashed)" = "" &&
+	/sbin/ip -4 addr show dev wlan0 | /bin/busybox grep -q "192.0.2.9/24" &&
+	/sbin/ip -4 route show dev wlan0 | /bin/busybox grep -q "^default via 192.0.2.1" &&
+	/bin/busybox grep -q "^nameserver 192.0.2.53$" /etc/resolv.conf &&
+	/sbin/rc-service -D networking stop &&
+	/sbin/rc-service -D wpa_supplicant stop
+' >/run/openrc-wlan.out 2>&1 || { $BB cat /run/openrc-wlan.out >&2; fail 'OpenRC wpa_supplicant and networking start/stop'; }
+ip link del wlan0
+$BB rm -rf /run/pmos/run/radio-bringup /run/pmos/run/wpa_supplicant /run/pmos/run/ifstate /run/pmos/run/ifstate.wlan0.lock /run/pmos/run/udhcpc.args /run/pmos/run/udhcpc.wlan0.pid /run/pmos/etc/wpa_supplicant/wpa_supplicant.conf /run/pmos/etc/network/interfaces /run/pmos/etc/conf.d/networking /run/pmos/etc/resolv.conf /run/pmos/bin/run-parts /run/pmos/sbin/udhcpc /run/pmos/etc/runlevels/default/wpa_supplicant /run/pmos/etc/runlevels/default/networking
 transition_check
 outer_intact
 stop_guest
