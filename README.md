@@ -440,6 +440,23 @@ reversibly under guest RAM, keeping the diagnostic PID 1, gadget and pinned
 host preparation, not a phone result, image, own-kernel test, persistence path or
 release; the coordinator owns the live session and stock rollback.
 
+## Run-58 first-boot self-stage and WLAN blocker (2026-10-29, #164)
+
+[BOOT.md](BOOT.md#run-58-first-boot-self-stage-and-wlan-association-blocker-164-live-session-2026-10-29)
+records the first live boot of the `4b83ea24…` `init_boot_a` and `1bdb7c22…`
+inactive `vendor_boot_b` images. Without a host push, the guest self-staged the
+postmarketOS root from the read-only `vendor_boot_b` window, reached guest PID 1
+and OpenRC `default/local`, accepted the 160 s guard ack, and held at the modem
+marker. With a separate fresh capture marker before each stage, `remoteproc2`
+and `remoteproc3` both reached `running` and `wlan0`/phy0 registered; a scan saw
+36 BSS (scan only, not connectivity). OpenRC `wpa_supplicant` started on
+`-iwlan0` but stayed `SCANNING`, and `networking` stopped with no DHCP lease.
+The guest profile matched the protected host input, yet its network did not
+appear in 36-, 37- or 30-BSS scans, so no association, address, route, gateway,
+DNS or external reachability was reached. SSH and capture remain healthy in the
+still-open session; the one-reboot phase has not begun, and the coordinator owns
+session closure and stock rollback.
+
 ## Inactive `vendor_boot_b` self-staged session (2026-10-29, #164)
 
 [BOOT.md](BOOT.md#host-only-inactive-vendor_boot_b-userspace-payload-and-self-staged-session-164-2026-10-29)
