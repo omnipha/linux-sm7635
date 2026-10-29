@@ -154,7 +154,7 @@ case "${1:-}" in
 		shift 4
 		if [ "${1:-}" = /bin/busybox ] && [ "${2:-}" = sh ] && [ "${3:-}" = -c ]; then
 			case "$4" in
-				*remoteproc2/state*) [ -r /vendor/firmware_mnt/image/modem.mdt ] || exit 1; "$BB" printf 'running\n' > /sys/class/remoteproc/remoteproc2/state; exit 0;;
+				*remoteproc2/state*) [ -r /vendor/firmware_mnt/image/modem.mdt ] && [ -c /proc/628/root/dev/uio0 ] && [ -b /proc/628/root/dev/block/sdf2 ] && [ -b /proc/628/root/dev/block/sdf3 ] && [ -L /proc/628/root/boot/modemst1 ] && [ -L /proc/628/root/boot/modemst2 ] || exit 1; "$BB" printf 'running\n' > /sys/class/remoteproc/remoteproc2/state; exit 0;;
 				*wpss_boot*) [ -r /vendor/firmware_mnt/image/qca6750/wpss.mdt ] || exit 1; "$BB" printf 'running\n' > /sys/class/remoteproc/remoteproc3/state; exit 0;;
 				*'/dev/wlan'*) exit 124;;
 			esac
