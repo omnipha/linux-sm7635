@@ -12,6 +12,10 @@ BB=/bin/busybox
 INI_SHA=57989aba51e98e3c608350bbff78b24b9613242cdf39cd1b8f1e0141659377d4
 KO_SHA=c2dbdcd119955b7212d61eeb00528b8b69012a3e7f9528ceb1738b6081ee6e0b
 HELPER_SHA=fef7e5da780d59a02a558b912d30fccb905ceb3b4e6a964ed666d1897f3987d2
+LEASE_SHA=86ebff20670faaa066685b1674f085a5e391676788a45a671f32a2c214fe3896
+NETWORKING_SHA=334b685600b13549bb852aa5bc8f7942caf314155a481b5984a557af867df50c
+WPA_SERVICE_SHA=a648c2306b296f8bbba61fcc2d0433c514f45ff4bdda68a88b22948acc9eb75f
+WPA_CONF_SHA=1600be060d3cdebb0663363f791fc1927ca1463f7a09e1f1f26b6e3ce390d1a1
 RMTFS_SHA=d66204e7895a6fd4cf78af369a45cee5bf1c88fa3f8cdad27e24690f233251bd
 RMTFS_BIN=${RMTFS_BIN:-$HOME/sm7635-build/out/rmtfs}
 BOOT=11111111-2222-3333-4444-555555555555
@@ -33,7 +37,7 @@ for d in bin sbin usr/bin usr/sbin etc dev run sys proc mnt vendor tmp; do
 	$BB mkdir -p "$R/$d"
 done
 $BB cp /bin/busybox "$R/bin/busybox"
-for applet in sh awk cat chmod cp cut dd dmesg grep id insmod ln ls mkdir mknod mount printf ps readlink rm rmmod sed sha256sum sleep stat timeout touch umount; do
+for applet in sh awk cat chmod cp cut dd dmesg grep id insmod ln ls mkdir mknod mount printf ps readlink rm rmmod sed sha256sum sleep stat timeout touch tr umount; do
 	$BB ln -sf busybox "$R/bin/$applet"
 done
 $BB cp "$SCRIPT" "$R/radio.sh"
@@ -43,6 +47,8 @@ $BB mkdir -p "$R/proc/sys/kernel/random" "$R/proc/1" "$R/mnt/vendor/etc/wifi/qca
 $BB printf '%s\n' "$BOOT" > "$R/proc/sys/kernel/random/boot_id"
 $BB ln -sf /bin/busybox "$R/proc/1/exe"
 $BB touch "$R/run/keep"
+$BB cp "$HERE/wlan-udhcpc-lease.sh" "$R/run/wlan-udhcpc-lease.sh"
+[ "$($BB sha256sum "$R/run/wlan-udhcpc-lease.sh" | $BB cut -d ' ' -f 1)" = "$LEASE_SHA" ] || fail 'lease helper digest'
 
 python3 -B - "$HERE/build-init-boot-psoc-hold-payload.py" "$INI_SHA" "$R/mnt/vendor/etc/wifi/qca6750/WCNSS_qcom_cfg.ini" "$HELPER_SHA" "$R/bin/wpss-once" "$KO_SHA" "$R/tmp/qca.ko" "$R/radio.sh" <<'PY'
 import hashlib
@@ -170,6 +176,7 @@ run_stage prepare
 [ -f "$R/run/pmos/vendor/etc/wifi/qca6750/WCNSS_qcom_cfg.ini" ] || fail 'staged INI missing'
 [ "$($BB readlink "$R/run/pmos/vendor/firmware/wlan/qca_cld/qca6750/WCNSS_qcom_cfg.ini")" = /vendor/etc/wifi/qca6750/WCNSS_qcom_cfg.ini ] || fail 'staged INI symlink'
 [ "$($BB sha256sum "$R/run/pmos/run/radio-bringup/wpss-once" | $BB cut -d ' ' -f 1)" = "$HELPER_SHA" ] || fail 'staged helper hash'
+[ "$($BB sha256sum "$R/run/pmos/run/radio-bringup/wlan-udhcpc-lease.sh" | $BB cut -d ' ' -f 1)" = "$LEASE_SHA" ] || fail 'staged lease helper hash'
 [ -c "$R/run/pmos/dev/wlan" ] && [ "$($BB stat -c '%t:%T' "$R/run/pmos/dev/wlan")" = '1ef:0' ] || fail 'copied /dev/wlan node'
 reject_stage prepare "$BOOT" prepare
 $BB rm -r "$R/run/pmos/vendor" "$R/run/pmos/run/radio-bringup" "$R/run/pmos/dev/wlan"
@@ -319,4 +326,98 @@ run_stage scan
 expect "$R/tmp/scan.out" 'BSS count 2' 'scan count not reported'
 [ "$($BB stat -c '%a' "$R/run/radio-bringup/scan.raw")" = 600 ] || fail 'scan output not root-only'
 reject_stage scan "$BOOT" scan
-$BB printf 'pass: host-only radio bring-up stages, one-shot guards, fail-closed /dev/wlan derivation, helper exit 10, single reload and root-only scan verified\n'
+
+$BB mkdir -p "$R/etc/init.d" "$R/etc/conf.d" "$R/etc/network" "$R/etc/wpa_supplicant" "$R/etc/runlevels/sysinit" "$R/etc/runlevels/boot" "$R/etc/runlevels/default" "$R/etc/runlevels/nonetwork" "$R/etc/runlevels/shutdown" "$R/proc/452" "$R/proc/net"
+$BB printf '#!/sbin/openrc-run\n' > "$R/etc/init.d/networking"
+$BB printf '#!/sbin/openrc-run\nsupervisor=supervise-daemon\n' > "$R/etc/init.d/wpa_supplicant"
+$BB printf 'wpa_supplicant_args=""\n' > "$R/etc/conf.d/wpa_supplicant"
+net_sha=$($BB sha256sum "$R/etc/init.d/networking" | $BB cut -d ' ' -f 1)
+wpa_sha=$($BB sha256sum "$R/etc/init.d/wpa_supplicant" | $BB cut -d ' ' -f 1)
+conf_sha=$($BB sha256sum "$R/etc/conf.d/wpa_supplicant" | $BB cut -d ' ' -f 1)
+$BB sed -i "s/$NETWORKING_SHA/$net_sha/; s/$WPA_SERVICE_SHA/$wpa_sha/; s/$WPA_CONF_SHA/$conf_sha/" "$R/radio.sh"
+$BB cp "$HERE/wlan-udhcpc-lease.sh" "$R/run/radio-bringup/wlan-udhcpc-lease.sh"
+$BB chmod 700 "$R/run/radio-bringup/wlan-udhcpc-lease.sh"
+$BB ln -s /etc/init.d/local "$R/etc/runlevels/default/local"
+$BB ln -s /sbin/ip "$R/bin/ip-bad"
+$BB cat > "$R/sbin/rc-service" <<'RC'
+#!/bin/busybox sh
+case "$1 $2 $3" in
+	'local status ') exit 0;;
+	'networking status '|'wpa_supplicant status ') [ -f "/run/radio-bringup/$1.started" ];;
+	'-D wpa_supplicant start')
+		/bin/busybox printf 'wpa\n' >> /run/radio-bringup/order
+		[ ! -e /run/radio-bringup/wpa-fail ] || exit 1
+		/bin/busybox touch /run/radio-bringup/wpa_supplicant.started;;
+	'-D networking start')
+		/bin/busybox printf 'net\n' >> /run/radio-bringup/order
+		[ -f /etc/wpa_supplicant/wpa_supplicant.conf ] && [ -s /etc/network/interfaces ] || exit 1
+		/bin/busybox touch /run/radio-bringup/networking.started;;
+	*) exit 1;;
+esac
+RC
+$BB chmod 755 "$R/sbin/rc-service"
+$BB cat > "$R/sbin/ifquery" <<'IFQUERY'
+#!/bin/busybox sh
+if [ "$*" = '-i /etc/network/interfaces --list -a' ]; then
+	/bin/busybox printf 'lo\nwlan0\n'
+else
+	exit 1
+fi
+IFQUERY
+$BB chmod 755 "$R/sbin/ifquery"
+$BB printf '%s\0' dropbear -s -g -j -k -E -r /etc/dropbear/session_host_key -p 172.16.42.2:2222 -P /run/dropbear-session.pid > "$R/proc/452/cmdline"
+$BB ln -s / "$R/proc/452/root"
+$BB printf '452\n' > "$R/run/dropbear-session.pid"
+$BB printf '  0: 022A10AC:08AE 00000000:0000 0A 0 0 0 0 0 0 0\n' > "$R/proc/net/tcp"
+
+reject_stage services "$BOOT" services missing-marker
+reject_stage services "$BOOT" services capture-ok
+expect "$R/tmp/services.out" 'OpenRC or /sbin/ip prerequisites changed' 'missing service prerequisites reason'
+$BB rm "$R/bin/ip-bad"
+$BB touch "$R/sbin/wpa_supplicant" "$R/sbin/ifup"
+$BB chmod 755 "$R/sbin/wpa_supplicant" "$R/sbin/ifup"
+for service in sshd udev tmpfs; do
+	$BB ln -s "/etc/init.d/$service" "$R/etc/runlevels/default/$service"
+	reject_stage services "$BOOT" services capture-ok
+	expect "$R/tmp/services.out" 'another OpenRC service enabled' "pre-enabled $service accepted"
+	$BB rm "$R/etc/runlevels/default/$service"
+done
+$BB printf 'wpa_supplicant_args="-f /run/log"\n' > "$R/etc/conf.d/wpa_supplicant"
+reject_stage services "$BOOT" services capture-ok
+expect "$R/tmp/services.out" 'unexpected supplicant arguments; no -f supported' 'supplicant -f accepted'
+$BB printf 'wpa_supplicant_args=""\n' > "$R/etc/conf.d/wpa_supplicant"
+$BB ln -s /sbin/ip "$R/bin/ip"
+reject_stage services "$BOOT" services capture-ok
+expect "$R/tmp/services.out" 'OpenRC or /sbin/ip prerequisites changed' 'bin/ip not refused'
+$BB rm "$R/bin/ip"
+$BB mv "$R/run/dropbear-session.pid" "$R/tmp/ssh-pid.hidden"
+reject_stage services "$BOOT" services capture-ok
+expect "$R/tmp/services.out" 'guest :2222 pidfile absent' 'missing guest SSH accepted'
+$BB mv "$R/tmp/ssh-pid.hidden" "$R/run/dropbear-session.pid"
+$BB printf 'fatal error received: mock\n' >> "$R/tmp/dmesg.txt"
+reject_stage services "$BOOT" services capture-ok
+expect "$R/tmp/services.out" 'radio fatal in this boot' 'modem fatal accepted'
+$BB printf 'capture-ok\nicnss2_qmi: QMI DMS service connected\nicnss2: WLAN FW is ready\n' > "$R/tmp/dmesg.txt"
+$BB chroot "$R" /bin/busybox sh /radio.sh "$BOOT" services capture-ok </dev/null > "$R/tmp/missing-profile.out" 2>&1 && fail 'missing profile accepted'
+expect "$R/tmp/missing-profile.out" 'profile missing or not root-only' 'missing profile reason'
+[ ! -e "$R/etc/wpa_supplicant/wpa_supplicant.conf" ] && [ ! -e "$R/etc/runlevels/default/networking" ] || fail 'missing profile enabled services'
+$BB touch "$R/run/radio-bringup/wpa-fail"
+$BB printf 'ctrl_interface=/run/wpa_supplicant\nnetwork={\nssid="synthetic"\npsk="synthetic-only"\n}\n' | $BB chroot "$R" /bin/busybox sh /radio.sh "$BOOT" services capture-ok > "$R/tmp/wpa-fail.out" 2>&1 && fail 'failed wpa service accepted'
+expect "$R/tmp/wpa-fail.out" 'wpa_supplicant first service error' 'first failed service not reported'
+[ "$($BB cat "$R/run/radio-bringup/order")" = wpa ] && [ ! -e "$R/run/radio-bringup/networking.started" ] || fail 'networking attempted after wpa failure'
+$BB rm "$R/run/radio-bringup/wpa-fail" "$R/run/radio-bringup/order" "$R/run/radio-bringup/services.attempted" "$R/etc/network/interfaces" "$R/etc/wpa_supplicant/wpa_supplicant.conf" "$R/etc/conf.d/networking" "$R/bin/run-parts" "$R/sbin/udhcpc" "$R/run/radio-bringup/ifquery-wlan" "$R/run/radio-bringup/lease-wrapper.sh" "$R/etc/runlevels/default/wpa_supplicant" "$R/etc/runlevels/default/networking"
+$BB printf 'ctrl_interface=/run/wpa_supplicant\nnetwork={\nssid="synthetic"\npsk="synthetic-only"\n}\n' | $BB chroot "$R" /bin/busybox sh /radio.sh "$BOOT" services capture-ok > "$R/tmp/services-ok.out" 2>&1 || { $BB cat "$R/tmp/services-ok.out" >&2; fail 'services stage failed'; }
+expect "$R/tmp/services-ok.out" 'OpenRC wpa_supplicant then networking started' 'services stage summary missing'
+[ "$($BB cat "$R/run/radio-bringup/order")" = 'wpa
+net' ] || fail 'services did not start wpa_supplicant then networking'
+[ "$($BB stat -c '%u:%a' "$R/etc/wpa_supplicant/wpa_supplicant.conf")" = 0:600 ] &&
+	[ "$($BB stat -c '%u:%a' "$R/etc/network/interfaces")" = 0:600 ] &&
+	[ "$($BB stat -c '%u:%a' "$R/etc/conf.d/networking")" = 0:600 ] || fail 'service config permissions'
+$BB grep -q '^IP_CMD=/sbin/ip$' "$R/run/radio-bringup/lease-wrapper.sh" &&
+	$BB grep -q 'dhcp-script /run/radio-bringup/lease-wrapper.sh' "$R/etc/network/interfaces" &&
+	[ "$($BB stat -c '%u:%a' "$R/run/radio-bringup/lease-wrapper.sh")" = 0:700 ] || fail 'IP_CMD=/sbin/ip lease wrapper missing'
+[ "$($BB find "$R/etc/runlevels" -type l | $BB sort)" = "$R/etc/runlevels/default/local
+$R/etc/runlevels/default/networking
+$R/etc/runlevels/default/wpa_supplicant" ] || fail 'unexpected enabled OpenRC runlevel entries'
+reject_stage services "$BOOT" services capture-ok
+$BB printf 'pass: host-only radio bring-up stages, one-shot guards, fail-closed /dev/wlan derivation, helper exit 10, single reload, root-only scan, pinned lease-helper staging and OpenRC wpa_supplicant/networking stage verified\n'

@@ -440,6 +440,20 @@ reversibly under guest RAM, keeping the diagnostic PID 1, gadget and pinned
 host preparation, not a phone result, image, own-kernel test, persistence path or
 release; the coordinator owns the live session and stock rollback.
 
+## OpenRC `networking` + `wpa_supplicant` staging (2026-10-29, #160)
+
+[BOOT.md](BOOT.md#host-only-openrc-networking--wpa_supplicant-staging-on-the-unchanged-session-image-160-2026-10-29)
+records the host-only `services` stage of `scripts/pmos-radio-bringup.sh`. Using the
+unchanged `fef03008…` image, it stages a root-only `/etc/network/interfaces`, the
+profile from standard input at `/etc/wpa_supplicant/wpa_supplicant.conf` (guest RAM,
+never in Git or logs) and a `wlan0`-only `ifquery` wrapper, enables only
+`wpa_supplicant` and `networking`, and starts them with `rc-service -D`. It refuses
+other enabled services, a missing profile, a changed supplicant argument list or
+`/bin/ip`, and a repeat in the same boot. `sh scripts/test-pmos-radio-bringup.sh` and
+`sh scripts/test-pmos-session-dev.sh` cover it. Nothing here is a phone result; the
+services on the real post-cutover WLAN path are one pending coordinator-held
+measurement, and #160 stays open for it.
+
 ## Run-56 post-cutover WLAN association and reachability (2026-10-29, #150)
 
 [BOOT.md](BOOT.md#run-56-measured-post-cutover-wlan-association-and-reachability-on-postmarketos-pid-1-150-live-session-finding-2026-10-29)
