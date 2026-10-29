@@ -12,6 +12,8 @@ BB=/bin/busybox
 INI_SHA=57989aba51e98e3c608350bbff78b24b9613242cdf39cd1b8f1e0141659377d4
 KO_SHA=c2dbdcd119955b7212d61eeb00528b8b69012a3e7f9528ceb1738b6081ee6e0b
 HELPER_SHA=fef7e5da780d59a02a558b912d30fccb905ceb3b4e6a964ed666d1897f3987d2
+RMTFS_SHA=d66204e7895a6fd4cf78af369a45cee5bf1c88fa3f8cdad27e24690f233251bd
+RMTFS_BIN=${RMTFS_BIN:-$HOME/sm7635-build/out/rmtfs}
 BOOT=11111111-2222-3333-4444-555555555555
 fail() { $BB printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 expect() { $BB grep -q "$2" "$1" || { $BB cat "$1" >&2; fail "$3"; }; }
@@ -31,7 +33,7 @@ for d in bin sbin usr/bin usr/sbin etc dev run sys proc mnt vendor tmp; do
 	$BB mkdir -p "$R/$d"
 done
 $BB cp /bin/busybox "$R/bin/busybox"
-for applet in sh awk cat chmod cp cut dmesg grep id insmod ln ls mkdir mknod mount printf ps readlink rm rmmod sha256sum sleep stat timeout touch umount; do
+for applet in sh awk cat chmod cp cut dd dmesg grep id insmod ln ls mkdir mknod mount printf ps readlink rm rmmod sed sha256sum sleep stat timeout touch umount; do
 	$BB ln -sf busybox "$R/bin/$applet"
 done
 $BB cp "$SCRIPT" "$R/radio.sh"
@@ -72,12 +74,97 @@ $BB cp -a "$R/mnt/vendor/." "$R/vendor/"
 for service in pd-mapper tqftpserv rmtfs; do
 	$BB printf '%s: published QRTR service\n' "$service" > "$R/run/$service.log"
 done
+$BB printf 'rmtfs: mapped stock UIO /dev/uio0 address 0x1000 size 0x2000\nrmtfs: published QRTR service 14 version 1 instance 0\n' > "$R/run/rmtfs.log"
 $BB printf 'qrtr-published\n' > "$R/run/qrtr-services.status"
 $BB printf 'rmtfs-published\n' > "$R/run/rmtfs.status"
+if [ -f "$RMTFS_BIN" ] && [ "$($BB sha256sum "$RMTFS_BIN" | $BB cut -d ' ' -f 1)" = "$RMTFS_SHA" ]; then
+	$BB cp "$RMTFS_BIN" "$R/bin/rmtfs"
+else
+	$BB printf '\177ELFmock-rmtfs\n' > "$R/bin/rmtfs"
+	rmtfs_mock_sha=$($BB sha256sum "$R/bin/rmtfs" | $BB cut -d ' ' -f 1)
+	$BB sed -i "s/$RMTFS_SHA/$rmtfs_mock_sha/" "$R/radio.sh"
+fi
+$BB chmod 755 "$R/bin/rmtfs"
+$BB mkdir -p "$R/proc/628" "$R/sys/class/uio/uio0/maps/map0" "$R/sys/class/block/sdf2" "$R/sys/class/block/sdf3" "$R/dev/block" "$R/boot"
+$BB printf 'rmtfs\n' > "$R/proc/628/comm"
+$BB ln -sf /bin/rmtfs "$R/proc/628/exe"
+$BB ln -sf / "$R/proc/628/root"
+$BB printf '7f000000-7f002000 rw-s 00000000 00:00 0 /dev/uio0\n' > "$R/proc/628/maps"
+$BB printf 'rmtfs\n' > "$R/sys/class/uio/uio0/name"
+$BB printf '242:0\n' > "$R/sys/class/uio/uio0/dev"
+$BB printf '1000\n' > "$R/sys/class/uio/uio0/maps/map0/addr"
+$BB printf '2000\n' > "$R/sys/class/uio/uio0/maps/map0/size"
+$BB mknod -m 0600 "$R/dev/uio0" c 242 0
+$BB printf 'PARTNAME=modemst1\n' > "$R/sys/class/block/sdf2/uevent"
+$BB printf 'PARTNAME=modemst2\n' > "$R/sys/class/block/sdf3/uevent"
+$BB printf '259:18\n' > "$R/sys/class/block/sdf2/dev"
+$BB printf '259:19\n' > "$R/sys/class/block/sdf3/dev"
+$BB mknod -m 0400 "$R/dev/block/sdf2" b 259 18
+$BB mknod -m 0400 "$R/dev/block/sdf3" b 259 19
+$BB printf '%512s\n' '' > "$R/tmp/modemst.img"
+$BB ln -s /dev/block/sdf2 "$R/boot/modemst1"
+$BB ln -s /dev/block/sdf3 "$R/boot/modemst2"
 $BB mkdir -p "$R/run/pmos/run" "$R/run/pmos/dev"
 $BB printf 'tmpfs /run/pmos tmpfs rw 0 0\ntmpfs /run/pmos/run tmpfs rw 0 0\nerofs /vendor erofs ro 0 0\n' > "$R/proc/mounts"
 $BB mknod -m 0600 "$R/dev/wlan" c 495 0
 
+$BB mv "$R/bin/busybox" "$R/bin/busybox.real"
+$BB cat > "$R/bin/busybox" <<'WRAP'
+#!/bin/busybox.real sh
+BB=/bin/busybox.real
+case "${1:-}" in
+	ps) exec "$BB" cat /tmp/ps.txt;;
+	dd)
+		case "${2:-}" in
+			if=*/dev/block/sdf[23])
+				node=${2#if=}
+				[ -b "$node" ] && [ -r /tmp/modemst.img ] || exit 1
+				exit 0
+				;;
+		esac
+		exec "$BB" "$@"
+		;;
+	dmesg) exec "$BB" cat /tmp/dmesg.txt;;
+	sleep) exit 0;;
+	mount)
+		if [ "${2:-}" = /vendor/firmware_mnt ] || [ "${4:-}" = /vendor/firmware_mnt ]; then
+			"$BB" cp -a /proc/358/root/vendor/firmware_mnt/. /vendor/firmware_mnt/
+			"$BB" grep -q ' /vendor/firmware_mnt vfat ro,' /proc/mounts ||
+				"$BB" printf '/dev/block/sde6 /vendor/firmware_mnt vfat ro,relatime 0 0\n' >> /proc/mounts
+			exit 0
+		fi
+		exec "$BB" mount "$@"
+		;;
+	insmod)
+		"$BB" printf 'insmod %s\n' "$2" >> /tmp/mod.log
+		"$BB" mkdir -p /sys/module/qca_cld3_qca6750
+		if [ -f /tmp/reload-ready ]; then
+			"$BB" mkdir -p /sys/class/net/wlan0 /sys/class/ieee80211/phy0
+			"$BB" printf '0x1002\n' > /sys/class/net/wlan0/flags
+		fi
+		exit 0
+		;;
+	rmmod)
+		"$BB" printf 'rmmod %s\n' "$2" >> /tmp/mod.log
+		"$BB" rm -rf /sys/module/qca_cld3_qca6750
+		"$BB" touch /tmp/reload-ready
+		exit 0
+		;;
+	timeout)
+		shift 4
+		if [ "${1:-}" = /bin/busybox ] && [ "${2:-}" = sh ] && [ "${3:-}" = -c ]; then
+			case "$4" in
+				*remoteproc2/state*) [ -r /vendor/firmware_mnt/image/modem.mdt ] && [ -c /proc/628/root/dev/uio0 ] && [ -b /proc/628/root/dev/block/sdf2 ] && [ -b /proc/628/root/dev/block/sdf3 ] && [ -L /proc/628/root/boot/modemst1 ] && [ -L /proc/628/root/boot/modemst2 ] || exit 1; "$BB" printf 'running\n' > /sys/class/remoteproc/remoteproc2/state; exit 0;;
+				*wpss_boot*) [ -r /vendor/firmware_mnt/image/qca6750/wpss.mdt ] || exit 1; "$BB" printf 'running\n' > /sys/class/remoteproc/remoteproc3/state; exit 0;;
+				*'/dev/wlan'*) exit 124;;
+			esac
+		fi
+		exec "$@"
+		;;
+esac
+exec "$BB" "$@"
+WRAP
+$BB chmod 755 "$R/bin/busybox"
 reject_stage prepare wrong-boot prepare
 run_stage prepare
 [ -f "$R/run/pmos/vendor/etc/wifi/qca6750/WCNSS_qcom_cfg.ini" ] || fail 'staged INI missing'
@@ -116,53 +203,6 @@ for part in mdt b00 b01 b02 b03 b04 b05 b06 b07 b08 b09 b10 b12; do
 done
 $BB printf 'pd-mapper\ntqftpserv\nrmtfs\n' > "$R/tmp/ps.txt"
 $BB printf 'capture-ok\nicnss2_qmi: QMI DMS service connected\nicnss2: WLAN FW is ready\n' > "$R/tmp/dmesg.txt"
-$BB mv "$R/bin/busybox" "$R/bin/busybox.real"
-$BB cat > "$R/bin/busybox" <<'WRAP'
-#!/bin/busybox.real sh
-BB=/bin/busybox.real
-case "${1:-}" in
-	ps) exec "$BB" cat /tmp/ps.txt;;
-	dmesg) exec "$BB" cat /tmp/dmesg.txt;;
-	sleep) exit 0;;
-	mount)
-		if [ "${2:-}" = /vendor/firmware_mnt ] || [ "${4:-}" = /vendor/firmware_mnt ]; then
-			"$BB" cp -a /proc/358/root/vendor/firmware_mnt/. /vendor/firmware_mnt/
-			"$BB" grep -q ' /vendor/firmware_mnt vfat ro,' /proc/mounts ||
-				"$BB" printf '/dev/block/sde6 /vendor/firmware_mnt vfat ro,relatime 0 0\n' >> /proc/mounts
-			exit 0
-		fi
-		exec "$BB" mount "$@"
-		;;
-	insmod)
-		"$BB" printf 'insmod %s\n' "$2" >> /tmp/mod.log
-		"$BB" mkdir -p /sys/module/qca_cld3_qca6750
-		if [ -f /tmp/reload-ready ]; then
-			"$BB" mkdir -p /sys/class/net/wlan0 /sys/class/ieee80211/phy0
-			"$BB" printf '0x1002\n' > /sys/class/net/wlan0/flags
-		fi
-		exit 0
-		;;
-	rmmod)
-		"$BB" printf 'rmmod %s\n' "$2" >> /tmp/mod.log
-		"$BB" rm -rf /sys/module/qca_cld3_qca6750
-		"$BB" touch /tmp/reload-ready
-		exit 0
-		;;
-	timeout)
-		shift 4
-		if [ "${1:-}" = /bin/busybox ] && [ "${2:-}" = sh ] && [ "${3:-}" = -c ]; then
-			case "$4" in
-				*remoteproc2/state*) [ -r /vendor/firmware_mnt/image/modem.mdt ] || exit 1; "$BB" printf 'running\n' > /sys/class/remoteproc/remoteproc2/state; exit 0;;
-				*wpss_boot*) [ -r /vendor/firmware_mnt/image/qca6750/wpss.mdt ] || exit 1; "$BB" printf 'running\n' > /sys/class/remoteproc/remoteproc3/state; exit 0;;
-				*'/dev/wlan'*) exit 124;;
-			esac
-		fi
-		exec "$@"
-		;;
-esac
-exec "$BB" "$@"
-WRAP
-$BB chmod 755 "$R/bin/busybox"
 $BB mkdir -p "$R/sys/bus/platform/devices/17110040.qcom,wcn6750/driver" "$R/sys/kernel/icnss"
 $BB touch "$R/sys/kernel/icnss/wpss_boot"
 $BB cat > "$R/sbin/ip" <<'IP'
@@ -180,11 +220,58 @@ $BB chmod 755 "$R/sbin/ip" "$R/usr/sbin/iw"
 reject_stage modem "$BOOT" modem
 $BB printf 'offline\n' > "$R/sys/class/remoteproc/remoteproc2/state"
 reject_stage modem "$BOOT" modem missing-marker
+$BB mv "$R/sys/class/uio/uio0/name" "$R/tmp/uio-name.hidden"
+reject_stage modem "$BOOT" modem capture-ok
+expect "$R/tmp/modem.out" 'kernel sharedmem UIO is not the rmtfs client' 'missing UIO reason'
+[ ! -e "$R/run/radio-bringup/modem.attempted" ] || fail 'modem start armed with the sharedmem UIO absent'
+$BB mv "$R/tmp/uio-name.hidden" "$R/sys/class/uio/uio0/name"
+$BB mv "$R/run/radio-bringup/rmtfs.pid" "$R/tmp/rmtfs.pid.hidden"
+reject_stage modem "$BOOT" modem capture-ok
+expect "$R/tmp/modem.out" 'expected exactly one pinned rmtfs process' 'copied status marker accepted without prepared rmtfs'
+[ ! -e "$R/run/radio-bringup/modem.attempted" ] || fail 'modem start armed without the prepared rmtfs process identity'
+$BB mv "$R/tmp/rmtfs.pid.hidden" "$R/run/radio-bringup/rmtfs.pid"
+$BB mv "$R/run/radio-bringup/rmtfs.log" "$R/tmp/rmtfs.log.hidden"
+reject_stage modem "$BOOT" modem capture-ok
+expect "$R/tmp/modem.out" 'rmtfs did not log the UIO map and QRTR publish' 'missing rmtfs publish log reason'
+$BB mv "$R/tmp/rmtfs.log.hidden" "$R/run/radio-bringup/rmtfs.log"
+$BB mv "$R/proc/628/maps" "$R/tmp/rmtfs.maps.hidden"
+$BB printf '' > "$R/proc/628/maps"
+reject_stage modem "$BOOT" modem capture-ok
+expect "$R/tmp/modem.out" 'rmtfs does not hold the mapped sharedmem UIO' 'missing UIO mapping reason'
+$BB mv "$R/tmp/rmtfs.maps.hidden" "$R/proc/628/maps"
+$BB printf 'PARTNAME=other\n' > "$R/sys/class/block/sdf3/uevent"
+reject_stage modem "$BOOT" modem capture-ok
+expect "$R/tmp/modem.out" 'modemst2 PARTNAME changed' 'wrong backing partition reason'
+[ ! -e "$R/run/radio-bringup/modem.attempted" ] || fail 'modem start armed with the wrong modemst backing'
+$BB printf 'PARTNAME=modemst2\n' > "$R/sys/class/block/sdf3/uevent"
+$BB rm "$R/tmp/modemst.img"
+reject_stage modem "$BOOT" modem capture-ok
+expect "$R/tmp/modem.out" 'modemst1 backing node is not readable' 'unreadable backing store reason'
+$BB printf '%512s\n' '' > "$R/tmp/modemst.img"
+$BB rm "$R/proc/628/root"
+$BB mkdir -p "$R/proc/628/root/dev/block" "$R/proc/628/root/boot" "$R/proc/628/root/run"
+$BB cp -a "$R/dev/uio0" "$R/proc/628/root/dev/uio0"
+$BB cp -a "$R/dev/block/sdf2" "$R/proc/628/root/dev/block/sdf2"
+$BB cp -a "$R/dev/block/sdf3" "$R/proc/628/root/dev/block/sdf3"
+$BB cp -a "$R/boot/modemst1" "$R/proc/628/root/boot/modemst1"
+$BB cp -a "$R/boot/modemst2" "$R/proc/628/root/boot/modemst2"
+$BB mv "$R/proc/628/exe" "$R/tmp/rmtfs.exe.hidden"
+$BB ln -s /bin/busybox.real "$R/proc/628/exe"
+reject_stage modem "$BOOT" modem capture-ok
+expect "$R/tmp/modem.out" 'expected exactly one pinned rmtfs process' 'non-pinned rmtfs reason'
+[ ! -e "$R/run/radio-bringup/modem.attempted" ] || fail 'modem start armed against a non-pinned rmtfs process'
+$BB rm "$R/proc/628/exe"
+$BB mv "$R/tmp/rmtfs.exe.hidden" "$R/proc/628/exe"
 $BB mv "$R/proc/358/root/vendor/firmware_mnt/image/modem.mdt" "$R/tmp/modem.mdt.hidden"
 reject_stage modem "$BOOT" modem capture-ok
 [ ! -e "$R/run/radio-bringup/modem.attempted" ] || fail 'modem start armed before firmware was reachable'
 $BB mv "$R/tmp/modem.mdt.hidden" "$R/proc/358/root/vendor/firmware_mnt/image/modem.mdt"
+$BB rm "$R/proc/628/root/boot/modemst1" "$R/proc/628/root/boot/modemst2" "$R/proc/628/root/dev/uio0" "$R/proc/628/root/dev/block/sdf2"
 run_stage modem capture-ok
+expect "$R/tmp/modem.out" 'restored backing links: uio0 sdf2 modemst1 modemst2' 'cutover-deleted rmtfs paths not restored'
+[ -c "$R/proc/628/root/dev/uio0" ] && [ -b "$R/proc/628/root/dev/block/sdf2" ] && [ -b "$R/proc/628/root/dev/block/sdf3" ] &&
+	[ "$($BB readlink "$R/proc/628/root/boot/modemst1")" = /dev/block/sdf2 ] &&
+	[ "$($BB readlink "$R/proc/628/root/boot/modemst2")" = /dev/block/sdf3 ] || fail 'rmtfs backing links not restored before start'
 [ -r "$R/vendor/firmware_mnt/image/modem.mdt" ] || fail 'modem firmware not bound before start'
 [ "$($BB cat "$R/sys/class/remoteproc/remoteproc2/state")" = running ] || fail 'modem not running'
 run_stage modem capture-ok
