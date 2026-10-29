@@ -50,7 +50,7 @@ appending one `sm7635-boot-marker` token and keeping `CONFIG_PANIC_TIMEOUT=-1`.
 Pinned vendor 6.1.78 has no `CONFIG_PSTORE_CONSOLE_SIZE` symbol, so the 2 MiB
 console reservation is the stock DT `ramoops_region` value checked by the
 verifier rather than a new Kconfig assignment. Only `Image`, `Image.gz` and
-`boot.img` differ from #18. See [INDEX.md](INDEX.md) and `records/` for the SHA set, measured
+`boot.img` differ from #18. See [INDEX.md](../INDEX.md) and [`records/`](../records/) for the SHA set, measured
 outcomes and the kernel-entry measurement contract.
 The #23 host-only control, `scripts/build-stock-kernel-control.sh`, copies the
 verified #21 `boot.img` and swaps in only the unmodified gzip kernel payload
@@ -66,7 +66,7 @@ predicts invalid chained metadata for every earlier debug `boot.img` and intact
 metadata for the #23 control, stock `boot_a`, `init_boot` and `vendor_boot`.
 `scripts/build-full-boot-footer.sh` then makes one full-partition-size copy of
 the #21 `boot.img` with an unsigned `avbtool` hash footer. This is a libavb
-model, not an ABL verdict; see [INDEX.md](INDEX.md) and `records/`.
+model, not an ABL verdict; see [INDEX.md](../INDEX.md) and [`records/`](../records/).
 The #32 host-only control, `scripts/build-stock-full-footer.sh`, starts from
 the verified #23 `boot-stock-kernel.img` and applies that same unsigned footer
 invocation. `scripts/verify-stock-full-footer.py`, run by
@@ -107,14 +107,14 @@ the #42 LZ4 HC-12 envelope with a debug cpio whose `/init` `insmod`s the 126-mod
 stock vendor closure from the unchanged `vendor_boot_a` ramdisk before the UDC
 wait. No `.ko` enters `init_boot`. `scripts/verify-init-boot-vendor-modules.py`,
 run by `scripts/verify-bootimg.sh`, fails closed with negative fixtures. It is a
-host control, not a boot result; see [INDEX.md](INDEX.md) and `records/`.
+host control, not a boot result; see [INDEX.md](../INDEX.md) and [`records/`](../records/).
 The #47 host-only control, `scripts/build-init-boot-self-recovering.sh`, keeps
 that closure, UDC wait and gadget path and adds only a pre-`insmod` loading
 marker, a `qcom-reboot-reason` bind check and an independent 150 s self-recovery
 timer that calls one static arm64 RESTART2 helper. No module, gadget function or
 network path is added. `scripts/verify-init-boot-self-recovering.py`, run by
 `scripts/verify-bootimg.sh`, fails closed with negative fixtures. It is a host
-control, not a boot result; see [INDEX.md](INDEX.md) and `records/`.
+control, not a boot result; see [INDEX.md](../INDEX.md) and [`records/`](../records/).
 The #49 host-only control, `scripts/build-init-boot-eud-softdep.sh`, keeps the
 #47 image and adds exactly one `insmod` of the stock `eud.ko`, placed after its
 `modules.dep` prerequisites and immediately before `dwc3-msm.ko`, plus read-only
@@ -124,7 +124,7 @@ escape, helper and gadget path are unchanged.
 rejects a missing or misordered EUD, an unresolved softdep target, a changed old
 module order, a removed timer, a bad envelope or tail and every repeated SHA
 including `8f8b7331`. It is a host control, not a boot result; see
-[INDEX.md](INDEX.md) and `records/`.
+[INDEX.md](../INDEX.md) and [`records/`](../records/).
 The #51 host-only control, `scripts/build-init-boot-peripheral-mode.sh`, starts
 from the frozen #49 init (`initramfs/init-49-eud-softdep`, so `88c93077…` still
 rebuilds) and adds exactly one step after the module phase: it finds
@@ -135,7 +135,7 @@ read-only `a600000.dwc3`, `devices_deferred` and `dmesg` logging. Modules, the
 150 s timer, helper, sshd and NCM/ECM path are unchanged.
 `scripts/verify-init-boot-peripheral-mode.py`, run by `scripts/verify-bootimg.sh`,
 fails closed with negative fixtures. It is a host control, not a boot result; see
-[INDEX.md](INDEX.md) and `records/`.
+[INDEX.md](../INDEX.md) and [`records/`](../records/).
 The #55 host-only attempt, `scripts/build-stock-config-baseline.sh`, builds the
 own `6.1.78` kernel from the read-only captured stock `config.gz`, disabling
 only the debug options enabled in the current own build but absent from stock
@@ -143,7 +143,7 @@ only the debug options enabled in the current own build but absent from stock
 pstore, panic and `sm7635-boot-marker` fragments. The resulting gzip payload
 (14,782,792 bytes) misses the signed-tail bound of 13,967,360 bytes, so the
 build fails closed, packages no image and records no control SHA. It is a
-negative host result, not a boot result; see [INDEX.md](INDEX.md) and `records/`.
+negative host result, not a boot result; see [INDEX.md](../INDEX.md) and [`records/`](../records/).
 The #71 host-only control, `scripts/build-init-boot-ipci-defer.sh`, keeps the
 measured #69 init (`9291c369…`, never reflash) and adds exactly one bounded bind
 gate before the final `qca_cld3_qca6750.ko` insmod: run 28 showed
@@ -156,7 +156,7 @@ including the 21-module closure, mounts, 150 s timer and USB/SSH path, is
 unchanged. `scripts/verify-init-boot-ipci-defer.py` is wired into
 `scripts/verify-bootimg.sh` with fail-closed negative fixtures, including a
 removed, duplicated, retargeted or unbounded gate and a repeated `9291c369` SHA.
-This is a host control, not a boot result; see [INDEX.md](INDEX.md) and `records/`.
+This is a host control, not a boot result; see [INDEX.md](../INDEX.md) and [`records/`](../records/).
 The #69 host-only control, `scripts/build-init-boot-wlan-rfkill.sh`, fixes the
 measured run-27 `vendor_a` and `system_dlkm_a` mount failures: the stock kernel's
 `loop.max_part=7` means loop device minors cannot equal loop indexes. It derives
@@ -170,7 +170,7 @@ mount, firmware, module and wlan results. The frozen run-24 init, timer and
 stock image envelope are otherwise unchanged. `scripts/verify-init-boot-wlan-rfkill.py`
 is wired into `scripts/verify-bootimg.sh` with fail-closed negative fixtures,
 including absent rfkill, guessed loop minors and a repeated `2faab7e2` SHA.
-This is a host control, not a boot result; see [INDEX.md](INDEX.md) and `records/`.
+This is a host control, not a boot result; see [INDEX.md](../INDEX.md) and [`records/`](../records/).
 The #67 host-only control, `scripts/build-init-boot-wlan-closure.sh`, starts
 from the frozen run-24 #53 init and adds exactly one `wlan-init` phase before
 `console ready`: it checks `/dev/block/sda6` against the measured super size and
@@ -185,7 +185,7 @@ WLAN closure (the 20-module `vendor_dlkm` closure of `qcom_q6v5_pas`,
 no `.ko` enters `init_boot`. `scripts/verify-init-boot-wlan-closure.py`, run by
 `scripts/verify-bootimg.sh`, fails closed with negative fixtures and rejects
 every repeated SHA including `995aaca3`. It is a host control, not a boot
-result; see [INDEX.md](INDEX.md) and `records/`.
+result; see [INDEX.md](../INDEX.md) and [`records/`](../records/).
 The #53 host-only control, `scripts/build-init-boot-static-address.sh`, starts
 from the frozen #51 init (`initramfs/init-51-peripheral-mode`, so `9f89fe8d…`
 still rebuilds) and stops discarding the two `ip link set` and two `ip addr add`
@@ -199,7 +199,7 @@ rejects a missing or duplicated address log, a discarded address result, a
 removed, moved or lengthened timer, a changed module order, a second role write,
 a changed gadget function, a planted `.ko`, a bad envelope or tail and every
 repeated SHA including `9f89fe8d`. It is a host control, not a boot result; see
-[INDEX.md](INDEX.md) and `records/`.
+[INDEX.md](../INDEX.md) and [`records/`](../records/).
 The #40 host-only control, `scripts/build-init-boot-debug-ramdisk.sh`, copies
 the verified stock slot-A `init_boot_a` and replaces only its generic ramdisk
 with the existing verified debug gzip newc cpio, updating the ramdisk-size
