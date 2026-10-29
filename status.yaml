@@ -3,8 +3,8 @@
 device: nothing-asteroids
 updated: 2026-10-29
 next_question: >-
-  Does the userdata self-stage repeat after one clean guest reboot, with
-  host-owned guard ack accepted and WLAN autoconnect measured?
+  Does the self-stage from a userdata ext4 image repeat after one guest
+  reboot and bring WLAN back without a host push (single variable: staging source)?
 active_issue: omnipha/linux-sm7635#176
 subsystems:
   boot:
