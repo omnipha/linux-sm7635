@@ -3,9 +3,9 @@
 device: nothing-asteroids
 updated: 2026-10-29
 next_question: >-
-  Does the host-owned guard ack arrive and get accepted in the next
-  coordinator-held self-stage session, after run 61 timed out at that step?
-active_issue: omnipha/linux-sm7635#173
+  Does the self-stage from a userdata ext4 image repeat after one guest
+  reboot and bring WLAN back without a host push (single variable: staging source)?
+active_issue: omnipha/linux-sm7635#176
 subsystems:
   boot:
     state: partial        # RAM postmarketOS PID 1 on stock 6.1.84 kernel in a held session; no cold boot, no install

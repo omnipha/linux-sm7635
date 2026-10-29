@@ -2,7 +2,9 @@
 """Record hygiene for work repos: append-only records, lean live files, generated map.
 
 Layout of a work repo root:
-  records/YYYY-MM-DD-HHMM-<slug>.md   one file per event, immutable once merged
+  records/YYYY-MM-DD-HHMMSS-<slug>.md  one new event, real UTC, immutable once merged
+  records/YYYY-MM-DD-NNNN-<slug>.md    legacy archive id, not a claimed clock time
+  devices/<codename>/                  a later device in the same repo; same files, own records
   records/index-YYYY-MM.md            generated, one per month
   INDEX.md                            generated map (latest records, subsystems, months)
   status.yaml, PLAN.md, README.md     live files, hard line limits, never hold protocols
@@ -10,8 +12,9 @@ Layout of a work repo root:
 Commands:
   records.py check <root> [--base <git-ref>]   exit 1 on any violation
   records.py index <root> [--write]            print generated files, or write them
-  records.py new <root> --issue I --subsystem S --result R --slug SLUG [--run N]
+  records.py new <root> --issue I --subsystem S --result R --slug SLUG [--run N] [--device D]
                                                create a record skeleton named with the current UTC time
+  records.py init <root> --device D            start devices/<D> from work-repo-templates
 """
 
 import datetime
@@ -59,7 +62,7 @@ def load_records(root):
             continue
         match = NAME.fullmatch(path.name)
         if not path.is_file() or not match:
-            errors.append(f"records/{path.name}: name must be YYYY-MM-DD-HHMM-<slug>.md")
+            errors.append(f"records/{path.name}: name must be YYYY-MM-DD-HHMMSS-<slug>.md or a legacy NNNN archive id")
             continue
         text = path.read_text(encoding="utf-8")
         try:
@@ -83,7 +86,12 @@ def load_records(root):
         lines = text.count("\n") + 1
         if lines > MAX_RECORD_LINES:
             errors.append(f"records/{path.name}: {lines} lines exceeds {MAX_RECORD_LINES}; split it")
-        heading = next((l[2:].strip() for l in body.splitlines() if l.startswith("# ")), match.group(3))
+        heading = match.group(3)
+        for line in body.splitlines():
+            found = re.match(r"^#{1,3} (.+)$", line)
+            if found:
+                heading = found.group(1).strip()
+                break
         records.append({"name": path.name, "month": front["date"][:7], "title": heading, **front})
     records.sort(key=lambda r: r["name"], reverse=True)
     return records, errors
@@ -140,7 +148,21 @@ def immutability_errors(root, base):
     return errors
 
 
-LINK = re.compile(r"records/\d{4}-\d{2}-\d{2}-\d{4}-[a-z0-9-]+\.md")
+LINK = re.compile(r"records/\d{4}-\d{2}-\d{2}-(?:\d{4}|\d{6})-[a-z0-9-]+\.md")
+DEVICE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)+$")
+
+
+def workspaces(root):
+    """Root stays the first device. Later phones live in devices/<codename>/."""
+    root = Path(root)
+    found = []
+    if (root / "records").is_dir() or (root / "status.yaml").is_file() or not (root / "devices").is_dir():
+        found.append(root)
+    devices = root / "devices"
+    if devices.is_dir():
+        found += [path for path in sorted(devices.iterdir())
+                  if path.is_dir() and DEVICE.fullmatch(path.name) and (path / "status.yaml").is_file()]
+    return found
 
 
 def link_errors(root):
@@ -157,14 +179,44 @@ def link_errors(root):
     return errors
 
 
-def new_record(root, issue, subsystem, result, slug, run=None, now=None):
+def workspace_for(root, device):
+    root = Path(root)
+    if not device:
+        return root
+    if not DEVICE.fullmatch(device):
+        raise ValueError("invalid device codename")
+    path = root / "devices" / device
+    if not (path / "status.yaml").is_file():
+        raise ValueError(f"unknown device: {device}; run records.py init first")
+    return path
+
+
+def init_device(root, device):
+    if not DEVICE.fullmatch(device):
+        raise ValueError("invalid device codename")
+    root = Path(root)
+    target = root / "devices" / device
+    if target.exists():
+        raise ValueError(f"device already exists: {device}")
+    template = Path(__file__).resolve().parents[1] / "work-repo-templates"
+    target.mkdir(parents=True)
+    (target / "records").mkdir()
+    for name in ("status.yaml", "PLAN.md"):
+        (target / name).write_text((template / name).read_text(encoding="utf-8").replace(
+            "<vendor>-<codename>", device), encoding="utf-8")
+    (target / "records" / ".gitkeep").touch()
+    main(["index", str(root), "--write"])
+    return target
+
+
+def new_record(root, issue, subsystem, result, slug, run=None, now=None, device=None):
     if result not in RESULTS:
         raise ValueError(f"result must be one of {', '.join(RESULTS)}")
     if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,80}", slug):
         raise ValueError("slug must be lowercase a-z0-9 and dashes")
     now = now or datetime.datetime.now(datetime.timezone.utc)
     name = f"{now:%Y-%m-%d-%H%M%S}-{slug}.md"
-    path = Path(root) / "records" / name
+    path = workspace_for(root, device) / "records" / name
     if path.exists():
         raise ValueError(f"record exists: {name}; write a new one with another slug")
     path.parent.mkdir(exist_ok=True)
@@ -177,24 +229,30 @@ def new_record(root, issue, subsystem, result, slug, run=None, now=None):
 def check(root, base=None):
     root = Path(root)
     errors = []
-    for name, limit in LIVE_LIMITS.items():
-        path = root / name
-        if path.is_file():
-            lines = path.read_text(encoding="utf-8").count("\n") + 1
-            if lines > limit:
-                errors.append(f"{name}: {lines} lines exceeds {limit}; move protocol content into a new record")
-    _, record_errors = load_records(root)
-    errors += record_errors
-    if not record_errors:
-        expected = generate(root)
-        for rel, content in expected.items():
-            path = root / rel
-            if not path.is_file() or path.read_text(encoding="utf-8") != content:
-                errors.append(f"{rel}: stale; run scripts/records.py index {root} --write")
-        stale = [p for p in (root / "records").glob("index-*.md") if f"records/{p.name}" not in expected] \
-            if (root / "records").is_dir() else []
-        errors += [f"records/{p.name}: stale index without records" for p in stale]
-    errors += link_errors(root)
+    for workspace in workspaces(root):
+        label = "." if workspace == root else workspace.relative_to(root).as_posix()
+        for name, limit in LIVE_LIMITS.items():
+            if name == "README.md" and workspace != root:
+                continue
+            path = workspace / name
+            if path.is_file():
+                lines = path.read_text(encoding="utf-8").count("\n") + 1
+                if lines > limit:
+                    shown = name if label == "." else f"{label}/{name}"
+                    errors.append(f"{shown}: {lines} lines exceeds {limit}; move protocol content into a new record")
+        _, record_errors = load_records(workspace)
+        errors += [error if label == "." else f"{label}/{error}" for error in record_errors]
+        if not record_errors:
+            expected = generate(workspace)
+            for rel, content in expected.items():
+                path = workspace / rel
+                shown = rel if label == "." else f"{label}/{rel}"
+                if not path.is_file() or path.read_text(encoding="utf-8") != content:
+                    errors.append(f"{shown}: stale; run scripts/records.py index {root} --write")
+            records = workspace / "records"
+            stale = [p for p in records.glob("index-*.md") if f"records/{p.name}" not in expected] if records.is_dir() else []
+            errors += [(f"records/{p.name}" if label == "." else f"{label}/records/{p.name}") + ": stale index without records" for p in stale]
+        errors += [error if label == "." else f"{label}/{error}" for error in link_errors(workspace)]
     if base:
         errors += immutability_errors(root, base)
     return errors
@@ -202,7 +260,7 @@ def check(root, base=None):
 
 def main(argv=None):
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=("check", "index", "new"))
+    parser.add_argument("action", choices=("check", "index", "new", "init"))
     parser.add_argument("root")
     parser.add_argument("--base")
     parser.add_argument("--write", action="store_true")
@@ -211,12 +269,22 @@ def main(argv=None):
     parser.add_argument("--result")
     parser.add_argument("--slug")
     parser.add_argument("--run")
+    parser.add_argument("--device")
     args = parser.parse_args(argv)
+    if args.action == "init":
+        try:
+            if not args.device:
+                raise ValueError("init needs --device")
+            print(init_device(args.root, args.device))
+        except ValueError as error:
+            print(error, file=sys.stderr)
+            return 1
+        return 0
     if args.action == "new":
         try:
             if not (args.issue and args.subsystem and args.result and args.slug):
                 raise ValueError("new needs --issue --subsystem --result --slug")
-            print(new_record(args.root, args.issue, args.subsystem, args.result, args.slug, args.run))
+            print(new_record(args.root, args.issue, args.subsystem, args.result, args.slug, args.run, device=args.device))
         except ValueError as error:
             print(error, file=sys.stderr)
             return 1
@@ -226,18 +294,20 @@ def main(argv=None):
         for error in errors:
             print(error, file=sys.stderr)
         return 1 if errors else 0
-    files = generate(args.root)
-    if not args.write:
-        for rel, content in files.items():
-            print(f"== {rel}\n{content}")
-        return 0
     root = Path(args.root)
-    (root / "records").mkdir(exist_ok=True)
-    for stale in (root / "records").glob("index-*.md"):
-        if f"records/{stale.name}" not in files:
-            stale.unlink()
-    for rel, content in files.items():
-        (root / rel).write_text(content, encoding="utf-8")
+    grouped = {workspace: generate(workspace) for workspace in workspaces(root)}
+    if not args.write:
+        for workspace, files in grouped.items():
+            for rel, content in files.items():
+                print(f"== {workspace.relative_to(root) / rel}\n{content}")
+        return 0
+    for workspace, files in grouped.items():
+        (workspace / "records").mkdir(exist_ok=True)
+        for stale in (workspace / "records").glob("index-*.md"):
+            if f"records/{stale.name}" not in files:
+                stale.unlink()
+        for rel, content in files.items():
+            (workspace / rel).write_text(content, encoding="utf-8")
     return 0
 
 
