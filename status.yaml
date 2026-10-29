@@ -3,16 +3,17 @@
 device: nothing-asteroids
 updated: 2026-10-29
 next_question: >-
-  Does the self-stage from a userdata ext4 image repeat after one guest
-  reboot and bring WLAN back without a host push (single variable: staging source)?
+  Can the host create the root-only /run/keep hold over diagnostic :22 inside
+  the 145 s window after a guest reboot, so the userdata self-stage repeats and
+  WLAN autoconnect can be measured (host-side fix, no new image)?
 active_issue: omnipha/linux-sm7635#176
 subsystems:
   boot:
-    state: partial        # RAM postmarketOS PID 1 on stock 6.1.84 kernel in a held session; no cold boot, no install
-    record: records/2026-10-28-2284-run-52-measured-postmarketos-pid-1-cutover-and-u.md
+    state: partial        # RAM postmarketOS PID 1 on stock 6.1.84 kernel; run 62 second boot stops at the missing hold before self-stage
+    record: records/2026-10-29-165533-run-62-second-boot-hold-and-self-stage-blocker.md
   ssh:
-    state: partial        # key-only USB SSH measured in held sessions, incl. post-cutover :2222
-    record: records/2026-10-28-2284-run-52-measured-postmarketos-pid-1-cutover-and-u.md
+    state: partial        # key-only USB SSH incl. post-cutover :2222 and diagnostic :22 return after a guest reboot (run 62)
+    record: records/2026-10-29-165533-run-62-second-boot-hold-and-self-stage-blocker.md
   wlan:
     state: partial        # association, DHCP, gateway, DNS and external reachability measured in-session (runs 56/57); not persistent, not after reboot
     record: records/2026-10-29-2294-run-57-measured-openrc-wpa-supplicant-and-networ.md
@@ -41,4 +42,5 @@ attempted_shas:       # cold-start index only; the flash gate is device-op statu
   - fef03008        # init_boot, runs 52-57
 notes: >-
   All values refer to coordinator-held, RAM-backed sessions on the stock
-  kernel, rolled back afterwards. Not an Omnipha image, not a release.
+  kernel. Run 62 ended in fastboot after its one guest reboot; the coordinator
+  owns the stock rollback. Not an Omnipha image, not a release.
