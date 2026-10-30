@@ -13,11 +13,11 @@ One active step, one active issue. Later steps are not pre-created issues.
 
 ## Active step
 
-- Step: #204 host repair is verified. The pinned root contract is in one
-  digest-checked vendor_boot_b bundle, and init launches it without the old
-  embedded bundle. The persistent userdata root is unchanged.
-- Issue: omnipha/linux-sm7635#197
-- Next: one physical attempt of the distinct pair. Do not reflash ef476d8c/aa8da109.
+- Step: #204 envelope repair is blocked. The reconstructed bundle omits the
+  root contract, and adding the pinned script exceeds the fixed LZ4 frame by
+  597 bytes. No member is dropped and no replacement image is published.
+- Issue: omnipha/linux-sm7635#204
+- Next: owner decision on an approved envelope change. Do not reflash ef476d8c/aa8da109.
 
 ## Next (ordered, not issues yet)
 
@@ -33,7 +33,8 @@ Reopen either only when a measurement shows it blocks the active step.
 
 ## Done (pointers, newest first)
 
-- Host #204: pinned root contract moved to digest-checked vendor_boot_b -> records/2026-10-30-183749-root-contract-vendor-boot-carrier.md
+- Host #204: pinned raw contract exceeds the fixed init_boot envelope by 597 bytes -> records/2026-10-30-184802-init-boot-root-contract-envelope-overflow.md
+- Host #204: rejected carrier attempt moved the bundle to vendor_boot_b -> records/2026-10-30-183749-root-contract-vendor-boot-carrier.md
 - Run 67: persistent-root boot reached diagnostic SSH but not self-stage -> records/2026-10-30-170925-run-67-persistent-root-self-stage-absent.md
 - Host #197: deterministic persistent ext4 root and distinct direct-root init_boot verified -> records/2026-10-30-162851-persistent-userdata-root-pair.md
 - Host-only #199: measured-size fail-closed root-contract maximum and fixtures -> records/2026-10-30-150709-root-contract-measured-userdata-maximum.md

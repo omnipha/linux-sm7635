@@ -2,6 +2,7 @@
 
 ## Latest 10
 
+- [2026-10-30-184802-init-boot-root-contract-envelope-overflow](records/2026-10-30-184802-init-boot-root-contract-envelope-overflow.md) | boot | refuted | omnipha/linux-sm7635#204 | Init_boot root-contract envelope overflow
 - [2026-10-30-183749-root-contract-vendor-boot-carrier](records/2026-10-30-183749-root-contract-vendor-boot-carrier.md) | boot | confirmed | omnipha/linux-sm7635#204 | Root contract on vendor_boot_b
 - [2026-10-30-170925-run-67-persistent-root-self-stage-absent](records/2026-10-30-170925-run-67-persistent-root-self-stage-absent.md) | boot run 67 | refuted | omnipha/linux-sm7635#197 | Run 67: persistent-root self-stage did not start
 - [2026-10-30-162851-persistent-userdata-root-pair](records/2026-10-30-162851-persistent-userdata-root-pair.md) | userspace | confirmed | omnipha/linux-sm7635#197 | Persistent userdata root pair
@@ -11,14 +12,13 @@
 - [2026-10-30-102155-host-root-type-contract-fixture-and-foreign-path-block](records/2026-10-30-102155-host-root-type-contract-fixture-and-foreign-path-block.md) | userspace | inconclusive | linux-sm7635#194 | Host root-type contract fixture and foreign-path block
 - [2026-10-30-084138-run-65-slot-a-rescue-close](records/2026-10-30-084138-run-65-slot-a-rescue-close.md) | boot run 65 | confirmed | omnipha/linux-sm7635#191 | Run 65: session close and slot-A rescue proof
 - [2026-10-30-081343-run-65-bootloader-start-self-stage](records/2026-10-30-081343-run-65-bootloader-start-self-stage.md) | boot run 65 | confirmed | omnipha/linux-sm7635#191 | Run 65: bootloader-start self-stage on the installed run-64 chain (#191)
-- [2026-10-30-071025-run-64-second-boot-hold-and-self-stage](records/2026-10-30-071025-run-64-second-boot-hold-and-self-stage.md) | boot run 64 | confirmed | omnipha/linux-sm7635#184 | Run 64: host reboot-hold sets `/run/keep` on `:22` inside 145 s and repeats `userdata` self-stage + postmarketOS PID 1 (#184)
 
 ## By subsystem (latest 3, total in brackets)
 
-### boot [49]
+### boot [50]
+- [2026-10-30-184802-init-boot-root-contract-envelope-overflow](records/2026-10-30-184802-init-boot-root-contract-envelope-overflow.md) | boot | refuted | omnipha/linux-sm7635#204 | Init_boot root-contract envelope overflow
 - [2026-10-30-183749-root-contract-vendor-boot-carrier](records/2026-10-30-183749-root-contract-vendor-boot-carrier.md) | boot | confirmed | omnipha/linux-sm7635#204 | Root contract on vendor_boot_b
 - [2026-10-30-170925-run-67-persistent-root-self-stage-absent](records/2026-10-30-170925-run-67-persistent-root-self-stage-absent.md) | boot run 67 | refuted | omnipha/linux-sm7635#197 | Run 67: persistent-root self-stage did not start
-- [2026-10-30-084138-run-65-slot-a-rescue-close](records/2026-10-30-084138-run-65-slot-a-rescue-close.md) | boot run 65 | confirmed | omnipha/linux-sm7635#191 | Run 65: session close and slot-A rescue proof
 
 ### modem [12]
 - [2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the](records/2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the.md) | modem run 55 | confirmed | omnipha/linux-sm7635#155 | Run-55 measured post-cutover modem hold past the EFS request (#155, 2026-10-29)
@@ -42,4 +42,4 @@
 
 ## By month
 
-- [2026-10](records/index-2026-10.md) [134]
+- [2026-10](records/index-2026-10.md) [135]
