@@ -3,19 +3,19 @@
 device: nothing-asteroids
 updated: 2026-10-30
 next_question: >-
-  Does one guest reboot return the same persistent root and WLAN without a
-  host push?
+  Does one bootloader start return the same persistent root, guard, and WLAN
+  without a host push?
 active_issue: omnipha/linux-sm7635#204
 subsystems:
   boot:
     state: partial
-    record: records/2026-10-30-195754-run-69-persistent-root-first-boot.md
+    record: records/2026-10-30-203515-run-69-second-boot-guard-wlan.md
   ssh:
     state: partial
-    record: records/2026-10-30-195754-run-69-persistent-root-first-boot.md
+    record: records/2026-10-30-203515-run-69-second-boot-guard-wlan.md
   wlan:
     state: partial
-    record: records/2026-10-30-195754-run-69-persistent-root-first-boot.md
+    record: records/2026-10-30-203515-run-69-second-boot-guard-wlan.md
   modem:
     state: partial        # stays running past the EFS request after PID-1 cutover (run 55); no voice/SIM/data claim
     record: records/2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the.md
@@ -40,6 +40,6 @@ attempted_shas:       # cold-start index only; the flash gate is device-op statu
   - fcb0ed91
   - fef03008        # init_boot, runs 52-57
 notes: >-
-  Run 69 reached persistent PID 1 and first-boot WLAN. Guest reboot and
-  bootloader-start persistence remain unmeasured. Do not repeat
+  Run 69 measured first boot and guest-reboot persistence with WLAN. One
+  bootloader start and slot-A rescue proof remain. Do not repeat
   ef476d8c/aa8da109.
