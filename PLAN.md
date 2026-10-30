@@ -13,10 +13,13 @@ One active step, one active issue. Later steps are not pre-created issues.
 
 ## Active step
 
-- Step: #197 cold start of the measured persistent root without USB host
-  signals. #204 is closed.
+- Step: #197 one cold start of the unchanged run-69 chain without USB host
+  signals stopped before boot at result (d): VMWARE006 has no host-free
+  power-off/power-on path. No warm fastboot-reboot substitute.
 - Issue: omnipha/linux-sm7635#197
-- Next: one cold start that owns /run/keep, guard, radio, and SSH. Do not reflash ef476d8c.
+- Next: resolve the measured cold-start power path (operator rule, independent
+  watchdog/power carrier or switchable USB). Then exactly one passive cold start;
+  no new image SHA merely to bypass this host boundary.
 
 ## Next (ordered, not issues yet)
 
@@ -31,6 +34,8 @@ One active step, one active issue. Later steps are not pre-created issues.
 Reopen either only when a measurement shows it blocks the active step.
 
 ## Done (pointers, newest first)
+
+- Run 70: no host-free cold-start power path; result (d), no boot or partition write -> records/2026-10-30-212551-run-70-coldstart-host-free-power-boundary.md
 
 - Run 69: bootloader start returned diagnostic Linux and exact slot-A rescue hashes -> records/2026-10-30-204752-run-69-bootloader-start-rescue.md
 - Run 69: guest reboot reached accepted guard, persistent PID 1 and WLAN -> records/2026-10-30-203515-run-69-second-boot-guard-wlan.md
