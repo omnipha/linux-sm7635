@@ -3,13 +3,12 @@
 device: nothing-asteroids
 updated: 2026-10-30
 next_question: >-
-  Can a cold start own the persistent root, guard, and radio without USB host
-  signals?
-active_issue: omnipha/linux-sm7635#197
+  Which owner-selected power path can cold-start the unchanged installed chain?
+active_issue: omnipha/linux-sm7635#213
 subsystems:
   boot:
-    state: partial        # run 70 result (d): no host-free cold-start power path, cold boot unmeasured
-    record: records/2026-10-30-212551-run-70-coldstart-host-free-power-boundary.md
+    state: partial
+    record: records/2026-10-30-222652-run-71-device-native-rtc-poweroff-coldstart.md
   ssh:
     state: partial
     record: records/2026-10-30-203515-run-69-second-boot-guard-wlan.md
@@ -40,10 +39,9 @@ attempted_shas:       # cold-start index only; the flash gate is device-op statu
   - fcb0ed91
   - fef03008        # init_boot, runs 52-57
 notes: >-
-  Run 70 stopped before boot at result (d): VMWARE006 has no host-free
-  power-off/power-on path for a true cold start; no warm fastboot-reboot
-  substitute was used and no partition was written. Phone stays in fastboot
-  with the unchanged run-69 chain; run-69 on-device rescue hashes remain
-  exact and the run-70 host backup manifests verify. Next: a measured
-  cold-start power path (operator rule, independent watchdog/power carrier
-  or switchable USB), then one passive cold start.
+  Run 71 result (d): the unchanged run-69 chain accepted one 180-second
+  PMIC RTC alarm and one normal poweroff, but the same diagnostic boot stayed
+  alive and no cold start or pstore stop line occurred. No image, script,
+  guard, or partition changed; slot-A rescue hashes and installed image hashes
+  remained exact, and the session closed in fastboot. Next: owner fallback #213
+  chooses the measured cold-start power path; do not repeat this mechanism.

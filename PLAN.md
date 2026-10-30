@@ -13,13 +13,11 @@ One active step, one active issue. Later steps are not pre-created issues.
 
 ## Active step
 
-- Step: #197 one cold start of the unchanged run-69 chain without USB host
-  signals stopped before boot at result (d): VMWARE006 has no host-free
-  power-off/power-on path. No warm fastboot-reboot substitute.
-- Issue: omnipha/linux-sm7635#197
-- Next: resolve the measured cold-start power path (operator rule, independent
-  watchdog/power carrier or switchable USB). Then exactly one passive cold start;
-  no new image SHA merely to bypass this host boundary.
+- Step: owner fallback after #214 measured no device-native RTC cold start.
+- Issue: omnipha/linux-sm7635#213
+- Next: owner selects one cold-start power path (operator button, independent
+  watchdog/power carrier, switchable USB, or skip). Then measure exactly one
+  passive cold start; do not repeat the run-71 mechanism.
 
 ## Next (ordered, not issues yet)
 
@@ -35,6 +33,7 @@ Reopen either only when a measurement shows it blocks the active step.
 
 ## Done (pointers, newest first)
 
+- Run 71: device-native RTC alarm accepted but no power-off or cold start; result (d) -> records/2026-10-30-222652-run-71-device-native-rtc-poweroff-coldstart.md
 - Run 70: no host-free cold-start power path; result (d), no boot or partition write -> records/2026-10-30-212551-run-70-coldstart-host-free-power-boundary.md
 
 - Run 69: bootloader start returned diagnostic Linux and exact slot-A rescue hashes -> records/2026-10-30-204752-run-69-bootloader-start-rescue.md
