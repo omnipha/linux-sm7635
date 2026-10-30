@@ -221,10 +221,10 @@ def members(allow_stub):
     return found, private, True
 
 
-def bundle_bytes(found, private):
+def bundle_bytes(found, private, names=PUBLIC):
     raw = io.BytesIO()
     with tarfile.open(fileobj=raw, mode="w", format=tarfile.USTAR_FORMAT) as archive:
-        for name in sorted((*PUBLIC, PRIVATE)):
+        for name in sorted((*names, PRIVATE)):
             data = private if name == PRIVATE else found[name]
             info = tarfile.TarInfo(name)
             info.size = len(data)
@@ -241,13 +241,13 @@ def bundle_bytes(found, private):
     return packed
 
 
-def checked_bundle(blob, found, private):
+def checked_bundle(blob, found, private, names=PUBLIC):
     require(blob.startswith(b"\xfd7zXZ\x00"), BUNDLE_MSG)
     raw = lzma.decompress(blob, format=lzma.FORMAT_XZ)
-    require(bundle_bytes(found, private) == blob, BUNDLE_MSG)
+    require(bundle_bytes(found, private, names) == blob, BUNDLE_MSG)
     with tarfile.open(fileobj=io.BytesIO(raw), mode="r:") as archive:
         infos = archive.getmembers()
-        require([item.name for item in infos] == sorted((*PUBLIC, PRIVATE)), BUNDLE_MSG)
+        require([item.name for item in infos] == sorted((*names, PRIVATE)), BUNDLE_MSG)
         for item in infos:
             data = archive.extractfile(item).read()
             want = private if item.name == PRIVATE else found[item.name]

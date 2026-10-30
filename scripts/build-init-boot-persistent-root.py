@@ -13,6 +13,14 @@ import tarfile
 HERE = pathlib.Path(__file__).parent
 PROFILE = pathlib.Path.home() / ".omnipha" / "sm7635" / "wpa_supplicant.conf"
 BASE_IMAGE = pathlib.Path.home() / "sm7635-build" / "out" / "init_boot-mindstorms-wlan.img"
+CARRIER = "vendor_boot_b"
+CARRIER_SIZE = 100663296
+CARRIER_SHA = "237259404601045205715a71b88016744c73729d4513349cfe90c754b0dc1253"
+CARRIER_PREFIX = 18256512
+CARRIER_HEADER = 18870272
+CARRIER_OFFSET = 18874368
+CARRIER_MARKER = b"OMNIPHA_VENDOR_BOOT_B_ROOT_CONTRACT_V1"
+CARRIER_MSG = "carrier is not the pinned vendor_boot_b root-contract image"
 RUN66 = "5b5a60d4ceaf1551217874136c0de9a26f6b3ec29f9f586e2b7cdf0d728466d6"
 RUN66_LEASE = "1fbf50af4658eee252a3fb6b35d32c758106b89d1757d5b9bf10cc0554e03f56"
 BASE_MSG = "base is not the installed run-66 init_boot"
@@ -309,19 +317,92 @@ def pins(found):
     return "\n".join(lines).encode()
 
 
-def hook(found):
+def hook(found, blob):
     body = builder.HOOK.replace(b"@PINS@", pins(found), 1)
+    body = body.replace(b'$BB mkdir -m 700 "$D" || exit 0\n',
+                        b'$BB mkdir -m 700 "$D" || exit 0\n' + carrier_reader(blob), 1)
     body = body.replace(
         b'$BB mv "$D/pmos-session-stage.sh" /run/pmos-session-stage.sh || exit 0\n',
         b'$BB mv "$D/pmos-root-contract.sh" /run/pmos-root-contract.sh || exit 0\n'
         b'$BB mv "$D/pmos-session-stage.sh" /run/pmos-session-stage.sh || exit 0\n', 1)
     require(body.count(b"@PINS@") == 0 and body.count(b"pmos-root-contract.sh") == 3 and
             body.count(b"/run/keep") == 0 and body.count(b"sleep 150") == 0 and
-            body.count(b"151.01") == 0, INIT_MSG)
+            body.count(b"151.01") == 0 and body.count(carrier_reader(blob)) == 1, INIT_MSG)
     return body
 
 
-def expected_init(original, found):
+def carrier_bundle(found, private):
+    names = (*builder.PUBLIC, "pmos-root-contract.sh")
+    public = {name: found[name] for name in names}
+    return builder.checked_bundle(builder.bundle_bytes(public, private, names), public, private, names)
+
+
+def carrier_header(blob):
+    text = (CARRIER_MARKER + b"\nsize=" + str(len(blob)).encode() + b"\nsha256=" +
+            hashlib.sha256(blob).hexdigest().encode() + b"\n")
+    require(len(text) <= 4096, CARRIER_MSG)
+    return text + bytes(4096 - len(text))
+
+
+def carrier_image(stock, blob):
+    require(len(stock) == CARRIER_SIZE and hashlib.sha256(stock).hexdigest() == CARRIER_SHA and
+            stock[:8] == b"VNDRBOOT" and stock[18255872:18255876] == b"AVB0" and
+            stock[-64:-60] == b"AVBf" and not any(stock[CARRIER_PREFIX:-64]) and
+            CARRIER_PREFIX <= CARRIER_HEADER and CARRIER_HEADER + 4096 == CARRIER_OFFSET and
+            CARRIER_OFFSET + len(blob) <= CARRIER_SIZE - 64, CARRIER_MSG)
+    result = bytearray(stock)
+    result[CARRIER_HEADER:CARRIER_OFFSET] = carrier_header(blob)
+    result[CARRIER_OFFSET:CARRIER_OFFSET + len(blob)] = blob
+    return bytes(result)
+
+
+def carrier_reader(blob):
+    size = len(blob)
+    header_sha = hashlib.sha256(carrier_header(blob)).hexdigest()
+    bundle_sha = hashlib.sha256(blob).hexdigest()
+    return f'''part=
+part_count=0
+for uevent in /sys/class/block/*/uevent; do
+    [ -r "$uevent" ] || continue
+    [ "$($BB sed -n "s/^PARTNAME=//p" "$uevent" 2>/dev/null)" = {CARRIER} ] || continue
+    part=${{uevent%/uevent}}
+    part=${{part##*/}}
+    part_count=$((part_count + 1))
+done
+[ "$part_count" = 1 ] && [ -n "$part" ] || exit 0
+    case "$part" in *[!A-Za-z0-9_-]*) exit 0 ;; esac
+devnum=$($BB cat "/sys/class/block/$part/dev" 2>/dev/null) || exit 0
+    case "$devnum" in [0-9]*:[0-9]*) : ;; *) exit 0 ;; esac
+major=${{devnum%%:*}}
+minor=${{devnum##*:}}
+    case "$major:$minor" in *[!0-9:]*|0:*|*:|:*) exit 0 ;; esac
+$BB mkdir -p /dev/block || exit 0
+node=/dev/block/$part
+if [ ! -b "$node" ]; then
+    [ ! -e "$node" ] && [ ! -L "$node" ] || exit 0
+    $BB mknod -m 0400 "$node" b "$major" "$minor" || exit 0
+fi
+    [ ! -L "$node" ] && [ "$($BB stat -c "%t:%T" "$node")" = "$($BB printf "%x:%x" "$major" "$minor")" ] || exit 0
+[ "$($BB timeout -k 1 2 $BB blockdev --getsize64 "$node" 2>/dev/null)" = {CARRIER_SIZE} ] || exit 0
+hdr=/run/{CARRIER}.header
+[ ! -e "$hdr" ] && [ ! -L "$hdr" ] || exit 0
+$BB timeout -k 1 5 $BB dd if="$node" of="$hdr" bs=4096 skip={CARRIER_HEADER // 4096} count=1 2>/dev/null || exit 0
+    [ "$($BB stat -c "%u:%a:%s" "$hdr")" = 0:600:4096 ] &&
+    [ "$($BB sha256sum "$hdr" | $BB cut -d " " -f 1)" = {header_sha} ] || exit 0
+$BB rm -f "$hdr" || exit 0
+[ ! -e "$B" ] && [ ! -L "$B" ] || exit 0
+$BB timeout -k 1 5 $BB dd if="$node" of="$B" bs=4096 skip={CARRIER_OFFSET // 4096} count={size // 4096} 2>/dev/null || exit 0
+page=/run/{CARRIER}.page
+[ ! -e "$page" ] && [ ! -L "$page" ] || exit 0
+$BB timeout -k 1 5 $BB dd if="$node" of="$page" bs=4096 skip={(CARRIER_OFFSET + (size // 4096) * 4096) // 4096} count=1 2>/dev/null || exit 0
+$BB dd if="$page" of="$B" bs=1 seek={(size // 4096) * 4096} count={size % 4096} conv=notrunc 2>/dev/null || exit 0
+$BB rm -f "$page" || exit 0
+    [ "$($BB stat -c "%u:%a:%s" "$B")" = 0:600:{size} ] &&
+    [ "$($BB sha256sum "$B" | $BB cut -d " " -f 1)" = {bundle_sha} ] || exit 0
+'''.encode()
+
+
+def expected_init(original, found, blob):
     marker = b"setsid cttyhack /bin/sh &\n"
     start = original.index(marker) + len(marker)
     end = original.index(b"setsid /bin/busybox sh /run/pmos-self-stage.sh >/dev/null 2>&1 &\n' >/dev/null 2>&1 &\n", start)
@@ -330,18 +411,15 @@ def expected_init(original, found):
     old_sha = b"0b85d1dc3c05b58f703618994363a9d0dbd09ecf8139573d2db15628d2497549"
     new_sha = hashlib.sha256(found["pmos-pid1-transition.sh"]).hexdigest().encode()
     require(original.count(old_sha) == 2, INIT_MSG)
-    return replace_once(original[:start] + hook(found) + original[end:], old_sha, new_sha)
+    return replace_once(original[:start] + hook(found, blob) + original[end:], old_sha, new_sha)
 
 
 def candidate_cpio(entries, trailer, found, private):
     original = next(entry["data"] for entry in entries if entry["name"] == "init")
-    init = expected_init(original, found)
-    public = {name: found[name] for name in (*builder.PUBLIC, "pmos-root-contract.sh")}
-    blob = builder.checked_bundle(builder.bundle_bytes(public, private), public, private)
-    changed = [{**entry, "data": init} if entry["name"] == "init" else entry for entry in entries]
-    for index, entry in enumerate(changed):
-        if entry["name"] == builder.BUNDLE:
-            changed[index] = {**entry, "data": blob}
+    blob = carrier_bundle(found, private)
+    init = expected_init(original, found, blob)
+    changed = [{**entry, "data": init} if entry["name"] == "init" else entry
+               for entry in entries if entry["name"] != builder.BUNDLE]
     cpio = modules.encode_newc(changed, trailer)
     decoded, new_trailer = modules.parse_newc(cpio, "persistent-root generic cpio")
     require(new_trailer == trailer and [item["name"] for item in decoded] ==
@@ -356,7 +434,7 @@ def frame_for(cpio, library):
     return frame
 
 
-def build(stock, base_image, current, library, decode_frame):
+def build(stock, base_image, current, library, decode_frame, stock_carrier):
     vendor.check_stock(stock, library)
     require(base_image[:base.RAMDISK_SIZE_OFFSET] == stock[:base.RAMDISK_SIZE_OFFSET] and
             base_image[base.RAMDISK_SIZE_OFFSET + 4:base.PAGE] ==
@@ -364,33 +442,42 @@ def build(stock, base_image, current, library, decode_frame):
             base_image[base.TAIL_OFFSET:] == stock[base.TAIL_OFFSET:], BASE_MSG)
     entries, trailer, base_found, private = base_state(base_image, library, decode_frame)
     found = expected_found(base_found, current)
+    blob = carrier_bundle(found, private)
+    carrier = carrier_image(stock_carrier, blob)
     cpio = candidate_cpio(entries, trailer, found, private)
     frame = frame_for(cpio, library)
     image, digest = vendor.assemble(stock, frame)
-    require(digest not in REFUSED, SHA_MSG)
-    return image, digest, len(cpio), len(frame), entries, trailer, found, private
+    carrier_digest = hashlib.sha256(carrier).hexdigest()
+    require(digest not in REFUSED and carrier_digest not in REFUSED and
+            digest != carrier_digest and carrier_digest != CARRIER_SHA, SHA_MSG)
+    return image, carrier, digest, carrier_digest, len(cpio), len(frame), entries, trailer, found, private
 
 
 def main():
     args = sys.argv[1:]
-    require(len(args) == 4 and args[0] in ("--preflight", "--build"),
-            "usage: build-init-boot-persistent-root.py --preflight|--build STOCK_INIT BASE OUTPUT")
-    stock_path, base_path, output = map(pathlib.Path, args[1:])
+    require(len(args) == 6 and args[0] in ("--preflight", "--build"),
+            "usage: build-init-boot-persistent-root.py --preflight|--build STOCK_INIT BASE STOCK_VENDOR_B INIT_OUTPUT CARRIER_OUTPUT")
+    stock_path, base_path, carrier_path, output, carrier_output = map(pathlib.Path, args[1:])
     require(base_path.resolve() == BASE_IMAGE.resolve(), BASE_MSG)
     if args[0] == "--build":
-        target = output.resolve()
-        require(not target.is_relative_to(HERE.parent.resolve()) and target not in
-                (stock_path.resolve(), base_path.resolve()) and not output.is_symlink() and
-                output.parent.is_dir() and not output.is_dir(), "output must be outside Git and different from every input")
+        targets = (output.resolve(), carrier_output.resolve())
+        inputs = (stock_path.resolve(), base_path.resolve(), carrier_path.resolve())
+        require(len(set(targets)) == 2 and not any(target.is_relative_to(HERE.parent.resolve()) or
+                target in inputs for target in targets) and not output.is_symlink() and
+                not carrier_output.is_symlink() and output.parent.is_dir() and
+                carrier_output.parent.is_dir() and not output.is_dir() and
+                not carrier_output.is_dir(), "outputs must be outside Git and different from every input")
     current = current_scripts()
     checker = load("verify-init-boot-psoc-hold-wlan-node.py", "persistent_decode")
-    image, digest, cpio_size, frame_size, *_rest = build(
+    image, carrier, digest, carrier_digest, cpio_size, frame_size, *_rest = build(
         stock_path.read_bytes(), base_path.read_bytes(), current, base.lz4(),
-        checker.hostkey_checker.decode_frame)
+        checker.hostkey_checker.decode_frame, carrier_path.read_bytes())
     print(f"cpio: {cpio_size} bytes; LZ4 HC-{base.HC_LEVEL} frame: {frame_size}/{base.MAX_FRAME}")
-    print(f"candidate: {len(image)} bytes, SHA-256 {digest}")
+    print(f"init_boot: {len(image)} bytes, SHA-256 {digest}")
+    print(f"{CARRIER}: {len(carrier)} bytes, SHA-256 {carrier_digest}")
     if args[0] == "--build":
         output.write_bytes(image)
+        carrier_output.write_bytes(carrier)
 
 
 if __name__ == "__main__":
