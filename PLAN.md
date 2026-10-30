@@ -13,11 +13,10 @@ One active step, one active issue. Later steps are not pre-created issues.
 
 ## Active step
 
-- Step: #204 envelope repair is blocked. The reconstructed bundle omits the
-  root contract, and adding the pinned script exceeds the fixed LZ4 frame by
-  597 bytes. No member is dropped and no replacement image is published.
+- Step: #204 host replay passed for the existing vendor_boot_b carrier pair.
+  Physical measurement is pending and remains coordinator-owned.
 - Issue: omnipha/linux-sm7635#204
-- Next: owner decision on an approved envelope change. Do not reflash ef476d8c/aa8da109.
+- Next: one approved write of init_boot_a, vendor_boot_b, and existing userdata. Do not reflash ef476d8c.
 
 ## Next (ordered, not issues yet)
 
@@ -33,6 +32,7 @@ Reopen either only when a measurement shows it blocks the active step.
 
 ## Done (pointers, newest first)
 
+- Host #204: existing vendor_boot_b carrier pair replayed without rebuild -> records/2026-10-30-191204-root-contract-carrier-replay.md
 - Host #204: pinned raw contract exceeds the fixed init_boot envelope by 597 bytes -> records/2026-10-30-184802-init-boot-root-contract-envelope-overflow.md
 - Host #204: rejected carrier attempt moved the bundle to vendor_boot_b -> records/2026-10-30-183749-root-contract-vendor-boot-carrier.md
 - Run 67: persistent-root boot reached diagnostic SSH but not self-stage -> records/2026-10-30-170925-run-67-persistent-root-self-stage-absent.md
