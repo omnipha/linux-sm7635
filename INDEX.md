@@ -2,6 +2,7 @@
 
 ## Latest 10
 
+- [2026-10-30-170925-run-67-persistent-root-self-stage-absent](records/2026-10-30-170925-run-67-persistent-root-self-stage-absent.md) | boot run 67 | refuted | omnipha/linux-sm7635#197 | Run 67: persistent-root self-stage did not start
 - [2026-10-30-162851-persistent-userdata-root-pair](records/2026-10-30-162851-persistent-userdata-root-pair.md) | userspace | confirmed | omnipha/linux-sm7635#197 | Persistent userdata root pair
 - [2026-10-30-150709-root-contract-measured-userdata-maximum](records/2026-10-30-150709-root-contract-measured-userdata-maximum.md) | userspace | confirmed | omnipha/linux-sm7635#199 | Measured userdata size accepted by the fail-closed root contract
 - [2026-10-30-142216-persistent-root-contract-size-gate](records/2026-10-30-142216-persistent-root-contract-size-gate.md) | userspace | refuted | omnipha/linux-sm7635#197 | Persistent root blocked by the closed #194 size gate
@@ -11,14 +12,13 @@
 - [2026-10-30-081343-run-65-bootloader-start-self-stage](records/2026-10-30-081343-run-65-bootloader-start-self-stage.md) | boot run 65 | confirmed | omnipha/linux-sm7635#191 | Run 65: bootloader-start self-stage on the installed run-64 chain (#191)
 - [2026-10-30-071025-run-64-second-boot-hold-and-self-stage](records/2026-10-30-071025-run-64-second-boot-hold-and-self-stage.md) | boot run 64 | confirmed | omnipha/linux-sm7635#184 | Run 64: host reboot-hold sets `/run/keep` on `:22` inside 145 s and repeats `userdata` self-stage + postmarketOS PID 1 (#184)
 - [2026-10-30-062828-run-63-preflight-refusal-consumed-pair](records/2026-10-30-062828-run-63-preflight-refusal-consumed-pair.md) | userspace | inconclusive | omnipha/linux-sm7635#184 | Run 63: preflight refusal; no distinct SHA pair, no physical attempt
-- [2026-10-29-2299-self-stage-guard-ack-lifecycle-and-preflight-gat](records/2026-10-29-2299-self-stage-guard-ack-lifecycle-and-preflight-gat.md) | userspace | inconclusive | omnipha/linux-sm7635#173 | Self-stage guard-ack lifecycle and preflight gate (#173, host-only, 2026-10-29)
 
 ## By subsystem (latest 3, total in brackets)
 
-### boot [47]
+### boot [48]
+- [2026-10-30-170925-run-67-persistent-root-self-stage-absent](records/2026-10-30-170925-run-67-persistent-root-self-stage-absent.md) | boot run 67 | refuted | omnipha/linux-sm7635#197 | Run 67: persistent-root self-stage did not start
 - [2026-10-30-084138-run-65-slot-a-rescue-close](records/2026-10-30-084138-run-65-slot-a-rescue-close.md) | boot run 65 | confirmed | omnipha/linux-sm7635#191 | Run 65: session close and slot-A rescue proof
 - [2026-10-30-081343-run-65-bootloader-start-self-stage](records/2026-10-30-081343-run-65-bootloader-start-self-stage.md) | boot run 65 | confirmed | omnipha/linux-sm7635#191 | Run 65: bootloader-start self-stage on the installed run-64 chain (#191)
-- [2026-10-30-071025-run-64-second-boot-hold-and-self-stage](records/2026-10-30-071025-run-64-second-boot-hold-and-self-stage.md) | boot run 64 | confirmed | omnipha/linux-sm7635#184 | Run 64: host reboot-hold sets `/run/keep` on `:22` inside 145 s and repeats `userdata` self-stage + postmarketOS PID 1 (#184)
 
 ### modem [12]
 - [2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the](records/2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the.md) | modem run 55 | confirmed | omnipha/linux-sm7635#155 | Run-55 measured post-cutover modem hold past the EFS request (#155, 2026-10-29)
@@ -42,4 +42,4 @@
 
 ## By month
 
-- [2026-10](records/index-2026-10.md) [132]
+- [2026-10](records/index-2026-10.md) [133]

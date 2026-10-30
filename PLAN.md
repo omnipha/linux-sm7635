@@ -15,10 +15,9 @@ One active step, one active issue. Later steps are not pre-created issues.
 
 - Step: #197 host pair is verified: persistent ext4 userdata root and one
   distinct init_boot whose functional delta is direct mount and switch_root.
-  Physical measurement remains pending on the open run-66 session.
+  Run 67 measured the first boot and refuted an unchanged repeat: self-stage never started.
 - Issue: omnipha/linux-sm7635#197
-- Next: measure PID 1, guard acceptance and WLAN across guest reboot and
-  bootloader start after a proven coordinator handoff.
+- Next: repair the host bundle so the root contract is staged, then build a distinct pair. Do not reflash ef476d8c/aa8da109.
 
 ## Next (ordered, not issues yet)
 
@@ -34,7 +33,8 @@ Reopen either only when a measurement shows it blocks the active step.
 
 ## Done (pointers, newest first)
 
-- Host #197: deterministic persistent ext4 root and distinct direct-root init_boot verified; physical result pending -> records/2026-10-30-162851-persistent-userdata-root-pair.md
+- Run 67: persistent-root boot reached diagnostic SSH but not self-stage -> records/2026-10-30-170925-run-67-persistent-root-self-stage-absent.md
+- Host #197: deterministic persistent ext4 root and distinct direct-root init_boot verified -> records/2026-10-30-162851-persistent-userdata-root-pair.md
 - Host-only #199: measured-size fail-closed root-contract maximum and fixtures -> records/2026-10-30-150709-root-contract-measured-userdata-maximum.md
 - Host #197: persistent direct-root pair refused by the closed #194 size gate -> records/ (userspace)
 - Host-only #194: pinned ext4 userdata root or measured 256m tmpfs accepted across stage, teardown, transition, guard, ack, self-post, radio and self-stage fixtures -> records/ (userspace)
