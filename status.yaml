@@ -3,14 +3,14 @@
 device: nothing-asteroids
 updated: 2026-10-30
 next_question: >-
-  Once the foreign #194 worktree paths are no longer protected, can the
-  host-only root-type contract be wired through self-stage, radio and retained
-  fixtures without weakening the host hold or capture gate?
+  With the host-only ext4 userdata root-type contract and fixtures complete
+  (#194), what is the next persistence or cold-boot measurement on the stock
+  kernel?
 active_issue: omnipha/linux-sm7635#194
 subsystems:
   boot:
-    state: partial        # host-only #194 root-type helper accepts one pinned ext4 userdata root in a loop fixture; full contract blocked by untouched foreign paths
-    record: records/2026-10-30-102155-host-root-type-contract-fixture-and-foreign-path-block.md
+    state: partial        # host-only #194 root-type contract and fixtures accept one pinned ext4 userdata root or the measured 256m tmpfs; no image, flash or live session in this issue
+    record: records/2026-10-30-114724-host-root-type-contract-fixtures-complete.md
   ssh:
     state: partial        # key-only USB SSH on :22 and post-cutover :2222 survives bootloader start and guest reboot (runs 64/65)
     record: records/2026-10-30-081343-run-65-bootloader-start-self-stage.md
