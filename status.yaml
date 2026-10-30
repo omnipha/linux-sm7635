@@ -3,13 +3,13 @@
 device: nothing-asteroids
 updated: 2026-10-30
 next_question: >-
-  Does one guest reboot return the same persistent root and WLAN without a
-  host push?
+  Why does the second persistent-root boot refuse switch_root with
+  "independent recovery guard not armed" after self-stage and the host hold?
 active_issue: omnipha/linux-sm7635#204
 subsystems:
   boot:
-    state: partial
-    record: records/2026-10-30-195754-run-69-persistent-root-first-boot.md
+    state: partial        # run 69 second boot self-staged persistent ext4 but refused PID 1
+    record: records/2026-10-30-201949-run-69-second-boot-guard-refused.md
   ssh:
     state: partial
     record: records/2026-10-30-195754-run-69-persistent-root-first-boot.md
@@ -40,6 +40,6 @@ attempted_shas:       # cold-start index only; the flash gate is device-op statu
   - fcb0ed91
   - fef03008        # init_boot, runs 52-57
 notes: >-
-  Run 69 reached persistent PID 1 and first-boot WLAN. Guest reboot and
-  bootloader-start persistence remain unmeasured. Do not repeat
-  ef476d8c/aa8da109.
+  Run 69 second boot b5171324 self-staged userdata aa8da109 but refused
+  switch_root because the independent recovery guard was not armed. Session
+  remains open on Linux; no bootloader start, stock restore or Android boot.
