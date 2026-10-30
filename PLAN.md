@@ -6,18 +6,21 @@ One active step, one active issue. Later steps are not pre-created issues.
 ## Milestones
 
 1. USB shell on the stock kernel: measured.
-2. WLAN across one reboot without a host push: current gap (#184).
+2. WLAN across one reboot without a host push: second self-stage + PID 1 measured (run 64); autoconnect still open pending a visible target (#184).
 3. Then one function at a time; the Omnipha slot comes after that.
    No extra oversight role. This list is the check.
 
 ## Active step
 
-- Step: create the root-only /run/keep hold over diagnostic :22 as soon as the
-  gadget and capture return after a reboot, so the proven userdata self-stage
-  can repeat and WLAN autoconnect can be measured. Host-side fix; no new image.
+- Step: measured (run 64) — `pmos-reboot-hold.sh` created root-only `/run/keep`
+  over diagnostic `:22` inside 145 s after a clean guest reboot, so the second
+  `userdata` self-stage, postmarketOS PID-1 cutover, modem/WPSS/wlan0 and scan
+  all repeat without a host push; autoconnect stops at association with the
+  designated network absent from both guest and host radios.
 - Issue: omnipha/linux-sm7635#184
-- Done when: a coordinator-held session shows the second self-stage and WLAN
-  autoconnect, or names the next first missing line; recorded as a new record.
+- Done when: coordinator session close with untouched slot-A rescue baseline
+  proof is recorded; WLAN autoconnect is the named first missing line for the
+  next run once the designated network is visible.
 
 ## Next (ordered, not issues yet)
 
@@ -28,6 +31,7 @@ One active step, one active issue. Later steps are not pre-created issues.
 
 ## Done (pointers, newest first)
 
+- Run 64: host reboot-hold over :22 confirmed; second userdata self-stage and postmarketOS PID 1 measured (boot/wlan)
 - Run 62: userdata self-stage on first boot; host re-addressing, fresh boot ID
   and diagnostic :22 return after the guest reboot -> records/ (userspace)
 - Run 57: OpenRC wpa_supplicant + networking on postmarketOS PID 1 -> records/ (subsystem wlan)
