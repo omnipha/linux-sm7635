@@ -7,24 +7,29 @@ One active step, one active issue. Later steps are not pre-created issues.
 
 1. USB shell on the stock kernel: measured.
 2. WLAN across one reboot and bootloader start without a host push: measured (runs 64/65).
-3. Then one function at a time; the Omnipha slot comes after that.
+3. Persistent userdata root: active as #197.
+4. Then one function at a time over the open SSH session. Display is next.
    No extra oversight role. This list is the check.
 
 ## Active step
 
-- Step: #197 host image phase unblocked by #199: fail-closed contract accepts
-  the measured 241421725696-byte userdata partition and still rejects larger
-  blocks. No image, marker or partition write in #199.
+- Step: #197 builds the persistent userdata root. Its init and switch_root
+  execute before SSH, so this step needs one image. #199 removed the invented
+  128 GiB contract maximum; the measured partition is 241421725696 bytes.
 - Issue: omnipha/linux-sm7635#197
-- Next: build and verify the persistent-root pair under the corrected contract
-  before its existing physical gates.
+- Next: verify the pair, then measure PID 1, SSH and WLAN on that root.
 
 ## Next (ordered, not issues yet)
 
-1. Persistence and cold boot design (#183).
-2. Interactive PTY (`ssh -tt`) in the isolated staged guest (#144).
-3. Only if a boot regression reappears: reopen the boot-boundary question
-   (#12); otherwise leave closed-history alone.
+1. Cold start of the persistent root without USB host signals: own /run/keep,
+   guard and radio start, then MINDSTORMS and SSH without a host push.
+2. Display over the open SSH session: identify why /dev/dri is absent, load the
+   measured stock module or firmware, and record the working recipe. Build one
+   image only after that recipe is measured.
+3. Touch, then audio, cameras and modem data. One function per step.
+
+#144 (interactive PTY) and #12 (stock-kernel boot boundary) are not next.
+Reopen either only when a measurement shows it blocks the active step.
 
 ## Done (pointers, newest first)
 
