@@ -30,15 +30,22 @@ if [ "${1:-}" != --inner ] && [ "${1:-}" != --pid1-ext4 ] && [ "${1:-}" != --ext
 	/sbin/mke2fs -q -F -t ext4 -b 4096 "$WORK/userdata.img"
 	truncate -s 33554432 "$WORK/other.img"
 	/sbin/mke2fs -q -F -t ext4 -b 4096 "$WORK/other.img"
+	truncate -s 241421725696 "$WORK/userdata.img"
+	truncate -s 268435456 "$WORK/oversize.img"
+	/sbin/mke2fs -q -F -t ext4 -b 4096 "$WORK/oversize.img"
+	truncate -s 241421726208 "$WORK/oversize.img"
 	dev_main=$(sudo -n /sbin/losetup -f --show "$WORK/userdata.img") || fail 'cannot attach userdata loop'
 	printf '%s\n' "$dev_main" >> "$WORK/loops"
 	dev_other=$(sudo -n /sbin/losetup -f --show "$WORK/other.img") || fail 'cannot attach secondary loop'
 	printf '%s\n' "$dev_other" >> "$WORK/loops"
+	dev_over=$(sudo -n /sbin/losetup -f --show "$WORK/oversize.img") || fail 'cannot attach oversize loop'
+	printf '%s\n' "$dev_over" >> "$WORK/loops"
 	main_nums="$((0x$(stat -c %t "$dev_main"))):$((0x$(stat -c %T "$dev_main")))"
 	other_nums="$((0x$(stat -c %t "$dev_other"))):$((0x$(stat -c %T "$dev_other")))"
+	over_nums="$((0x$(stat -c %t "$dev_over"))):$((0x$(stat -c %T "$dev_over")))"
 	sudo -n timeout -k 2 180 unshare --mount --pid --net --fork --kill-child --mount-proc \
 		env HOST_ARCHIVE="$ARCHIVE" SOURCE="$HERE" MAIN_NUMS="$main_nums" OTHER_NUMS="$other_nums" \
-		/bin/busybox sh "$0" --inner
+		OVER_NUMS="$over_nums" /bin/busybox sh "$0" --inner
 	for case in ack timeout; do
 		inner=$(mktemp -d "$WORK/pid1-ext4.XXXXXXXX")
 		printf '%s\n' "$inner" >> "$WORK/inners"
@@ -271,6 +278,7 @@ set_part sda13 userdata "$MAIN_NUMS"
 set_part sda6 super "$OTHER_NUMS"
 mk_bnode /dev/block/sda13 "$MAIN_NUMS"
 mk_bnode /dev/block/sda6 "$OTHER_NUMS"
+[ "$($BB blockdev --getsize64 /dev/block/sda13)" = 241421725696 ] || fail 'userdata fixture is not the measured partition size'
 
 . "$CONTRACT"
 
@@ -312,8 +320,35 @@ root_contract_pinned_userdata /run/pmos && fail 'symlinked block node accepted'
 $BB rm /dev/block/sda13
 mk_bnode /dev/block/sda13 "$MAIN_NUMS"
 
-ROOT_CONTRACT_MIN_BYTES=268435457 root_contract_pinned_userdata /run/pmos && fail 'undersized userdata accepted'
-ROOT_CONTRACT_MAX_BYTES=268435455 root_contract_pinned_userdata /run/pmos && fail 'oversized userdata accepted'
+[ "$ROOT_CONTRACT_SIZE" = 241421725696 ] || fail 'positive case is not the measured userdata size'
+ROOT_CONTRACT_MIN_BYTES=241421725697 root_contract_pinned_userdata /run/pmos && fail 'undersized userdata accepted'
+ROOT_CONTRACT_MAX_BYTES=241421725695 root_contract_pinned_userdata /run/pmos && fail 'one-byte-over-maximum userdata accepted'
+[ "$ROOT_CONTRACT_MAX_BYTES" = 241421725696 ] || fail 'measured userdata maximum changed'
+set_part sda14 super "$OVER_NUMS"
+mk_bnode /dev/block/sda14 "$OVER_NUMS"
+[ "$($BB blockdev --getsize64 /dev/block/sda14)" = 241421726208 ] || fail 'oversize fixture node has wrong size'
+$BB mkdir /run/dup
+$BB mount -t ext4 -o ro,noload /dev/block/sda14 /run/dup
+$BB printf 'PARTNAME=super\n' > /sys/class/block/sda13/uevent
+$BB printf 'PARTNAME=userdata\n' > /sys/class/block/sda14/uevent
+( ROOT_CONTRACT_MAX_BYTES=241421726208; root_contract_pinned_userdata /run/dup ) || fail 'oversize fixture is not otherwise valid userdata'
+$BB cat > /run/size-bb <<'SIZE'
+#!/bin/busybox sh
+if [ "$1" = blockdev ] && [ "$2" = --getsize64 ] && [ "$3" = /dev/block/sda14 ]; then
+	/bin/busybox printf '241421725697\n'
+	exit 0
+fi
+exec /bin/busybox "$@"
+SIZE
+$BB chmod 700 /run/size-bb
+[ "$(/run/size-bb blockdev --getsize64 /dev/block/sda14)" = 241421725697 ] || fail 'one-byte-oversize node report missing'
+( BB=/run/size-bb; root_contract_pinned_userdata /run/dup ) && fail 'one-byte-oversize userdata node accepted'
+root_contract_pinned_userdata /run/dup && fail 'oversized userdata node accepted'
+$BB umount /run/dup
+$BB rmdir /run/dup
+$BB printf 'PARTNAME=super\n' > /sys/class/block/sda14/uevent
+$BB printf 'PARTNAME=userdata\n' > /sys/class/block/sda13/uevent
+root_contract_pinned_userdata /run/pmos || fail 'measured userdata root rejected after oversize rejection'
 
 $BB mkdir /run/dup
 $BB mount -t ext4 -o ro,noload /dev/block/sda13 /run/dup
@@ -379,7 +414,12 @@ $BB sh "$TEARDOWN" >/run/td-ok.out 2>&1 || { $BB cat /run/td-ok.out >&2; fail 't
 $BB mkdir -m 700 /run/switched
 $BB printf '/dev/block/sda13 / ext4 rw,relatime,noload 0 0\n' > /run/switched/mounts
 $BB printf '91 1 %s / / rw,relatime - ext4 /dev/block/sda13 rw,noload\n' "$MAIN_NUMS" > /run/switched/mountinfo
-root_contract_switched_root /run/switched/mounts /run/switched/mountinfo && [ "$ROOT_CONTRACT_KIND" = ext4 ] || fail 'switched ext4 userdata root rejected'
+root_contract_switched_root /run/switched/mounts /run/switched/mountinfo && [ "$ROOT_CONTRACT_KIND" = ext4 ] && [ "$ROOT_CONTRACT_SIZE" = 241421725696 ] || fail 'switched ext4 userdata root rejected'
+$BB rm /dev/block/sda13
+$BB printf '471526809\n' > /sys/class/block/sda13/size
+root_contract_switched_root /run/switched/mounts /run/switched/mountinfo && fail 'switched one-byte-oversize userdata accepted'
+$BB rm /sys/class/block/sda13/size
+mk_bnode /dev/block/sda13 "$MAIN_NUMS"
 $BB printf '/dev/block/sda6 / ext4 rw,relatime,noload 0 0\n' > /run/switched/mounts
 $BB printf '91 1 %s / / rw,relatime - ext4 /dev/block/sda6 rw,noload\n' "$OTHER_NUMS" > /run/switched/mountinfo
 root_contract_switched_root /run/switched/mounts /run/switched/mountinfo && fail 'switched non-userdata ext4 root accepted'

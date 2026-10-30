@@ -12,12 +12,12 @@ One active step, one active issue. Later steps are not pre-created issues.
 
 ## Active step
 
-- Step: #197 persistent root blocked before pair delivery: closed #194
-  root contract caps the block device at 137438953472 bytes; measured userdata
-  is 241421725696 bytes. No contract weakening or physical write.
+- Step: #197 host image phase unblocked by #199: fail-closed contract accepts
+  the measured 241421725696-byte userdata partition and still rejects larger
+  blocks. No image, marker or partition write in #199.
 - Issue: omnipha/linux-sm7635#197
-- Next: reconcile the measured partition size with a reviewed fail-closed
-  root identity contract before building a flash candidate.
+- Next: build and verify the persistent-root pair under the corrected contract
+  before its existing physical gates.
 
 ## Next (ordered, not issues yet)
 
@@ -28,6 +28,7 @@ One active step, one active issue. Later steps are not pre-created issues.
 
 ## Done (pointers, newest first)
 
+- Host-only #199: measured-size fail-closed root-contract maximum and fixtures -> records/2026-10-30-150709-root-contract-measured-userdata-maximum.md
 - Host #197: persistent direct-root pair refused by the closed #194 size gate -> records/ (userspace)
 - Host-only #194: pinned ext4 userdata root or measured 256m tmpfs accepted across stage, teardown, transition, guard, ack, self-post, radio and self-stage fixtures -> records/ (userspace)
 - Host-only #194: pinned ext4 userdata root accepted in loop fixture; full contract blocked by foreign paths -> records/ (userspace)
