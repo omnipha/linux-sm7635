@@ -2,6 +2,7 @@
 
 ## Latest 10
 
+- [2026-10-30-084138-run-65-slot-a-rescue-close](records/2026-10-30-084138-run-65-slot-a-rescue-close.md) | boot run 65 | confirmed | omnipha/linux-sm7635#191 | Run 65: session close and slot-A rescue proof
 - [2026-10-30-081343-run-65-bootloader-start-self-stage](records/2026-10-30-081343-run-65-bootloader-start-self-stage.md) | boot run 65 | confirmed | omnipha/linux-sm7635#191 | Run 65: bootloader-start self-stage on the installed run-64 chain (#191)
 - [2026-10-30-071025-run-64-second-boot-hold-and-self-stage](records/2026-10-30-071025-run-64-second-boot-hold-and-self-stage.md) | boot run 64 | confirmed | omnipha/linux-sm7635#184 | Run 64: host reboot-hold sets `/run/keep` on `:22` inside 145 s and repeats `userdata` self-stage + postmarketOS PID 1 (#184)
 - [2026-10-30-062828-run-63-preflight-refusal-consumed-pair](records/2026-10-30-062828-run-63-preflight-refusal-consumed-pair.md) | userspace | inconclusive | omnipha/linux-sm7635#184 | Run 63: preflight refusal; no distinct SHA pair, no physical attempt
@@ -11,14 +12,13 @@
 - [2026-10-29-2296-host-re-address-of-a-re-enumerated-diagnostic-ga](records/2026-10-29-2296-host-re-address-of-a-re-enumerated-diagnostic-ga.md) | usb | inconclusive | omnipha/linux-sm7635#169 | Host re-address of a re-enumerated diagnostic gadget (#169, host-only, 2026-10-29)
 - [2026-10-29-2295-host-only-inactive-vendor-boot-b-userspace-paylo](records/2026-10-29-2295-host-only-inactive-vendor-boot-b-userspace-paylo.md) | userspace | inconclusive | omnipha/linux-sm7635#164 | Host-only inactive `vendor_boot_b` userspace payload and self-staged session (#164, 2026-10-29)
 - [2026-10-29-2294-run-57-measured-openrc-wpa-supplicant-and-networ](records/2026-10-29-2294-run-57-measured-openrc-wpa-supplicant-and-networ.md) | userspace run 57 | confirmed | omnipha/linux-sm7635#160 | Run-57 measured OpenRC `wpa_supplicant` and `networking` on postmarketOS PID 1 (#160, live-session finding, 2026-10-29)
-- [2026-10-29-2293-host-only-openrc-networking-wpa-supplicant-stagi](records/2026-10-29-2293-host-only-openrc-networking-wpa-supplicant-stagi.md) | userspace | inconclusive | omnipha/linux-sm7635#160 | Host-only OpenRC `networking` + `wpa_supplicant` staging on the unchanged session image (#160, 2026-10-29)
 
 ## By subsystem (latest 3, total in brackets)
 
-### boot [46]
+### boot [47]
+- [2026-10-30-084138-run-65-slot-a-rescue-close](records/2026-10-30-084138-run-65-slot-a-rescue-close.md) | boot run 65 | confirmed | omnipha/linux-sm7635#191 | Run 65: session close and slot-A rescue proof
 - [2026-10-30-081343-run-65-bootloader-start-self-stage](records/2026-10-30-081343-run-65-bootloader-start-self-stage.md) | boot run 65 | confirmed | omnipha/linux-sm7635#191 | Run 65: bootloader-start self-stage on the installed run-64 chain (#191)
 - [2026-10-30-071025-run-64-second-boot-hold-and-self-stage](records/2026-10-30-071025-run-64-second-boot-hold-and-self-stage.md) | boot run 64 | confirmed | omnipha/linux-sm7635#184 | Run 64: host reboot-hold sets `/run/keep` on `:22` inside 145 s and repeats `userdata` self-stage + postmarketOS PID 1 (#184)
-- [2026-10-28-2283-run-51-measured-request-rejection-145-live-sessi](records/2026-10-28-2283-run-51-measured-request-rejection-145-live-sessi.md) | boot run 51 | confirmed | omnipha/linux-sm7635#145 | Run-51 measured request rejection (#145, live-session finding, 2026-10-28)
 
 ### modem [12]
 - [2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the](records/2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the.md) | modem run 55 | confirmed | omnipha/linux-sm7635#155 | Run-55 measured post-cutover modem hold past the EFS request (#155, 2026-10-29)
@@ -42,4 +42,4 @@
 
 ## By month
 
-- [2026-10](records/index-2026-10.md) [126]
+- [2026-10](records/index-2026-10.md) [127]
