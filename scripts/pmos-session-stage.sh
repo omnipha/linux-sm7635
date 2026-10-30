@@ -36,25 +36,31 @@ $BB printf '%s  %s\n' "$PMOS_SHA256" "$PMOS_TARBALL" | $BB sha256sum -c - ||
 	die "tarball SHA-256 mismatch"
 log "tarball SHA-256 verified"
 
-[ ! -e "$PMOS_ROOT" ] && [ ! -L "$PMOS_ROOT" ] || die "$PMOS_ROOT already exists; teardown first"
-$BB mkdir -m 700 "$PMOS_ROOT" || die "cannot create $PMOS_ROOT"
-[ "$($BB stat -c %a "$PMOS_ROOT")" = 700 ] || die "guest root mountpoint not private"
-$BB mount -t tmpfs -o mode=0700,size=256m,nosuid tmpfs "$PMOS_ROOT" || die "guest root tmpfs failed"
-$BB mount --make-private "$PMOS_ROOT" || die "cannot isolate guest root mount"
-$BB awk -v root="$PMOS_ROOT" '
-	$2 == root {n++; if ($1 != "tmpfs" || $3 != "tmpfs" || $4 !~ /(^|,)size=262144k(,|$)/ || $4 !~ /(^|,)mode=700(,|$)/) bad++}
-	END {exit(n != 1 || bad)}
-' /proc/mounts &&
-	$BB awk -v root="$PMOS_ROOT" '
-		$5 == "/" {host_root = $3}
-		$5 == "/run" {host_run = $3}
-		$5 == root {n++; id = $3; if ($4 != "/" || $0 !~ / - tmpfs tmpfs /) bad++}
-		{ids[NR] = $3; paths[NR] = $5}
-		END {
-			for (i = 1; i <= NR; i++) if (ids[i] == id && paths[i] != root) bad++
-			exit(n != 1 || bad || !host_root || id == host_root || (host_run && id == host_run))
-		}
-	' /proc/self/mountinfo || die "guest root is not a separate 256m tmpfs"
+CONTRACT=${PMOS_ROOT_CONTRACT:-/run/pmos-root-contract.sh}
+[ -f "$CONTRACT" ] || CONTRACT="${SOURCE:-/run}/pmos-root-contract.sh"
+[ -f "$CONTRACT" ] || CONTRACT="$(dirname -- "$0")/pmos-root-contract.sh"
+[ -f "$CONTRACT" ] && [ ! -L "$CONTRACT" ] && . "$CONTRACT" || die "root contract unavailable"
+[ ! -e "$PMOS_ROOT" ] && [ ! -L "$PMOS_ROOT" ] || {
+	if [ "${PMOS_ROOT_KIND:-tmpfs}" != ext4 ] || [ ! -d "$PMOS_ROOT" ] || [ -L "$PMOS_ROOT" ]; then
+		die "$PMOS_ROOT already exists; teardown first"
+	fi
+}
+if [ "${PMOS_ROOT_KIND:-tmpfs}" = ext4 ]; then
+	[ -d "$PMOS_ROOT" ] && [ ! -L "$PMOS_ROOT" ] &&
+		[ "$($BB stat -c %u "$PMOS_ROOT")" = 0 ] || die "guest root mountpoint not private"
+	root_contract_pinned_userdata "$PMOS_ROOT" || die "userdata root identity not pinned read-only"
+	root_contract_promote "$PMOS_ROOT" || die "userdata root cannot be promoted read-write"
+	$BB chmod 700 "$PMOS_ROOT" || die "cannot secure userdata root"
+	[ "$($BB stat -c '%u:%a' "$PMOS_ROOT")" = 0:700 ] || die "guest root mountpoint not private"
+	[ "$ROOT_CONTRACT_KIND" = ext4 ] || die "userdata root type changed"
+else
+	[ "${PMOS_ROOT_KIND:-tmpfs}" = tmpfs ] || die "unknown guest root kind"
+	$BB mkdir -m 700 "$PMOS_ROOT" || die "cannot create $PMOS_ROOT"
+	[ "$($BB stat -c '%u:%a' "$PMOS_ROOT")" = 0:700 ] || die "guest root mountpoint not private"
+	$BB mount -t tmpfs -o mode=0700,size=256m,nosuid tmpfs "$PMOS_ROOT" || die "guest root tmpfs failed"
+	$BB mount --make-private "$PMOS_ROOT" || die "cannot isolate guest root mount"
+fi
+root_contract_stage_root "$PMOS_ROOT" || die "guest root is not a separate 256m tmpfs"
 for d in proc sys dev run tmp; do
 	[ ! -L "$PMOS_ROOT/$d" ] || die "symlinked guest $d"
 	$BB mkdir -p "$PMOS_ROOT/$d" || die "cannot create guest $d"
@@ -214,6 +220,18 @@ for spec in 'null 1:3 666' 'zero 1:5 666' 'random 1:8 666' 'urandom 1:9 666' 'tt
 		[ "$($BB stat -c '%t:%T %a' "$PMOS_ROOT/dev/$1")" = "$2 $3" ] ||
 		die "missing or incorrect guest node $1"
 done
+if [ "${PMOS_ROOT_KIND:-tmpfs}" = ext4 ]; then
+	root_contract_pinned_userdata "$PMOS_ROOT" || die "userdata identity changed while staging dev"
+	[ -b "$ROOT_CONTRACT_NODE" ] && [ ! -L "$ROOT_CONTRACT_NODE" ] &&
+		[ ! -e "$PMOS_ROOT$ROOT_CONTRACT_NODE" ] && [ ! -L "$PMOS_ROOT$ROOT_CONTRACT_NODE" ] ||
+		die "userdata block node path invalid"
+	$BB mkdir -p "$PMOS_ROOT/dev/block" || die "cannot create guest block directory"
+	$BB mknod -m 0400 "$PMOS_ROOT$ROOT_CONTRACT_NODE" b "$rc_major" "$rc_minor" || die "cannot create guest userdata block node"
+	[ -b "$PMOS_ROOT$ROOT_CONTRACT_NODE" ] && [ ! -L "$PMOS_ROOT$ROOT_CONTRACT_NODE" ] &&
+		[ "$($BB stat -c '%t:%T:%a' "$PMOS_ROOT$ROOT_CONTRACT_NODE")" = "$($BB printf '%x:%x:400' "$rc_major" "$rc_minor")" ] &&
+		[ "$($BB blockdev --getsize64 "$PMOS_ROOT$ROOT_CONTRACT_NODE" 2>/dev/null)" = "$ROOT_CONTRACT_SIZE" ] ||
+		die "guest userdata block node identity mismatch"
+fi
 $BB chroot "$PMOS_ROOT" /bin/sh -ec '[ -c /dev/tty ] && [ -c /dev/null ] && [ -c /dev/ptmx ] && [ -c /dev/pts/ptmx ]' ||
 	die "guest device paths unavailable in chroot"
 $BB chroot "$PMOS_ROOT" /bin/busybox --help >/dev/null 2>&1 &&

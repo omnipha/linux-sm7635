@@ -2,15 +2,19 @@
 BB=/bin/busybox
 ROOT=/run/pmos
 GUARD=/run/pmos-pid1-guard.sh
-GUARD_SHA256=dc37428ec10330c89fa8f559626be735013004b87d0bd9a7271d9b88dfc47fe3
+GUARD_SHA256=2a92fbcfe029ec3be1af8b73d4cd8d0ac317ecd267a9dc9ba9637932207d5da3
 fail() { log "pid1 transition refused: $*"; return 1; }
 [ "$$" = 1 ] || { fail 'not PID 1'; return 1; }
 [ -e /run/keep ] && [ ! -L /run/keep ] || { fail 'diagnostic hold missing'; return 1; }
 [ "$($BB stat -c '%u:%a' /run)" = 0:755 ] || { fail 'diagnostic /run changed'; return 1; }
 [ -d "$ROOT" ] && [ ! -L "$ROOT" ] &&
 	[ "$($BB stat -c '%u:%a' "$ROOT")" = 0:700 ] || { fail 'root ownership or mode'; return 1; }
+CONTRACT=${PMOS_ROOT_CONTRACT:-/run/pmos-root-contract.sh}
+[ -f "$CONTRACT" ] || CONTRACT="${SOURCE:-/run}/pmos-root-contract.sh"
+[ -f "$CONTRACT" ] && [ ! -L "$CONTRACT" ] && . "$CONTRACT" || { fail 'root contract unavailable'; return 1; }
+root_contract_stage_root "$ROOT" || { fail 'root or child mount invalid'; return 1; }
 $BB awk -v root="$ROOT" '
-	$2 == root {n++; if ($1 != "tmpfs" || $3 != "tmpfs" || $4 !~ /(^|,)size=262144k(,|$)/) bad++}
+	$2 == root {n++; if ($1 == "tmpfs" && ($3 != "tmpfs" || $4 !~ /(^|,)size=262144k(,|$)/)) bad++; if ($1 != "tmpfs" && $3 != "ext4") bad++}
 	$2 == root "/proc" {p++; if ($3 != "proc") bad++}
 	$2 == root "/sys" {s++; if ($3 != "sysfs") bad++}
 	$2 == root "/dev" {d++; if ($3 != "tmpfs") bad++}
@@ -28,7 +32,7 @@ $BB awk -v root="$ROOT" '
 	$5 == "/" {old = $3}
 	$5 == "/dev" {dev = $3}
 	$5 == "/run" {oldrun = $3}
-	$5 == root {n++; parent = $1; guest = $3; if ($4 != "/" || $0 !~ / - tmpfs tmpfs /) bad++}
+	$5 == root {n++; parent = $1; guest = $3; if ($4 != "/" || ($0 !~ / - tmpfs tmpfs / && $0 !~ / - ext4 /)) bad++}
 	$5 == root "/dev" {dn++; gd = $3; if ($4 != "/" || $0 !~ / - tmpfs tmpfs /) bad++}
 	$5 == root "/dev/pts" {tn++; pts = $3; if ($4 != "/" || $0 !~ / - devpts devpts /) bad++}
 	$5 == root "/run" {rn++; runparent = $2; gr = $3; if ($4 != "/" || $0 !~ / - tmpfs tmpfs /) bad++}
@@ -80,7 +84,7 @@ $BB awk -v root="$ROOT" '
 	$5 == "/sys/kernel/config" {hostconfig++; hostconfig_mounts[$1] = 1}
 	$5 == root {
 		base++; base_mount = $1; base_parent = $2; base_dev = $3
-		if ($4 != "/" || $0 !~ / - tmpfs tmpfs /) bad++
+		if ($4 != "/" || ($0 !~ / - tmpfs tmpfs / && $0 !~ / - ext4 /)) bad++
 		isolated()
 	}
 	$5 == root "/run" {

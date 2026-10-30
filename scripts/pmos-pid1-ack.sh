@@ -50,7 +50,10 @@ b=/bin/busybox
 id=$($b cat /proc/sys/kernel/random/boot_id)
 [ "$($b id -u)" = 0 ] &&
 [ "$($b sha256sum /proc/1/exe | $b cut -d " " -f 1)" = "$($b sha256sum /proc/1/root/bin/busybox | $b cut -d " " -f 1)" ]
-$b awk '\''$2 == "/" {n++; if ($3 != "tmpfs") bad++} END {exit(n != 1 || bad)}'\'' /proc/1/mounts
+if ! $b awk '\''$2 == "/" {n++; if ($3 != "tmpfs") bad++} END {exit(n != 1 || bad)}'\'' /proc/1/mounts; then
+    c=/proc/1/root/run/pid1-guard/root-contract.sh
+    [ -f "$c" ] && [ ! -L "$c" ] && BB=$b . "$c" && root_contract_switched_root /proc/1/mounts /proc/1/mountinfo
+fi
 s=/proc/1/root/run/pid1-guard
 [ "$($b stat -c "%d:%i" /)" = "$($b stat -Lc "%d:%i" /proc/1/root)" ]
 [ -d "$s" ] && [ ! -L "$s" ] && [ -f "$s/nonce" ] && [ ! -L "$s/nonce" ]

@@ -3,14 +3,14 @@
 device: nothing-asteroids
 updated: 2026-10-30
 next_question: >-
-  With bootloader-start self-stage, postmarketOS PID 1 and OpenRC WLAN measured
-  without a host push or flash (run 65, #191), what is the multi-contract
-  design for a persistent ext4 root / cold boot (#183)?
-active_issue: omnipha/linux-sm7635#191
+  Once the foreign #194 worktree paths are no longer protected, can the
+  host-only root-type contract be wired through self-stage, radio and retained
+  fixtures without weakening the host hold or capture gate?
+active_issue: omnipha/linux-sm7635#194
 subsystems:
   boot:
-    state: partial        # bootloader start of installed chain self-stages from userdata and reaches postmarketOS PID 1 with no host push (run 65); no persistent root or cold boot yet
-    record: records/2026-10-30-081343-run-65-bootloader-start-self-stage.md
+    state: partial        # host-only #194 root-type helper accepts one pinned ext4 userdata root in a loop fixture; full contract blocked by untouched foreign paths
+    record: records/2026-10-30-102155-host-root-type-contract-fixture-and-foreign-path-block.md
   ssh:
     state: partial        # key-only USB SSH on :22 and post-cutover :2222 survives bootloader start and guest reboot (runs 64/65)
     record: records/2026-10-30-081343-run-65-bootloader-start-self-stage.md
