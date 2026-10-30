@@ -3,19 +3,19 @@
 device: nothing-asteroids
 updated: 2026-10-30
 next_question: >-
-  Does the existing root-contract carrier reach the pinned userdata root and
-  postmarketOS PID 1 on first boot?
+  Does one guest reboot return the same persistent root and WLAN without a
+  host push?
 active_issue: omnipha/linux-sm7635#204
 subsystems:
   boot:
     state: partial
-    record: records/2026-10-30-191204-root-contract-carrier-replay.md
+    record: records/2026-10-30-195754-run-69-persistent-root-first-boot.md
   ssh:
-    state: partial        # key-only USB SSH on :22 and post-cutover :2222 survives bootloader start and guest reboot (runs 64/65)
-    record: records/2026-10-30-081343-run-65-bootloader-start-self-stage.md
+    state: partial
+    record: records/2026-10-30-195754-run-69-persistent-root-first-boot.md
   wlan:
-    state: partial        # OpenRC wpa_supplicant + networking association, DHCP, gateway, DNS and external reachability measured after bootloader-start self-stage (run 65)
-    record: records/2026-10-30-081343-run-65-bootloader-start-self-stage.md
+    state: partial
+    record: records/2026-10-30-195754-run-69-persistent-root-first-boot.md
   modem:
     state: partial        # stays running past the EFS request after PID-1 cutover (run 55); no voice/SIM/data claim
     record: records/2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the.md
@@ -40,6 +40,6 @@ attempted_shas:       # cold-start index only; the flash gate is device-op statu
   - fcb0ed91
   - fef03008        # init_boot, runs 52-57
 notes: >-
-  Existing init_boot 2f73c947 and vendor_boot_b f792174c passed the host
-  replay. Physical writes remain coordinator-owned. Do not repeat
+  Run 69 reached persistent PID 1 and first-boot WLAN. Guest reboot and
+  bootloader-start persistence remain unmeasured. Do not repeat
   ef476d8c/aa8da109.
