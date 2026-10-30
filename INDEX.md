@@ -2,6 +2,7 @@
 
 ## Latest 10
 
+- [2026-10-30-062828-run-63-preflight-refusal-consumed-pair](records/2026-10-30-062828-run-63-preflight-refusal-consumed-pair.md) | userspace | inconclusive | omnipha/linux-sm7635#184 | Run 63: preflight refusal; no distinct SHA pair, no physical attempt
 - [2026-10-29-2299-self-stage-guard-ack-lifecycle-and-preflight-gat](records/2026-10-29-2299-self-stage-guard-ack-lifecycle-and-preflight-gat.md) | userspace | inconclusive | omnipha/linux-sm7635#173 | Self-stage guard-ack lifecycle and preflight gate (#173, host-only, 2026-10-29)
 - [2026-10-29-2298-host-only-recovery-b-self-stage-payload-and-init](records/2026-10-29-2298-host-only-recovery-b-self-stage-payload-and-init.md) | userspace | inconclusive | omnipha/linux-sm7635#171 | Host-only `recovery_b` self-stage payload and init (#171, 2026-10-29)
 - [2026-10-29-2297-run-58-first-boot-self-stage-and-wlan-associatio](records/2026-10-29-2297-run-58-first-boot-self-stage-and-wlan-associatio.md) | wlan run 58 | confirmed | omnipha/linux-sm7635#164 | Run-58 first-boot self-stage and WLAN association blocker (#164, live session, 2026-10-29)
@@ -11,7 +12,6 @@
 - [2026-10-29-2293-host-only-openrc-networking-wpa-supplicant-stagi](records/2026-10-29-2293-host-only-openrc-networking-wpa-supplicant-stagi.md) | userspace | inconclusive | omnipha/linux-sm7635#160 | Host-only OpenRC `networking` + `wpa_supplicant` staging on the unchanged session image (#160, 2026-10-29)
 - [2026-10-29-2292-run-56-measured-post-cutover-wlan-association-an](records/2026-10-29-2292-run-56-measured-post-cutover-wlan-association-an.md) | wlan run 56 | confirmed | omnipha/linux-sm7635#150 | Run-56 measured post-cutover WLAN association and reachability on postmarketOS PID 1 (#150, live-session finding, 2026-10-29)
 - [2026-10-29-2291-fail-closed-post-cutover-dev-wlan-derivation-for](records/2026-10-29-2291-fail-closed-post-cutover-dev-wlan-derivation-for.md) | wlan | inconclusive | omnipha/linux-sm7635#150 | Fail-closed post-cutover `/dev/wlan` derivation for the WPSS stage (#150, host-only, 2026-10-29)
-- [2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the](records/2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the.md) | modem run 55 | confirmed | omnipha/linux-sm7635#155 | Run-55 measured post-cutover modem hold past the EFS request (#155, 2026-10-29)
 
 ## By subsystem (latest 3, total in brackets)
 
@@ -30,10 +30,10 @@
 - [2026-10-29-2206-host-re-address-of-a-renamed-diagnostic-gadget-2](records/2026-10-29-2206-host-re-address-of-a-renamed-diagnostic-gadget-2.md) | usb | inconclusive | omnipha/linux-sm7635#169 | Host re-address of a renamed diagnostic gadget (2026-10-29, #169)
 - [2026-10-28-2284-run-52-measured-postmarketos-pid-1-cutover-and-u](records/2026-10-28-2284-run-52-measured-postmarketos-pid-1-cutover-and-u.md) | usb run 52 | confirmed | omnipha/linux-sm7635#145 | Run-52 measured postmarketOS PID-1 cutover and USB SSH (#145, live-session finding, 2026-10-28)
 
-### userspace [20]
+### userspace [21]
+- [2026-10-30-062828-run-63-preflight-refusal-consumed-pair](records/2026-10-30-062828-run-63-preflight-refusal-consumed-pair.md) | userspace | inconclusive | omnipha/linux-sm7635#184 | Run 63: preflight refusal; no distinct SHA pair, no physical attempt
 - [2026-10-29-2299-self-stage-guard-ack-lifecycle-and-preflight-gat](records/2026-10-29-2299-self-stage-guard-ack-lifecycle-and-preflight-gat.md) | userspace | inconclusive | omnipha/linux-sm7635#173 | Self-stage guard-ack lifecycle and preflight gate (#173, host-only, 2026-10-29)
 - [2026-10-29-2298-host-only-recovery-b-self-stage-payload-and-init](records/2026-10-29-2298-host-only-recovery-b-self-stage-payload-and-init.md) | userspace | inconclusive | omnipha/linux-sm7635#171 | Host-only `recovery_b` self-stage payload and init (#171, 2026-10-29)
-- [2026-10-29-2295-host-only-inactive-vendor-boot-b-userspace-paylo](records/2026-10-29-2295-host-only-inactive-vendor-boot-b-userspace-paylo.md) | userspace | inconclusive | omnipha/linux-sm7635#164 | Host-only inactive `vendor_boot_b` userspace payload and self-staged session (#164, 2026-10-29)
 
 ### wlan [36]
 - [2026-10-29-2297-run-58-first-boot-self-stage-and-wlan-associatio](records/2026-10-29-2297-run-58-first-boot-self-stage-and-wlan-associatio.md) | wlan run 58 | confirmed | omnipha/linux-sm7635#164 | Run-58 first-boot self-stage and WLAN association blocker (#164, live session, 2026-10-29)
@@ -42,4 +42,4 @@
 
 ## By month
 
-- [2026-10](records/index-2026-10.md) [123]
+- [2026-10](records/index-2026-10.md) [124]
