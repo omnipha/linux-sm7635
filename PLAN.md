@@ -12,12 +12,12 @@ One active step, one active issue. Later steps are not pre-created issues.
 
 ## Active step
 
-- Step: host-only #194 root-type contract drafted and loop-verified for one
-  pinned ext4 userdata root; full delivery blocked by untouched foreign paths.
+- Step: host-only #194 root-type contract and fixtures complete for one
+  pinned ext4 userdata root or the measured 256m tmpfs root.
 - Issue: omnipha/linux-sm7635#194
-- Done: no image, flash, USB or session use. Owned helper and new fixture
-  pass; existing tmpfs PID-1 suite passes. Self-stage and radio paths remain
-  foreign and were not modified.
+- Done: no image, flash, USB or session use. Self-stage, radio, session,
+  PID-1 and alpine host fixtures pass with the host hold and capture gate
+  unchanged.
 
 ## Next (ordered, not issues yet)
 
@@ -28,6 +28,7 @@ One active step, one active issue. Later steps are not pre-created issues.
 
 ## Done (pointers, newest first)
 
+- Host-only #194: pinned ext4 userdata root or measured 256m tmpfs accepted across stage, teardown, transition, guard, ack, self-post, radio and self-stage fixtures -> records/ (userspace)
 - Host-only #194: pinned ext4 userdata root accepted in loop fixture; full contract blocked by foreign paths -> records/ (userspace)
 - Run 65: bootloader-start self-stage, postmarketOS PID 1 and OpenRC WLAN reachability measured with no write -> records/ (boot/wlan)
 - Run 64: host reboot-hold over :22 confirmed; second userdata self-stage and postmarketOS PID 1 measured (boot/wlan)

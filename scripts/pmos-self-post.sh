@@ -8,7 +8,7 @@ GUARD=/run/pid1-guard
 RADIO="$STATE/pmos-radio-bringup.sh"
 PROFILE="$STATE/wpa_supplicant.conf"
 RELEASE=/run/self-stage-capture-marker
-RADIO_SHA=6b94e3d2f5feb68df1d87b821596bbf901aec2363d1a06add23c456f13cc97c0
+RADIO_SHA=04fe93d76c5048122f1a413457c0e0f1b1abd13f78f3518d8bb12abb18762dd1
 umask 077
 
 log() {
@@ -37,7 +37,10 @@ until [ "$($BB cat /run/openrc/softlevel 2>/dev/null)" = default ] &&
 done
 
 [ "$($BB sha256sum /proc/1/exe | $BB cut -d ' ' -f 1)" = "$($BB sha256sum /bin/busybox | $BB cut -d ' ' -f 1)" ] &&
-	$BB awk '$2 == "/" {n++; if ($3 != "tmpfs") bad++} END {exit(n != 1 || bad)}' /proc/1/mounts &&
+	{ $BB awk '$2 == "/" {n++; if ($3 != "tmpfs") bad++} END {exit(n != 1 || bad)}' /proc/1/mounts ||
+		{ CONTRACT="$GUARD/root-contract.sh"
+		  [ -f "$CONTRACT" ] && [ ! -L "$CONTRACT" ] && . "$CONTRACT" &&
+		  root_contract_switched_root /proc/1/mounts /proc/1/mountinfo; }; } &&
 	[ "$($BB stat -c '%d:%i' /)" = "$($BB stat -Lc '%d:%i' /proc/1/root)" ] &&
 	[ "$($BB cat "$GUARD/armed" 2>/dev/null)" = "$boot" ] &&
 	[ "$($BB stat -Lc '%d:%i' /proc/1/root)" = "$($BB cat "$GUARD/root-identity" 2>/dev/null)" ] &&

@@ -102,8 +102,10 @@ rmtfs_inputs() {
 if [ "$stage" = prepare ]; then
 	$BB readlink /proc/1/exe 2>/dev/null | $BB grep -q busybox || fail 'PID 1 is not the diagnostic busybox init'
 	[ -d /run/pmos/run ] && [ ! -L /run/pmos/run ] &&
-		$BB awk '$2 == "/run/pmos" && $3 == "tmpfs" {n++} END {exit(n != 1)}' /proc/mounts &&
-		$BB awk '$2 == "/run/pmos/run" && $3 == "tmpfs" {n++} END {exit(n != 1)}' /proc/mounts ||
+		$BB awk '$2 == "/run/pmos/run" && $3 == "tmpfs" {n++} END {exit(n != 1)}' /proc/mounts &&
+		{ $BB awk '$2 == "/run/pmos" && $3 == "tmpfs" {n++} END {exit(n != 1)}' /proc/mounts ||
+		  { [ -f /run/pmos-root-contract.sh ] && [ ! -L /run/pmos-root-contract.sh ] &&
+		    . /run/pmos-root-contract.sh && root_contract_stage_root /run/pmos; }; } ||
 		fail 'staged postmarketOS tmpfs not ready before cutover'
 	[ ! -e /run/pmos/vendor ] && [ ! -L /run/pmos/vendor ] || fail 'guest vendor path already exists'
 	[ -f "/vendor/$INI" ] && [ ! -L /vendor ] &&
@@ -153,7 +155,10 @@ if [ "$stage" = prepare ]; then
 fi
 
 $BB readlink /proc/1/exe 2>/dev/null | $BB grep -q busybox &&
-	$BB awk '$2 == "/" && $3 == "tmpfs" {n++} END {exit(n != 1)}' /proc/1/mounts &&
+	{ $BB awk '$2 == "/" && $3 == "tmpfs" {n++} END {exit(n != 1)}' /proc/1/mounts ||
+		{ CONTRACT=/run/pid1-guard/root-contract.sh
+		  [ -f "$CONTRACT" ] && [ ! -L "$CONTRACT" ] && . "$CONTRACT" &&
+		  root_contract_switched_root /proc/1/mounts /proc/1/mountinfo; }; } &&
 	$BB grep -q 'ID="postmarketos"' /etc/os-release &&
 	[ "$($BB cat /run/openrc/softlevel 2>/dev/null)" = default ] &&
 	/sbin/rc-service local status >/dev/null 2>&1 || fail 'post-cutover PID 1 or default/local absent'

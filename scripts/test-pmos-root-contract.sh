@@ -91,7 +91,28 @@ if [ "${1:-}" = --ext4-worker ]; then
 	$BB grep -q "pid1-ack: accepted on boot $boot" "$HOST_RUN/ack.out" || fail 'ack acceptance message missing'
 	[ "$($BB cat /proc/1/root/run/pid1-guard/accepted)" = "$boot" ] || fail 'guard accepted file missing or wrong boot'
 	[ ! -e /proc/1/root/run/pid1-guard/recovery-request ] && [ ! -L /proc/1/root/run/pid1-guard/recovery-request ] || fail 'ack caused mock recovery'
-	printf 'pass: ext4-ack; real BusyBox PID 1 switch_root to loop-backed userdata ext4 with surviving pre-cutover Dropbear PID and pinned key, real guard watch on ext4 switched root, strict key-only SSH before/after, ack rejected on wrong PARTNAME and accepted after restoring userdata; no device recovery\n'
+	$BB cp "$SOURCE/pmos-self-post.sh" /proc/1/root/run/pmos-self-post.sh
+	$BB cp "$SOURCE/pmos-radio-bringup.sh" /proc/1/root/run/pmos-radio-bringup.sh
+	$BB chmod 700 /proc/1/root/run/pmos-self-post.sh /proc/1/root/run/pmos-radio-bringup.sh
+	$BB mkdir -p -m 700 /proc/1/root/run/radio-bringup /proc/1/root/run/openrc
+	$BB printf 'default\n' > /proc/1/root/run/openrc/softlevel
+	$BB cat > /proc/1/root/sbin/rc-service <<'RCS'
+#!/bin/busybox sh
+exit 0
+RCS
+	$BB chmod 755 /proc/1/root/sbin/rc-service
+	$BB cp /proc/1/root/sys/class/block/sda13/uevent "$HOST_RUN/uevent.saved"
+	$BB printf 'PARTNAME=super\n' > /proc/1/root/sys/class/block/sda13/uevent
+	$BB chroot /proc/1/root /bin/busybox sh /run/pmos-self-post.sh >"$HOST_RUN/post-bad.out" 2>&1 && fail 'self-post accepted ext4 switched root with wrong PARTNAME'
+	$BB grep -q 'switched-root or guard identity check failed' "$HOST_RUN/post-bad.out" || fail 'self-post wrong PARTNAME failure reason'
+	$BB chroot /proc/1/root /bin/busybox sh /run/pmos-radio-bringup.sh "$boot" modem capture-ok >"$HOST_RUN/radio-bad.out" 2>&1 && fail 'radio bring-up accepted ext4 switched root with wrong PARTNAME'
+	$BB grep -q 'post-cutover PID 1 or default/local absent' "$HOST_RUN/radio-bad.out" || fail 'radio wrong PARTNAME failure reason'
+	$BB cp "$HOST_RUN/uevent.saved" /proc/1/root/sys/class/block/sda13/uevent
+	$BB chroot /proc/1/root /bin/busybox sh /run/pmos-self-post.sh >"$HOST_RUN/post-ok.out" 2>&1 && fail 'self-post succeeded without radio script at /run/radio-bringup'
+	$BB grep -q 'host-owned guard ack accepted on boot' "$HOST_RUN/post-ok.out" || { $BB cat "$HOST_RUN/post-ok.out" >&2; fail 'self-post rejected valid ext4 switched root'; }
+	$BB chroot /proc/1/root /bin/busybox sh /run/pmos-radio-bringup.sh "$boot" modem capture-ok >"$HOST_RUN/radio-ok.out" 2>&1 && fail 'radio bring-up succeeded without staged INI'
+	$BB grep -q 'pre-cutover staged stock INI missing' "$HOST_RUN/radio-ok.out" || { $BB cat "$HOST_RUN/radio-ok.out" >&2; fail 'radio bring-up rejected valid ext4 switched root'; }
+	printf 'pass: ext4-ack; real BusyBox PID 1 switch_root to loop-backed userdata ext4 with surviving pre-cutover Dropbear PID and pinned key, real guard watch on ext4 switched root, strict key-only SSH before/after, ack/self-post/radio rejected on wrong PARTNAME and accepted after restoring userdata; no device recovery\n'
 	$BB printf 'ok\n' > /proc/1/root/run/worker.ok
 	$BB kill -TERM 1
 	exit 0
