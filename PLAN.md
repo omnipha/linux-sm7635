@@ -7,16 +7,17 @@ One active step, one active issue. Later steps are not pre-created issues.
 
 1. USB shell on the stock kernel: measured.
 2. WLAN across one reboot and bootloader start without a host push: measured (runs 64/65).
-3. Persistent userdata root: active as #197.
+3. Persistent userdata root across reboot: active as #204.
 4. Then one function at a time over the open SSH session. Display is next.
    No extra oversight role. This list is the check.
 
 ## Active step
 
-- Step: #204 first boot reached persistent PID 1 and WLAN. Reboot persistence
-  remains unmeasured and coordinator-owned.
+- Step: #204 first boot reached persistent PID 1 and WLAN. One clean guest
+  reboot self-staged the same ext4 root, then refused switch_root because the
+  independent recovery guard was not armed.
 - Issue: omnipha/linux-sm7635#204
-- Next: one clean guest reboot, then the same root and PID 1 without a host push. Do not reflash ef476d8c.
+- Next: diagnose that guard gate in the open session. Do not reboot again or reflash 2f73c947/f792174c/aa8da109.
 
 ## Next (ordered, not issues yet)
 
@@ -31,6 +32,8 @@ One active step, one active issue. Later steps are not pre-created issues.
 Reopen either only when a measurement shows it blocks the active step.
 
 ## Done (pointers, newest first)
+
+- Run 69: second boot self-staged persistent ext4 root but refused PID 1 at an unarmed independent guard -> records/2026-10-30-201949-run-69-second-boot-guard-refused.md
 
 - Run 69: persistent ext4 root, postmarketOS PID 1 and first-boot WLAN measured -> records/2026-10-30-195754-run-69-persistent-root-first-boot.md
 - Host #204: existing vendor_boot_b carrier pair replayed without rebuild -> records/2026-10-30-191204-root-contract-carrier-replay.md
