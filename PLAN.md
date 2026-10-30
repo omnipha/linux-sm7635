@@ -17,8 +17,9 @@ One active step, one active issue. Later steps are not pre-created issues.
   modem/WPSS/wlan0/scan and OpenRC WLAN association, DHCP, gateway, DNS and
   external reachability with no host archive push and no partition write.
 - Issue: omnipha/linux-sm7635#191
-- Done when: coordinator session close with untouched slot-A rescue baseline
-  proof is recorded.
+- Done: coordinator session close landed with untouched slot-A rescue baseline
+  proof recorded in the run-65 close record; phone left in fastboot. Mission
+  successor selection is separate.
 
 ## Next (ordered, not issues yet)
 

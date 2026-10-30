@@ -41,6 +41,9 @@ attempted_shas:       # cold-start index only; the flash gate is device-op statu
   - fcb0ed91
   - fef03008        # init_boot, runs 52-57
 notes: >-
-  All values refer to coordinator-held, RAM-backed sessions on the stock
-  kernel. Linux stays on the phone between runs; stock/Android is emergency
-  or operator request only. Not an Omnipha image, not a release.
+  Run 65 #191 session closed landed: slot-A rescue boot_a, vendor_boot_a,
+  dtbo_a and vbmeta_a equal verified stock backups; init_boot_a remains the
+  installed Linux carrier, phone in fastboot. All values refer to coordinator-
+  held, RAM-backed sessions on the stock kernel. Linux stays on the phone
+  between runs; stock/Android is emergency or operator request only. Not an
+  Omnipha image, not a release.
