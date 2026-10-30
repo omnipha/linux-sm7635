@@ -5,6 +5,7 @@ BB=/bin/busybox
 STATE=/run/pid1-guard
 HELPER_SHA=fbe1472929510910b7fbb570d98ad939a2f39fd13786d000bb67ed46434b29f7
 MOCK_SHA=e112e65f2e9a6dc28531b45eda218284e4afb152dc3a02b588f7a25255cce2d1
+MOCK_EXT4_SHA=fe72fe25364a1a08c6482bcecb3175f2c0def38af6fc02967b1edc1d6cf28e71
 MODEL='Qualcomm Technologies, Inc. Volcano QRD Pro'
 umask 077
 
@@ -23,7 +24,13 @@ post_root() {
 	[ "$(hash /proc/1/exe)" = "$(hash /bin/busybox)" ] &&
 	[ "$($BB stat -Lc '%d:%i' /proc/1/root 2>/dev/null)" = "$($BB cat "$STATE/root-identity" 2>/dev/null)" ] &&
 	[ "$($BB stat -c '%d:%i' / 2>/dev/null)" = "$($BB cat "$STATE/root-identity" 2>/dev/null)" ] &&
-	$BB awk '$2 == "/" {n++; if ($3 != "tmpfs") bad++} END {exit(n != 1 || bad)}' /proc/1/mounts
+	if $BB awk '$2 == "/" {n++; if ($3 != "tmpfs") bad++} END {exit(n != 1 || bad)}' /proc/1/mounts; then
+		return 0
+	else
+		[ -f "$STATE/root-contract.sh" ] && [ ! -L "$STATE/root-contract.sh" ] &&
+		. "$STATE/root-contract.sh" &&
+		root_contract_switched_root /proc/1/mounts /proc/1/mountinfo
+	fi
 }
 real_device() {
 	[ "$($BB uname -m)" = aarch64 ] &&
@@ -60,7 +67,7 @@ watch() {
 	[ -d "$STATE" ] && [ ! -L "$STATE" ] &&
 	[ "$($BB stat -c '%u:%a' "$STATE")" = 0:700 ] || fail 'unprotected state'
 	case "$mode" in real|mock) :;; *) fail 'invalid mode';; esac
-	if [ "$mode" = mock ]; then [ "$mock_sha" = "$MOCK_SHA" ] || fail 'untrusted mock'; fi
+	if [ "$mode" = mock ]; then [ "$mock_sha" = "$MOCK_SHA" ] || [ "$mock_sha" = "$MOCK_EXT4_SHA" ] || fail 'untrusted mock'; fi
 	[ ! -e "$STATE/armed" ] && [ ! -L "$STATE/armed" ] &&
 	[ ! -e "$STATE/nonce" ] && [ ! -L "$STATE/nonce" ] &&
 	[ ! -e "$STATE/ack" ] && [ ! -L "$STATE/ack" ] &&
@@ -133,7 +140,12 @@ arm() {
 	[ ! -L "$root/bin/busybox" ] &&
 	[ -c "$root/dev/urandom" ] &&
 	[ "$($BB stat -c '%t:%T' "$root/dev/urandom")" = 1:9 ] || fail 'new root incomplete'
-	$BB awk -v path="$root" '$2 == path {n++; if ($3 != "tmpfs") bad++} END {exit(n != 1 || bad)}' /proc/mounts || fail 'new root is not mounted tmpfs'
+	if ! $BB awk -v path="$root" '$2 == path {n++; if ($3 != "tmpfs") bad++} END {exit(n != 1 || bad)}' /proc/mounts; then
+		contract=${PMOS_ROOT_CONTRACT:-/run/pmos-root-contract.sh}
+		[ -f "$contract" ] || contract="$(dirname -- "$0")/pmos-root-contract.sh"
+		[ -f "$contract" ] && [ ! -L "$contract" ] && . "$contract" &&
+		root_contract_pinned_userdata "$root" || fail 'new root is not mounted tmpfs or pinned userdata ext4'
+	fi
 	$BB awk -v path="$root/proc" '$2 == path {n++; if ($3 != "proc") bad++} END {exit(n != 1 || bad)}' /proc/mounts || fail 'new root has no proc mount'
 	[ -r "$root/proc/uptime" ] && [ -r "$root/proc/1/mounts" ] &&
 	[ -r "$root/proc/sys/kernel/random/boot_id" ] || fail 'new proc unavailable'
@@ -151,7 +163,7 @@ arm() {
 		[ "$(hash /bin/restart2)" = "$HELPER_SHA" ] || fail 'unpinned RESTART2'
 	else
 		[ "$mode" = mock ] && [ "$($BB uname -m)" != aarch64 ] &&
-		[ "$mock_sha" = "$MOCK_SHA" ] || fail 'mock only with pinned fixture on non-aarch64 hosts'
+		{ [ "$mock_sha" = "$MOCK_SHA" ] || [ "$mock_sha" = "$MOCK_EXT4_SHA" ]; } || fail 'mock only with pinned fixture on non-aarch64 hosts'
 		[ -f "$mock_source" ] && [ ! -L "$mock_source" ] &&
 		[ "$(hash "$mock_source")" = "$mock_sha" ] || fail 'mock helper hash mismatch'
 	fi
@@ -160,6 +172,12 @@ arm() {
 	$BB stat -c '%d:%i' "$root" > "$root$STATE/root-identity" || fail 'cannot pin new root'
 	$BB cp "$0" "$root$STATE/guard.sh" || fail 'cannot copy guard'
 	[ "$(hash "$0")" = "$(hash "$root$STATE/guard.sh")" ] || fail 'guard copy changed'
+	contract=${PMOS_ROOT_CONTRACT:-/run/pmos-root-contract.sh}
+	[ -f "$contract" ] || contract="$(dirname -- "$0")/pmos-root-contract.sh"
+	if [ -f "$contract" ] && [ ! -L "$contract" ]; then
+		$BB cp "$contract" "$root$STATE/root-contract.sh" || fail 'cannot copy root contract'
+		[ "$(hash "$contract")" = "$(hash "$root$STATE/root-contract.sh")" ] || fail 'root contract copy changed'
+	fi
 	if [ "$mode" = real ]; then
 		$BB cp /bin/restart2 "$root/bin/restart2" || fail 'cannot copy RESTART2'
 		$BB chmod 755 "$root/bin/restart2"

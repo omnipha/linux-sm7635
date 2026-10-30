@@ -12,14 +12,12 @@ One active step, one active issue. Later steps are not pre-created issues.
 
 ## Active step
 
-- Step: measured (run 65) — bootloader start of the installed run-64 chain
-  reached read-only `userdata` self-stage, postmarketOS PID 1, guard ack,
-  modem/WPSS/wlan0/scan and OpenRC WLAN association, DHCP, gateway, DNS and
-  external reachability with no host archive push and no partition write.
-- Issue: omnipha/linux-sm7635#191
-- Done: coordinator session close landed with untouched slot-A rescue baseline
-  proof recorded in the run-65 close record; phone left in fastboot. Mission
-  successor selection is separate.
+- Step: host-only #194 root-type contract drafted and loop-verified for one
+  pinned ext4 userdata root; full delivery blocked by untouched foreign paths.
+- Issue: omnipha/linux-sm7635#194
+- Done: no image, flash, USB or session use. Owned helper and new fixture
+  pass; existing tmpfs PID-1 suite passes. Self-stage and radio paths remain
+  foreign and were not modified.
 
 ## Next (ordered, not issues yet)
 
@@ -30,6 +28,7 @@ One active step, one active issue. Later steps are not pre-created issues.
 
 ## Done (pointers, newest first)
 
+- Host-only #194: pinned ext4 userdata root accepted in loop fixture; full contract blocked by foreign paths -> records/ (userspace)
 - Run 65: bootloader-start self-stage, postmarketOS PID 1 and OpenRC WLAN reachability measured with no write -> records/ (boot/wlan)
 - Run 64: host reboot-hold over :22 confirmed; second userdata self-stage and postmarketOS PID 1 measured (boot/wlan)
 - Run 62: userdata self-stage on first boot; host re-addressing, fresh boot ID

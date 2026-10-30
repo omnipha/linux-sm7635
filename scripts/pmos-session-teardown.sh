@@ -13,10 +13,15 @@ check_mounts() {
 	for path in "$PMOS_ROOT" "$PMOS_ROOT/run" "$PMOS_ROOT/dev" "$PMOS_ROOT/dev/pts" "$PMOS_ROOT/sys" "$PMOS_ROOT/sys/kernel" "$PMOS_ROOT/sys/kernel/config" "$PMOS_ROOT/proc"; do
 		[ ! -L "$path" ] || die "guest mount path is a symlink"
 	done
+	CONTRACT=${PMOS_ROOT_CONTRACT:-/run/pmos-root-contract.sh}
+	[ -f "$CONTRACT" ] || CONTRACT="${SOURCE:-/run}/pmos-root-contract.sh"
+	[ -f "$CONTRACT" ] || CONTRACT="$(dirname -- "$0")/pmos-root-contract.sh"
+	[ -f "$CONTRACT" ] && [ ! -L "$CONTRACT" ] && . "$CONTRACT" || die "root contract unavailable"
 	$BB awk -v root="$PMOS_ROOT" '
 		$2 == root || index($2, root "/") == 1 {
 			if ($2 == root && $1 == "tmpfs" && $3 == "tmpfs" &&
 			    $4 ~ /(^|,)size=262144k(,|$)/ && $4 ~ /(^|,)mode=700(,|$)/) base++
+			else if ($2 == root && $3 == "ext4" && $1 ~ /^\/dev\/block\//) {base++; ext4++}
 			else if ($2 == root "/run" && $1 == "tmpfs" && $3 == "tmpfs" &&
 			    $4 ~ /(^|,)size=8192k(,|$)/ && $4 ~ /(^|,)mode=700(,|$)/) run++
 			else if ($2 == root "/proc" && $3 == "proc") proc++
@@ -30,6 +35,9 @@ check_mounts() {
 			((run || proc || sys || config || dev || pts) && !base) ||
 			((proc || sys || config || dev || pts) && !run) || (config && !sys) || (pts && !dev))}
 	' /proc/mounts || die "unexpected, duplicated or incorrectly sized guest mount"
+	if $BB awk -v root="$PMOS_ROOT" '$2 == root && $3 == "ext4" {n++} END {exit(n == 0)}' /proc/mounts; then
+		root_contract_pinned_userdata "$PMOS_ROOT" || die "guest mount identity or source invalid"
+	fi
 	$BB awk -v root="$PMOS_ROOT" '
 		$5 == "/" {host_root = $3}
 		$5 == "/run" {host_run = $3}
@@ -40,7 +48,8 @@ check_mounts() {
 		$5 == "/sys" {host_sys = $1}
 		$5 == root {
 			base++; root_mount = $1; root_id = $3
-			if ($4 != "/" || $0 !~ / - tmpfs tmpfs /) bad++
+			if ($4 != "/" || ($0 !~ / - tmpfs tmpfs / &&
+			    $0 !~ / - ext4 \/dev\/block\//)) bad++
 			for (i = 7; i <= NF && $i != "-"; i++)
 				if ($i ~ /^(shared|master|propagate_from):/ || $i == "unbindable") bad++
 		}
