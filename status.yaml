@@ -3,15 +3,14 @@
 device: nothing-asteroids
 updated: 2026-10-30
 next_question: >-
-  Why does the persistent-root init unpack its bundle without staging
-  pmos-root-contract.sh or starting self-stage?
-  Does the verified persistent ext4 root reach postmarketOS PID 1, guard
-  acceptance and WLAN after one guest reboot and one bootloader start?
+  Does the digest-checked vendor_boot_b root-contract bundle reach
+  postmarketOS PID 1, guard acceptance and WLAN after one guest reboot
+  and one bootloader start?
 active_issue: omnipha/linux-sm7635#197
 subsystems:
   boot:
-    state: partial        # run 67 reached diagnostic SSH but not persistent-root self-stage
-    record: records/2026-10-30-170925-run-67-persistent-root-self-stage-absent.md
+    state: partial        # host pair verified; physical persistent-root launch still belongs to #197
+    record: records/2026-10-30-183749-root-contract-vendor-boot-carrier.md
   ssh:
     state: partial        # key-only USB SSH on :22 and post-cutover :2222 survives bootloader start and guest reboot (runs 64/65)
     record: records/2026-10-30-081343-run-65-bootloader-start-self-stage.md
@@ -42,6 +41,6 @@ attempted_shas:       # cold-start index only; the flash gate is device-op statu
   - fcb0ed91
   - fef03008        # init_boot, runs 52-57
 notes: >-
-  Run 67 wrote ef476d8c/aa8da109 once. Boot d58d462d reached diagnostic
-  :22 but not self-stage or persistent PID 1. Rescue hashes were exact and
-  the phone remains in fastboot. Do not repeat that pair unchanged.
+  Host #204 places the pinned root contract on vendor_boot_b and removes
+  the embedded init_boot bundle. Physical measurement remains #197. Do not
+  repeat ef476d8c/aa8da109.
