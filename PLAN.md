@@ -13,10 +13,10 @@ One active step, one active issue. Later steps are not pre-created issues.
 
 ## Active step
 
-- Step: #204 first boot reached persistent PID 1 and WLAN. Reboot persistence
-  remains unmeasured and coordinator-owned.
+- Step: #204 first boot and guest reboot reached persistent PID 1 and WLAN.
+  Bootloader-start persistence remains coordinator-owned.
 - Issue: omnipha/linux-sm7635#204
-- Next: one clean guest reboot, then the same root and PID 1 without a host push. Do not reflash ef476d8c.
+- Next: one bootloader start, then unchanged root, guard, and WLAN. Do not reflash ef476d8c.
 
 ## Next (ordered, not issues yet)
 
@@ -32,6 +32,7 @@ Reopen either only when a measurement shows it blocks the active step.
 
 ## Done (pointers, newest first)
 
+- Run 69: guest reboot reached accepted guard, persistent PID 1 and WLAN -> records/2026-10-30-203515-run-69-second-boot-guard-wlan.md
 - Run 69: persistent ext4 root, postmarketOS PID 1 and first-boot WLAN measured -> records/2026-10-30-195754-run-69-persistent-root-first-boot.md
 - Host #204: existing vendor_boot_b carrier pair replayed without rebuild -> records/2026-10-30-191204-root-contract-carrier-replay.md
 - Host #204: pinned raw contract exceeds the fixed init_boot envelope by 597 bytes -> records/2026-10-30-184802-init-boot-root-contract-envelope-overflow.md
