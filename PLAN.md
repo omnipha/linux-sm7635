@@ -7,16 +7,16 @@ One active step, one active issue. Later steps are not pre-created issues.
 
 1. USB shell on the stock kernel: measured.
 2. WLAN across one reboot and bootloader start without a host push: measured (runs 64/65).
-3. Persistent userdata root: active as #197.
+3. Persistent userdata root: measured through guest reboot; cold start remains.
 4. Then one function at a time over the open SSH session. Display is next.
    No extra oversight role. This list is the check.
 
 ## Active step
 
-- Step: #204 first boot and guest reboot reached persistent PID 1 and WLAN.
-  Bootloader-start persistence remains coordinator-owned.
-- Issue: omnipha/linux-sm7635#204
-- Next: one bootloader start, then unchanged root, guard, and WLAN. Do not reflash ef476d8c.
+- Step: #197 cold start of the measured persistent root without USB host
+  signals. #204 is closed.
+- Issue: omnipha/linux-sm7635#197
+- Next: one cold start that owns /run/keep, guard, radio, and SSH. Do not reflash ef476d8c.
 
 ## Next (ordered, not issues yet)
 
@@ -32,6 +32,7 @@ Reopen either only when a measurement shows it blocks the active step.
 
 ## Done (pointers, newest first)
 
+- Run 69: bootloader start returned diagnostic Linux and exact slot-A rescue hashes -> records/2026-10-30-204752-run-69-bootloader-start-rescue.md
 - Run 69: guest reboot reached accepted guard, persistent PID 1 and WLAN -> records/2026-10-30-203515-run-69-second-boot-guard-wlan.md
 - Run 69: persistent ext4 root, postmarketOS PID 1 and first-boot WLAN measured -> records/2026-10-30-195754-run-69-persistent-root-first-boot.md
 - Host #204: existing vendor_boot_b carrier pair replayed without rebuild -> records/2026-10-30-191204-root-contract-carrier-replay.md

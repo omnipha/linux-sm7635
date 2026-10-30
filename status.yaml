@@ -3,13 +3,13 @@
 device: nothing-asteroids
 updated: 2026-10-30
 next_question: >-
-  Does one bootloader start return the same persistent root, guard, and WLAN
-  without a host push?
-active_issue: omnipha/linux-sm7635#204
+  Can a cold start own the persistent root, guard, and radio without USB host
+  signals?
+active_issue: omnipha/linux-sm7635#197
 subsystems:
   boot:
     state: partial
-    record: records/2026-10-30-203515-run-69-second-boot-guard-wlan.md
+    record: records/2026-10-30-204752-run-69-bootloader-start-rescue.md
   ssh:
     state: partial
     record: records/2026-10-30-203515-run-69-second-boot-guard-wlan.md
@@ -40,6 +40,6 @@ attempted_shas:       # cold-start index only; the flash gate is device-op statu
   - fcb0ed91
   - fef03008        # init_boot, runs 52-57
 notes: >-
-  Run 69 measured first boot and guest-reboot persistence with WLAN. One
-  bootloader start and slot-A rescue proof remain. Do not repeat
+  Run 69 closed with first boot, guest reboot, bootloader start, and exact
+  slot-A rescue hashes. Cold start remains unmeasured. Do not repeat
   ef476d8c/aa8da109.
