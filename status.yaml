@@ -1,22 +1,23 @@
 # Current measured state only. Limit 80 lines. No protocol text: link records.
 # Public claims: omnipha/ports devices/nothing-asteroids/device.yaml (updated separately).
 device: nothing-asteroids
-updated: 2026-10-29
+updated: 2026-10-30
 next_question: >-
-  Can the host create the root-only /run/keep hold over diagnostic :22 inside
-  the 145 s window after a guest reboot, so the userdata self-stage repeats and
-  WLAN autoconnect can be measured (host-side fix, no new image)?
+  With the run-64 reboot-hold fix confirmed (second self-stage + PID 1 measured
+  on the stock kernel), is a persistent ext4 root / cold boot design feasible,
+  and can second-boot WLAN association complete once the designated network is
+  visible again (#183)?
 active_issue: omnipha/linux-sm7635#184
 subsystems:
   boot:
-    state: partial        # RAM postmarketOS PID 1 on stock 6.1.84 kernel; run 62 second boot stops at the missing hold before self-stage
-    record: records/2026-10-29-165533-run-62-second-boot-hold-and-self-stage-blocker.md
+    state: partial        # RAM postmarketOS PID 1 repeats across a clean guest reboot via host /run/keep over :22 (run 64); no persistent root or cold boot yet
+    record: records/2026-10-30-071025-run-64-second-boot-hold-and-self-stage.md
   ssh:
-    state: partial        # key-only USB SSH incl. post-cutover :2222 and diagnostic :22 return after a guest reboot (run 62)
-    record: records/2026-10-29-165533-run-62-second-boot-hold-and-self-stage-blocker.md
+    state: partial        # key-only USB SSH on :22 and post-cutover :2222 returns after a guest reboot and survives (run 64)
+    record: records/2026-10-30-071025-run-64-second-boot-hold-and-self-stage.md
   wlan:
-    state: partial        # association, DHCP, gateway, DNS and external reachability measured in-session (runs 56/57); not persistent, not after reboot
-    record: records/2026-10-29-2294-run-57-measured-openrc-wpa-supplicant-and-networ.md
+    state: partial        # modem/WPSS/wlan0/scan repeat after reboot (run 64); association still stops at SCANNING with the designated network absent; in-session association/DHCP/gateway/DNS measured earlier (runs 56/57)
+    record: records/2026-10-30-071025-run-64-second-boot-hold-and-self-stage.md
   modem:
     state: partial        # stays running past the EFS request after PID-1 cutover (run 55); no voice/SIM/data claim
     record: records/2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the.md
