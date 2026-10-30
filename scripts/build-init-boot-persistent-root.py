@@ -110,8 +110,17 @@ fi''')
         b'\t{ [ ! -e "$PMOS_ROOT/sbin/init" ] && [ ! -L "$PMOS_ROOT/sbin/init" ] || die "guest init already exists"; }')
     stage = replace_once(stage, b'\t\t[ ! -e "$entry" ] && [ ! -L "$entry" ] || die "unexpected enabled OpenRC service"',
         b'\t\t[ ! -e "$entry" ] && [ ! -L "$entry" ] || {\n'
-        b'\t\t\t[ "${PMOS_ROOT_KIND:-tmpfs}" = ext4 ] && [ "$entry" = "$PMOS_ROOT/etc/runlevels/default/local" ] &&\n'
-        b'\t\t\t\t[ "$($BB readlink "$entry")" = /etc/init.d/local ] || die "unexpected enabled OpenRC service"\n'
+        b'\t\t\t[ "${PMOS_ROOT_KIND:-tmpfs}" = ext4 ] && {\n'
+        b'\t\t\t\tcase "$entry" in\n'
+        b'\t\t\t\t\t"$PMOS_ROOT/etc/runlevels/default/local")\n'
+        b'\t\t\t\t\t\t[ "$($BB readlink "$entry")" = /etc/init.d/local ] || die "unexpected enabled OpenRC service" ;;\n'
+        b'\t\t\t\t\t"$PMOS_ROOT/etc/runlevels/default/wpa_supplicant")\n'
+        b'\t\t\t\t\t\t[ "$($BB readlink "$entry")" = /etc/init.d/wpa_supplicant ] || die "unexpected enabled OpenRC service" ;;\n'
+        b'\t\t\t\t\t"$PMOS_ROOT/etc/runlevels/default/networking")\n'
+        b'\t\t\t\t\t\t[ "$($BB readlink "$entry")" = /etc/init.d/networking ] || die "unexpected enabled OpenRC service" ;;\n'
+        b'\t\t\t\t\t*) die "unexpected enabled OpenRC service" ;;\n'
+        b'\t\t\t\tesac\n'
+        b'\t\t\t} || die "unexpected enabled OpenRC service"\n'
         b'\t\t}')
     stage = replace_once(stage, b'\t[ ! -e "$hook" ] && [ ! -L "$hook" ] || die "unexpected local startup hook"',
         b'\t[ ! -e "$hook" ] && [ ! -L "$hook" ] || {\n'
