@@ -3,21 +3,20 @@
 device: nothing-asteroids
 updated: 2026-10-30
 next_question: >-
-  With the run-64 reboot-hold fix confirmed (second self-stage + PID 1 measured
-  on the stock kernel), is a persistent ext4 root / cold boot design feasible,
-  and can second-boot WLAN association complete once the designated network is
-  visible again (#183)?
-active_issue: omnipha/linux-sm7635#184
+  With bootloader-start self-stage, postmarketOS PID 1 and OpenRC WLAN measured
+  without a host push or flash (run 65, #191), what is the multi-contract
+  design for a persistent ext4 root / cold boot (#183)?
+active_issue: omnipha/linux-sm7635#191
 subsystems:
   boot:
-    state: partial        # RAM postmarketOS PID 1 repeats across a clean guest reboot via host /run/keep over :22 (run 64); no persistent root or cold boot yet
-    record: records/2026-10-30-071025-run-64-second-boot-hold-and-self-stage.md
+    state: partial        # bootloader start of installed chain self-stages from userdata and reaches postmarketOS PID 1 with no host push (run 65); no persistent root or cold boot yet
+    record: records/2026-10-30-081343-run-65-bootloader-start-self-stage.md
   ssh:
-    state: partial        # key-only USB SSH on :22 and post-cutover :2222 returns after a guest reboot and survives (run 64)
-    record: records/2026-10-30-071025-run-64-second-boot-hold-and-self-stage.md
+    state: partial        # key-only USB SSH on :22 and post-cutover :2222 survives bootloader start and guest reboot (runs 64/65)
+    record: records/2026-10-30-081343-run-65-bootloader-start-self-stage.md
   wlan:
-    state: partial        # modem/WPSS/wlan0/scan repeat after reboot (run 64); association still stops at SCANNING with the designated network absent; in-session association/DHCP/gateway/DNS measured earlier (runs 56/57)
-    record: records/2026-10-30-071025-run-64-second-boot-hold-and-self-stage.md
+    state: partial        # OpenRC wpa_supplicant + networking association, DHCP, gateway, DNS and external reachability measured after bootloader-start self-stage (run 65)
+    record: records/2026-10-30-081343-run-65-bootloader-start-self-stage.md
   modem:
     state: partial        # stays running past the EFS request after PID-1 cutover (run 55); no voice/SIM/data claim
     record: records/2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the.md
