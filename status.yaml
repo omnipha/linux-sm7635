@@ -3,13 +3,13 @@
 device: nothing-asteroids
 updated: 2026-10-30
 next_question: >-
-  How can the closed #194 ext4 root contract accept the measured
-  241421725696-byte userdata partition without weakening its identity checks?
+  Can #197 build and verify the persistent-root pair with the corrected
+  fail-closed contract before its physical gates?
 active_issue: omnipha/linux-sm7635#197
 subsystems:
   boot:
-    state: partial        # host #197 stopped: closed #194 maximum rejects the measured userdata partition; no image pair published
-    record: records/2026-10-30-142216-persistent-root-contract-size-gate.md
+    state: partial        # host #199 accepts measured userdata with unchanged identity/recovery checks; #197 pair not built
+    record: records/2026-10-30-150709-root-contract-measured-userdata-maximum.md
   ssh:
     state: partial        # key-only USB SSH on :22 and post-cutover :2222 survives bootloader start and guest reboot (runs 64/65)
     record: records/2026-10-30-081343-run-65-bootloader-start-self-stage.md
