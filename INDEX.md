@@ -2,6 +2,7 @@
 
 ## Latest 10
 
+- [2026-10-30-212551-run-70-coldstart-host-free-power-boundary](records/2026-10-30-212551-run-70-coldstart-host-free-power-boundary.md) | boot run 70 | confirmed | omnipha/linux-sm7635#197 | Run 70: no host-free cold-start power path exists on VMWARE006
 - [2026-10-30-204752-run-69-bootloader-start-rescue](records/2026-10-30-204752-run-69-bootloader-start-rescue.md) | boot run 69 | confirmed | omnipha/linux-sm7635#204 | Run 69: bootloader start and slot-A rescue
 - [2026-10-30-203515-run-69-second-boot-guard-wlan](records/2026-10-30-203515-run-69-second-boot-guard-wlan.md) | boot run 69 | confirmed | omnipha/linux-sm7635#204 | Run 69: second-boot guard and WLAN
 - [2026-10-30-195754-run-69-persistent-root-first-boot](records/2026-10-30-195754-run-69-persistent-root-first-boot.md) | boot run 69 | confirmed | omnipha/linux-sm7635#204 | Run 69: persistent root and first-boot WLAN
@@ -11,14 +12,13 @@
 - [2026-10-30-170925-run-67-persistent-root-self-stage-absent](records/2026-10-30-170925-run-67-persistent-root-self-stage-absent.md) | boot run 67 | refuted | omnipha/linux-sm7635#197 | Run 67: persistent-root self-stage did not start
 - [2026-10-30-162851-persistent-userdata-root-pair](records/2026-10-30-162851-persistent-userdata-root-pair.md) | userspace | confirmed | omnipha/linux-sm7635#197 | Persistent userdata root pair
 - [2026-10-30-150709-root-contract-measured-userdata-maximum](records/2026-10-30-150709-root-contract-measured-userdata-maximum.md) | userspace | confirmed | omnipha/linux-sm7635#199 | Measured userdata size accepted by the fail-closed root contract
-- [2026-10-30-142216-persistent-root-contract-size-gate](records/2026-10-30-142216-persistent-root-contract-size-gate.md) | userspace | refuted | omnipha/linux-sm7635#197 | Persistent root blocked by the closed #194 size gate
 
 ## By subsystem (latest 3, total in brackets)
 
-### boot [54]
+### boot [55]
+- [2026-10-30-212551-run-70-coldstart-host-free-power-boundary](records/2026-10-30-212551-run-70-coldstart-host-free-power-boundary.md) | boot run 70 | confirmed | omnipha/linux-sm7635#197 | Run 70: no host-free cold-start power path exists on VMWARE006
 - [2026-10-30-204752-run-69-bootloader-start-rescue](records/2026-10-30-204752-run-69-bootloader-start-rescue.md) | boot run 69 | confirmed | omnipha/linux-sm7635#204 | Run 69: bootloader start and slot-A rescue
 - [2026-10-30-203515-run-69-second-boot-guard-wlan](records/2026-10-30-203515-run-69-second-boot-guard-wlan.md) | boot run 69 | confirmed | omnipha/linux-sm7635#204 | Run 69: second-boot guard and WLAN
-- [2026-10-30-195754-run-69-persistent-root-first-boot](records/2026-10-30-195754-run-69-persistent-root-first-boot.md) | boot run 69 | confirmed | omnipha/linux-sm7635#204 | Run 69: persistent root and first-boot WLAN
 
 ### modem [12]
 - [2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the](records/2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the.md) | modem run 55 | confirmed | omnipha/linux-sm7635#155 | Run-55 measured post-cutover modem hold past the EFS request (#155, 2026-10-29)
@@ -42,4 +42,4 @@
 
 ## By month
 
-- [2026-10](records/index-2026-10.md) [139]
+- [2026-10](records/index-2026-10.md) [140]

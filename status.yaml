@@ -8,8 +8,8 @@ next_question: >-
 active_issue: omnipha/linux-sm7635#197
 subsystems:
   boot:
-    state: partial
-    record: records/2026-10-30-204752-run-69-bootloader-start-rescue.md
+    state: partial        # run 70 result (d): no host-free cold-start power path, cold boot unmeasured
+    record: records/2026-10-30-212551-run-70-coldstart-host-free-power-boundary.md
   ssh:
     state: partial
     record: records/2026-10-30-203515-run-69-second-boot-guard-wlan.md
@@ -40,6 +40,10 @@ attempted_shas:       # cold-start index only; the flash gate is device-op statu
   - fcb0ed91
   - fef03008        # init_boot, runs 52-57
 notes: >-
-  Run 69 closed with first boot, guest reboot, bootloader start, and exact
-  slot-A rescue hashes. Cold start remains unmeasured. Do not repeat
-  ef476d8c/aa8da109.
+  Run 70 stopped before boot at result (d): VMWARE006 has no host-free
+  power-off/power-on path for a true cold start; no warm fastboot-reboot
+  substitute was used and no partition was written. Phone stays in fastboot
+  with the unchanged run-69 chain; run-69 on-device rescue hashes remain
+  exact and the run-70 host backup manifests verify. Next: a measured
+  cold-start power path (operator rule, independent watchdog/power carrier
+  or switchable USB), then one passive cold start.
