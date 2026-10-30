@@ -3,14 +3,13 @@
 device: nothing-asteroids
 updated: 2026-10-30
 next_question: >-
-  With the host-only ext4 userdata root-type contract and fixtures complete
-  (#194), what is the next persistence or cold-boot measurement on the stock
-  kernel?
-active_issue: omnipha/linux-sm7635#194
+  How can the closed #194 ext4 root contract accept the measured
+  241421725696-byte userdata partition without weakening its identity checks?
+active_issue: omnipha/linux-sm7635#197
 subsystems:
   boot:
-    state: partial        # host-only #194 root-type contract and fixtures accept one pinned ext4 userdata root or the measured 256m tmpfs; no image, flash or live session in this issue
-    record: records/2026-10-30-114724-host-root-type-contract-fixtures-complete.md
+    state: partial        # host #197 stopped: closed #194 maximum rejects the measured userdata partition; no image pair published
+    record: records/2026-10-30-142216-persistent-root-contract-size-gate.md
   ssh:
     state: partial        # key-only USB SSH on :22 and post-cutover :2222 survives bootloader start and guest reboot (runs 64/65)
     record: records/2026-10-30-081343-run-65-bootloader-start-self-stage.md

@@ -2,6 +2,7 @@
 
 ## Latest 10
 
+- [2026-10-30-142216-persistent-root-contract-size-gate](records/2026-10-30-142216-persistent-root-contract-size-gate.md) | userspace | refuted | omnipha/linux-sm7635#197 | Persistent root blocked by the closed #194 size gate
 - [2026-10-30-114724-host-root-type-contract-fixtures-complete](records/2026-10-30-114724-host-root-type-contract-fixtures-complete.md) | userspace | confirmed | linux-sm7635#194 | Host root-type contract and fixtures complete
 - [2026-10-30-102155-host-root-type-contract-fixture-and-foreign-path-block](records/2026-10-30-102155-host-root-type-contract-fixture-and-foreign-path-block.md) | userspace | inconclusive | linux-sm7635#194 | Host root-type contract fixture and foreign-path block
 - [2026-10-30-084138-run-65-slot-a-rescue-close](records/2026-10-30-084138-run-65-slot-a-rescue-close.md) | boot run 65 | confirmed | omnipha/linux-sm7635#191 | Run 65: session close and slot-A rescue proof
@@ -11,7 +12,6 @@
 - [2026-10-29-2299-self-stage-guard-ack-lifecycle-and-preflight-gat](records/2026-10-29-2299-self-stage-guard-ack-lifecycle-and-preflight-gat.md) | userspace | inconclusive | omnipha/linux-sm7635#173 | Self-stage guard-ack lifecycle and preflight gate (#173, host-only, 2026-10-29)
 - [2026-10-29-2298-host-only-recovery-b-self-stage-payload-and-init](records/2026-10-29-2298-host-only-recovery-b-self-stage-payload-and-init.md) | userspace | inconclusive | omnipha/linux-sm7635#171 | Host-only `recovery_b` self-stage payload and init (#171, 2026-10-29)
 - [2026-10-29-2297-run-58-first-boot-self-stage-and-wlan-associatio](records/2026-10-29-2297-run-58-first-boot-self-stage-and-wlan-associatio.md) | wlan run 58 | confirmed | omnipha/linux-sm7635#164 | Run-58 first-boot self-stage and WLAN association blocker (#164, live session, 2026-10-29)
-- [2026-10-29-2296-host-re-address-of-a-re-enumerated-diagnostic-ga](records/2026-10-29-2296-host-re-address-of-a-re-enumerated-diagnostic-ga.md) | usb | inconclusive | omnipha/linux-sm7635#169 | Host re-address of a re-enumerated diagnostic gadget (#169, host-only, 2026-10-29)
 
 ## By subsystem (latest 3, total in brackets)
 
@@ -30,10 +30,10 @@
 - [2026-10-29-2206-host-re-address-of-a-renamed-diagnostic-gadget-2](records/2026-10-29-2206-host-re-address-of-a-renamed-diagnostic-gadget-2.md) | usb | inconclusive | omnipha/linux-sm7635#169 | Host re-address of a renamed diagnostic gadget (2026-10-29, #169)
 - [2026-10-28-2284-run-52-measured-postmarketos-pid-1-cutover-and-u](records/2026-10-28-2284-run-52-measured-postmarketos-pid-1-cutover-and-u.md) | usb run 52 | confirmed | omnipha/linux-sm7635#145 | Run-52 measured postmarketOS PID-1 cutover and USB SSH (#145, live-session finding, 2026-10-28)
 
-### userspace [23]
+### userspace [24]
+- [2026-10-30-142216-persistent-root-contract-size-gate](records/2026-10-30-142216-persistent-root-contract-size-gate.md) | userspace | refuted | omnipha/linux-sm7635#197 | Persistent root blocked by the closed #194 size gate
 - [2026-10-30-114724-host-root-type-contract-fixtures-complete](records/2026-10-30-114724-host-root-type-contract-fixtures-complete.md) | userspace | confirmed | linux-sm7635#194 | Host root-type contract and fixtures complete
 - [2026-10-30-102155-host-root-type-contract-fixture-and-foreign-path-block](records/2026-10-30-102155-host-root-type-contract-fixture-and-foreign-path-block.md) | userspace | inconclusive | linux-sm7635#194 | Host root-type contract fixture and foreign-path block
-- [2026-10-30-062828-run-63-preflight-refusal-consumed-pair](records/2026-10-30-062828-run-63-preflight-refusal-consumed-pair.md) | userspace | inconclusive | omnipha/linux-sm7635#184 | Run 63: preflight refusal; no distinct SHA pair, no physical attempt
 
 ### wlan [36]
 - [2026-10-29-2297-run-58-first-boot-self-stage-and-wlan-associatio](records/2026-10-29-2297-run-58-first-boot-self-stage-and-wlan-associatio.md) | wlan run 58 | confirmed | omnipha/linux-sm7635#164 | Run-58 first-boot self-stage and WLAN association blocker (#164, live session, 2026-10-29)
@@ -42,4 +42,4 @@
 
 ## By month
 
-- [2026-10](records/index-2026-10.md) [129]
+- [2026-10](records/index-2026-10.md) [130]

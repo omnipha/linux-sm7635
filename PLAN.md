@@ -12,12 +12,12 @@ One active step, one active issue. Later steps are not pre-created issues.
 
 ## Active step
 
-- Step: host-only #194 root-type contract and fixtures complete for one
-  pinned ext4 userdata root or the measured 256m tmpfs root.
-- Issue: omnipha/linux-sm7635#194
-- Done: no image, flash, USB or session use. Self-stage, radio, session,
-  PID-1 and alpine host fixtures pass with the host hold and capture gate
-  unchanged.
+- Step: #197 persistent root blocked before pair delivery: closed #194
+  root contract caps the block device at 137438953472 bytes; measured userdata
+  is 241421725696 bytes. No contract weakening or physical write.
+- Issue: omnipha/linux-sm7635#197
+- Next: reconcile the measured partition size with a reviewed fail-closed
+  root identity contract before building a flash candidate.
 
 ## Next (ordered, not issues yet)
 
@@ -28,6 +28,7 @@ One active step, one active issue. Later steps are not pre-created issues.
 
 ## Done (pointers, newest first)
 
+- Host #197: persistent direct-root pair refused by the closed #194 size gate -> records/ (userspace)
 - Host-only #194: pinned ext4 userdata root or measured 256m tmpfs accepted across stage, teardown, transition, guard, ack, self-post, radio and self-stage fixtures -> records/ (userspace)
 - Host-only #194: pinned ext4 userdata root accepted in loop fixture; full contract blocked by foreign paths -> records/ (userspace)
 - Run 65: bootloader-start self-stage, postmarketOS PID 1 and OpenRC WLAN reachability measured with no write -> records/ (boot/wlan)
