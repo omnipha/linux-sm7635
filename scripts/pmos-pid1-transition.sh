@@ -2,7 +2,7 @@
 BB=/bin/busybox
 ROOT=/run/pmos
 GUARD=/run/pmos-pid1-guard.sh
-GUARD_SHA256=2a92fbcfe029ec3be1af8b73d4cd8d0ac317ecd267a9dc9ba9637932207d5da3
+GUARD_SHA256=f72a68a4c3a0e9bb7e72aa88883dcc9087a684985f5af688e34ea13c0226d3ad
 fail() { log "pid1 transition refused: $*"; return 1; }
 [ "$$" = 1 ] || { fail 'not PID 1'; return 1; }
 [ -e /run/keep ] && [ ! -L /run/keep ] || { fail 'diagnostic hold missing'; return 1; }

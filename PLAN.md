@@ -13,17 +13,16 @@ One active step, one active issue. Later steps are not pre-created issues.
 
 ## Active step
 
-- Step: strategist selects the direction after run 72's negative/partial guest-keep result.
-- Issue: none until selected
-- Next: no button-assisted cold start; guest-owned keep reached persistent ext4
-  and :2222, but PID 1 refused because the recovery guard was unarmed. Installed
-  hashes and rescue evidence were restored and verified. #216 is closed.
+- Step: measure the minimal persistent-root guard-rearm image.
+- Issue: omnipha/linux-sm7635#220
+- Next: coordinator measures host-free guard arm and PID 1 with the new
+  init_boot/vendor_boot_b pair, then verifies exact run-69 rollback and rescue.
+  No button-assisted cold start.
 
 ## Next (ordered, not issues yet)
 
-1. After the strategist's selection, cold start of the persistent root without
-   USB host signals: own /run/keep, guard and radio start, then MINDSTORMS and
-   SSH without a host push. Blocked on a successful measured boot.
+1. Only after #220 verifies host-free PID 1 with an armed guard, schedule a
+   separate button-assisted cold-start issue. No cold start here.
 2. Display over the open SSH session: identify why /dev/dri is absent, load the
    measured stock module or firmware, and record the working recipe. Build one
    image only after that recipe is measured.

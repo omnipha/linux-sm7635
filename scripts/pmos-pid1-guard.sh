@@ -150,8 +150,17 @@ arm() {
 	[ -r "$root/proc/uptime" ] && [ -r "$root/proc/1/mounts" ] &&
 	[ -r "$root/proc/sys/kernel/random/boot_id" ] || fail 'new proc unavailable'
 	$BB chroot "$root" /bin/busybox true || fail 'new BusyBox cannot run in root'
-	[ ! -e "$root$STATE" ] && [ ! -L "$root$STATE" ] &&
-	[ ! -e "$root/bin/restart2" ] && [ ! -L "$root/bin/restart2" ] || fail 'guard or RESTART2 already exists'
+	[ ! -e "$root$STATE" ] && [ ! -L "$root$STATE" ] || fail 'guard state already exists'
+	if [ -e "$root/bin/restart2" ] || [ -L "$root/bin/restart2" ]; then
+		if [ "$mode" = real ]; then
+			[ -f "$root/bin/restart2" ] && [ ! -L "$root/bin/restart2" ] &&
+			[ "$($BB stat -c '%u:%a:%h:%s' "$root/bin/restart2")" = 0:755:1:872 ] &&
+			[ "$(hash "$root/bin/restart2")" = "$HELPER_SHA" ] || fail 'stale RESTART2 is not the pinned helper'
+		else
+			[ "$mode" = mock ] || fail 'invalid mode'
+			fail 'guard or RESTART2 already exists'
+		fi
+	fi
 	[ -f "$0" ] && [ ! -L "$0" ] || fail 'guard script must be a regular file'
 	[ "$($BB stat -Lc '%d:%i' /proc/1/root 2>/dev/null)" != "$($BB stat -c '%d:%i' "$root")" ] || fail 'already switched root'
 	if [ "$mode" = real ]; then
@@ -179,8 +188,12 @@ arm() {
 		[ "$(hash "$contract")" = "$(hash "$root$STATE/root-contract.sh")" ] || fail 'root contract copy changed'
 	fi
 	if [ "$mode" = real ]; then
-		$BB cp /bin/restart2 "$root/bin/restart2" || fail 'cannot copy RESTART2'
-		$BB chmod 755 "$root/bin/restart2"
+		if [ ! -e "$root/bin/restart2" ] && [ ! -L "$root/bin/restart2" ]; then
+			$BB cp /bin/restart2 "$root/bin/restart2" || fail 'cannot copy RESTART2'
+			$BB chmod 755 "$root/bin/restart2"
+		fi
+		[ -f "$root/bin/restart2" ] && [ ! -L "$root/bin/restart2" ] &&
+		[ "$($BB stat -c '%u:%a:%h:%s' "$root/bin/restart2")" = 0:755:1:872 ] &&
 		[ "$(hash "$root/bin/restart2")" = "$HELPER_SHA" ] || fail 'RESTART2 copy changed'
 	else
 		$BB cp "$mock_source" "$root$STATE/mock-restart2" || fail 'cannot copy mock'

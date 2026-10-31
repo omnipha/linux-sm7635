@@ -4,6 +4,7 @@ HERE=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 ARCHIVE=${ARCHIVE:-$HOME/sm7635-build/i139-userspace/out/postmarketos-session-aarch64.tar.gz}
 PIN=7a76a11062615387af5eac8f67b7f672d5f9004decac89529396d442ab3c6e26
 MOCK_SHA=e112e65f2e9a6dc28531b45eda218284e4afb152dc3a02b588f7a25255cce2d1
+HELPER_SHA=fbe1472929510910b7fbb570d98ad939a2f39fd13786d000bb67ed46434b29f7
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 hash() { sha256sum "$1" | cut -d ' ' -f 1; }
 
@@ -15,6 +16,8 @@ if [ "${1:-}" != --inner ] && [ "${1:-}" != --pid1-ext4 ] && [ "${1:-}" != --ext
 		"$HERE/pmos-pid1-guard.sh" "$HERE/pmos-pid1-ack.sh"; do
 		[ -f "$path" ] && [ ! -L "$path" ] || fail "missing script: $path"
 	done
+	HELPER=${HELPER:-$HOME/sm7635-build/out/restart2}
+	[ -f "$HELPER" ] && [ ! -L "$HELPER" ] && [ "$(hash "$HELPER")" = "$HELPER_SHA" ] || fail 'missing or unpinned restart2 fixture'
 	sudo -n true || fail 'passwordless sudo required'
 	WORK=$(mktemp -d "${TMPDIR:-/tmp}/pmos-root-contract.XXXXXXXX")
 	: > "$WORK/loops"
@@ -44,7 +47,7 @@ if [ "${1:-}" != --inner ] && [ "${1:-}" != --pid1-ext4 ] && [ "${1:-}" != --ext
 	other_nums="$((0x$(stat -c %t "$dev_other"))):$((0x$(stat -c %T "$dev_other")))"
 	over_nums="$((0x$(stat -c %t "$dev_over"))):$((0x$(stat -c %T "$dev_over")))"
 	sudo -n timeout -k 2 180 unshare --mount --pid --net --fork --kill-child --mount-proc \
-		env HOST_ARCHIVE="$ARCHIVE" SOURCE="$HERE" MAIN_NUMS="$main_nums" OTHER_NUMS="$other_nums" \
+		env HOST_ARCHIVE="$ARCHIVE" HELPER="$HELPER" SOURCE="$HERE" MAIN_NUMS="$main_nums" OTHER_NUMS="$other_nums" \
 		OVER_NUMS="$over_nums" /bin/busybox sh "$0" --inner
 	for case in ack timeout; do
 		inner=$(mktemp -d "$WORK/pid1-ext4.XXXXXXXX")
@@ -370,10 +373,38 @@ fi
 $BB grep -q 'pid1 transition refused: root or child mount invalid' /run/tr.out || fail 'transition wrong PARTNAME reason'
 $BB printf 'PARTNAME=userdata\n' > /sys/class/block/sda13/uevent
 
+$BB cp "$HELPER" /run/pmos/bin/restart2
+$BB chmod 755 /run/pmos/bin/restart2
+[ "$($BB stat -c '%u:%a:%h:%s' /run/pmos/bin/restart2)" = 0:755:1:872 ] &&
+	[ "$(hash /run/pmos/bin/restart2)" = "$HELPER_SHA" ] || fail 'prior-boot pinned helper missing'
+$BB awk '
+	/^	if \[ -e "\$root\/bin\/restart2" \] \|\| \[ -L "\$root\/bin\/restart2" \]; then$/ {
+		print "\t[ ! -e \"$root$STATE\" ] && [ ! -L \"$root$STATE\" ] &&"
+		print "\t[ ! -e \"$root/bin/restart2\" ] && [ ! -L \"$root/bin/restart2\" ] || fail '\''guard or RESTART2 already exists'\''"
+		skip = 1
+		next
+	}
+	skip && /^	fi$/ { skip = 0; next }
+	!skip { print }
+' "$GUARD" > /run/pmos-pid1-guard-old.sh
+$BB chmod 700 /run/pmos-pid1-guard-old.sh
+$BB sh /run/pmos-pid1-guard-old.sh arm /run/pmos 160 >/run/guard-old.out 2>&1 && fail 'old guard accepted prior helper'
+$BB grep -q 'guard or RESTART2 already exists' /run/guard-old.out ||
+	{ $BB cat /run/guard-old.out >&2; fail 'old guard did not reproduce the measured RESTART2 refusal'; }
+[ ! -e /run/pmos/run/pid1-guard ] && [ ! -L /run/pmos/run/pid1-guard ] || fail 'old refusal created guard state'
+if $BB sh "$GUARD" arm /run/pmos 160 >/run/guard-reject.out 2>&1; then
+	fail 'guard armed on non-target host with prior-boot helper'
+fi
+$BB grep -q 'not the target device' /run/guard-reject.out ||
+	{ $BB cat /run/guard-reject.out >&2; fail 'pinned prior-boot helper not accepted before device check'; }
 if (log() { $BB printf '%s\n' "$*"; }; . "$TRANSITION") >/run/tr.out 2>&1; then
 	fail 'transition armed real guard on non-target host'
 fi
-$BB grep -q 'pid1 transition refused: independent recovery guard not armed' /run/tr.out || { $BB cat /run/tr.out >&2; fail 'transition did not reach guard arm'; }
+$BB grep -q 'pid1-guard: not the target device' /run/tr.out &&
+	$BB grep -q 'pid1 transition refused: independent recovery guard not armed' /run/tr.out ||
+	{ $BB cat /run/tr.out >&2; fail 'transition did not reach pinned device check'; }
+[ ! -e /run/pmos/run/pid1-guard ] && [ ! -L /run/pmos/run/pid1-guard ] || fail 'prior-boot refusal created guard state'
+$BB rm /run/pmos/bin/restart2
 
 $BB cat > /run/mock <<'MOCK'
 #!/bin/busybox sh
@@ -397,6 +428,70 @@ $BB grep -q 'new root is not mounted tmpfs or pinned userdata ext4' /run/guard.o
 $BB printf 'PARTNAME=userdata\n' > /sys/class/block/sda13/uevent
 $BB sh "$GUARD" mock-arm /run/pmos 30 /run/mock "$MOCK_SHA" >/run/guard.out 2>&1 || { $BB cat /run/guard.out >&2; fail 'guard rejected pinned ext4 userdata root'; }
 [ -f /run/pmos/run/pid1-guard/armed ] && [ -f /run/pmos/run/pid1-guard/root-contract.sh ] || fail 'guard did not arm and stage root-contract on ext4 root'
+for p in /proc/[0-9]*; do
+	[ "$($BB stat -Lc '%d:%i' "$p/root" 2>/dev/null || true)" = "$($BB stat -c '%d:%i' /run/pmos)" ] || continue
+	[ "${p#/proc/}" != "$($BB cat /run/pmos/run/dropbear-session.pid)" ] || continue
+	$BB kill "${p#/proc/}" 2>/dev/null || true
+done
+$BB rm -rf /run/pmos/run/pid1-guard
+$BB mv /run/pmos/bin/distro-busybox /run/pmos/bin/busybox
+plant_helper() {
+	$BB rm -f /run/pmos/bin/restart2
+	$BB cp "$HELPER" /run/pmos/bin/restart2
+	$BB chmod 755 /run/pmos/bin/restart2
+}
+reject_helper() {
+	$BB sh "$GUARD" arm /run/pmos 160 >/run/guard-reuse.out 2>&1 && fail "$1"
+	$BB grep -q "$2" /run/guard-reuse.out || { $BB cat /run/guard-reuse.out >&2; fail "$1 reason"; }
+	if [ "$2" = 'guard state already exists' ]; then
+		[ -e /run/pmos/run/pid1-guard ] || [ -L /run/pmos/run/pid1-guard ] || fail "$1 removed existing state"
+	else
+		[ ! -e /run/pmos/run/pid1-guard ] && [ ! -L /run/pmos/run/pid1-guard ] || fail "$1 created guard state"
+	fi
+}
+plant_helper
+$BB ln -sf restart2 /run/pmos/bin/restart2-link
+$BB rm /run/pmos/bin/restart2
+$BB mv /run/pmos/bin/restart2-link /run/pmos/bin/restart2
+reject_helper 'symlinked prior helper' 'stale RESTART2 is not the pinned helper'
+$BB rm /run/pmos/bin/restart2
+plant_helper
+$BB ln /run/pmos/bin/restart2 /run/pmos/bin/restart2-extra
+reject_helper 'hardlinked prior helper' 'stale RESTART2 is not the pinned helper'
+$BB rm /run/pmos/bin/restart2 /run/pmos/bin/restart2-extra
+plant_helper
+$BB chmod 700 /run/pmos/bin/restart2
+reject_helper 'unprotected prior helper' 'stale RESTART2 is not the pinned helper'
+plant_helper
+$BB printf x >> /run/pmos/bin/restart2
+reject_helper 'modified prior helper' 'stale RESTART2 is not the pinned helper'
+$BB rm /run/pmos/bin/restart2
+$BB printf 'not the pinned helper\n' > /run/pmos/bin/restart2
+$BB chmod 755 /run/pmos/bin/restart2
+reject_helper 'foreign prior helper' 'stale RESTART2 is not the pinned helper'
+$BB rm /run/pmos/bin/restart2
+plant_helper
+$BB mkdir -m 700 /run/pmos/run/pid1-guard
+reject_helper 'foreign guard state' 'guard state already exists'
+$BB rm -rf /run/pmos/run/pid1-guard
+$BB ln -s /run /run/pmos/run/pid1-guard
+reject_helper 'symlinked guard state' 'guard state already exists'
+$BB rm /run/pmos/run/pid1-guard
+plant_helper
+$BB sh "$GUARD" arm /run/pmos 160 >/run/guard-reuse.out 2>&1 && fail 'host fixture reached real recovery'
+$BB grep -q 'not the target device' /run/guard-reuse.out ||
+	{ $BB cat /run/guard-reuse.out >&2; fail 'valid prior helper was rejected before the device pin'; }
+[ ! -e /run/pmos/run/pid1-guard ] && [ ! -L /run/pmos/run/pid1-guard ] &&
+	[ "$($BB stat -c '%u:%a:%h:%s' /run/pmos/bin/restart2)" = 0:755:1:872 ] &&
+	[ "$(hash /run/pmos/bin/restart2)" = "$HELPER_SHA" ] || fail 'valid prior helper changed before the device pin'
+$BB rm -rf /run/pmos/run/pid1-guard
+$BB rm /run/pmos/bin/restart2
+$BB mv /run/pmos/bin/busybox /run/pmos/bin/distro-busybox
+$BB cp /bin/busybox /run/pmos/bin/busybox
+$BB sh "$GUARD" mock-arm /run/pmos 30 /run/mock "$MOCK_SHA" >/run/guard-reuse.out 2>&1 ||
+	{ $BB cat /run/guard-reuse.out >&2; fail 'mock guard did not arm after helper reuse cases'; }
+[ -f /run/pmos/run/pid1-guard/armed ] && [ ! -L /run/pmos/run/pid1-guard/armed ] &&
+	[ "$($BB cat /run/pmos/run/pid1-guard/armed)" = "$($BB cat /proc/sys/kernel/random/boot_id)" ] || fail 'mock guard deadline or armed state changed'
 for p in /proc/[0-9]*; do
 	[ "$($BB stat -Lc '%d:%i' "$p/root" 2>/dev/null || true)" = "$($BB stat -c '%d:%i' /run/pmos)" ] || continue
 	[ "${p#/proc/}" != "$($BB cat /run/pmos/run/dropbear-session.pid)" ] || continue
