@@ -162,7 +162,11 @@ $BB readlink /proc/1/exe 2>/dev/null | $BB grep -q busybox &&
 	$BB grep -q 'ID="postmarketos"' /etc/os-release &&
 	[ "$($BB cat /run/openrc/softlevel 2>/dev/null)" = default ] &&
 	/sbin/rc-service local status >/dev/null 2>&1 || fail 'post-cutover PID 1 or default/local absent'
-[ "$($BB cat /run/pid1-guard/accepted 2>/dev/null)" = "$boot" ] || fail 'PID 1 guard not acknowledged on this boot'
+[ "$($BB cat /run/pid1-guard/armed 2>/dev/null)" = "$boot" ] &&
+	[ -f /run/pid1-guard/nonce ] && [ ! -L /run/pid1-guard/nonce ] &&
+	[ ! -e /run/pid1-guard/accepted ] && [ ! -L /run/pid1-guard/accepted ] &&
+	[ ! -e /run/pid1-guard/ack ] && [ ! -L /run/pid1-guard/ack ] ||
+	fail 'PID 1 guard is not armed and unacknowledged on this boot'
 [ "$(hash /vendor/firmware/wlan/qca_cld/qca6750/WCNSS_qcom_cfg.ini)" = "$INI_SHA" ] || fail 'pre-cutover staged stock INI missing'
 [ "$($BB cat "$MSS/name")" = 4080000.remoteproc-mss ] &&
 	[ "$($BB cat "$WPSS/name")" = 9bb00000.remoteproc-wpss ] || fail 'unexpected remoteproc identities'
@@ -183,9 +187,18 @@ find_oldroot() {
 }
 
 capture_gate() {
-	[ -n "$marker" ] || fail 'fresh host capture selftest marker required before a risky stage'
-	case "$marker" in *[!A-Za-z0-9_.-]*) fail 'invalid capture marker';; esac
-	$BB dmesg 2>/dev/null | $BB grep -qF "$marker" || fail 'host-verified capture marker is not in this boot kmsg'
+	[ -f "$STATE/$stage.marker" ] && [ ! -L "$STATE/$stage.marker" ] &&
+		[ "$($BB stat -c '%u:%a:%h:%s' "$STATE/$stage.marker")" = 0:600:1:$((${#marker} + 1)) ] &&
+		[ "$($BB cat "$STATE/$stage.marker")" = "$marker" ] || fail "guest radio marker missing or unsafe for $stage"
+	nonce=$($BB cat /run/pid1-guard/nonce 2>/dev/null)
+	case "$nonce" in ????????????????????????????????????????????????????????????????)
+		case "$nonce" in *[!0-9a-f]*) fail 'guard nonce invalid';; esac;;
+		*) fail 'guard nonce invalid';;
+	esac
+	token="guest-radio-$stage-$($BB printf '%s' "$boot:$nonce:$stage" | $BB sha256sum | $BB cut -c 1-16)"
+	[ "$marker" = "$token" ] || fail "guest radio marker does not match this guard nonce for $stage"
+	$BB dmesg 2>/dev/null | $BB grep -F "pmos-self-post: guest radio marker $token" | $BB wc -l | $BB grep -qx 1 ||
+		fail "guest radio marker for $stage is not exactly once in this boot kmsg"
 }
 
 once() {
@@ -308,6 +321,7 @@ driver() {
 
 scan() {
 	stage=scan
+	capture_gate
 	wlan_present || fail 'wlan0 or phy0 not registered'
 	[ ! -e "$STATE/scan.raw" ] && [ ! -L "$STATE/scan.raw" ] || fail 'scan already recorded; no repeat'
 	/sbin/ip link set wlan0 up || fail 'wlan0 link-up failed'

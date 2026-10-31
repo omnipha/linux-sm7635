@@ -75,6 +75,7 @@ if [ "${1:-}" = --ext4-worker ]; then
 	done
 	$BB awk '$1 == "/dev/block/sda13" && $2 == "/" && $3 == "ext4" {n++} END {exit(n != 1)}' /proc/1/mounts ||
 		fail 'PID 1 root is not switched to ext4 /dev/block/sda13'
+
 	if [ "$CASE" = timeout ]; then
 		i=0
 		until [ -f /proc/1/root/run/pid1-guard/recovery-request ]; do
@@ -118,8 +119,10 @@ RCS
 	$BB chroot /proc/1/root /bin/busybox sh /run/pmos-radio-bringup.sh "$boot" modem capture-ok >"$HOST_RUN/radio-bad.out" 2>&1 && fail 'radio bring-up accepted ext4 switched root with wrong PARTNAME'
 	$BB grep -q 'post-cutover PID 1 or default/local absent' "$HOST_RUN/radio-bad.out" || fail 'radio wrong PARTNAME failure reason'
 	$BB cp "$HOST_RUN/uevent.saved" /proc/1/root/sys/class/block/sda13/uevent
+	$BB rm -f /proc/1/root/run/pid1-guard/accepted /proc/1/root/run/pid1-guard/ack
+	$BB printf '%s\n' fixture-nonce > /proc/1/root/run/pid1-guard/nonce
 	$BB chroot /proc/1/root /bin/busybox sh /run/pmos-self-post.sh >"$HOST_RUN/post-ok.out" 2>&1 && fail 'self-post succeeded without radio script at /run/radio-bringup'
-	$BB grep -q 'host-owned guard ack accepted on boot' "$HOST_RUN/post-ok.out" || { $BB cat "$HOST_RUN/post-ok.out" >&2; fail 'self-post rejected valid ext4 switched root'; }
+	$BB grep -q 'independent recovery guard remains unacknowledged' "$HOST_RUN/post-ok.out" || { $BB cat "$HOST_RUN/post-ok.out" >&2; fail 'self-post rejected valid ext4 switched root'; }
 	$BB chroot /proc/1/root /bin/busybox sh /run/pmos-radio-bringup.sh "$boot" modem capture-ok >"$HOST_RUN/radio-ok.out" 2>&1 && fail 'radio bring-up succeeded without staged INI'
 	$BB grep -q 'pre-cutover staged stock INI missing' "$HOST_RUN/radio-ok.out" || { $BB cat "$HOST_RUN/radio-ok.out" >&2; fail 'radio bring-up rejected valid ext4 switched root'; }
 	printf 'pass: ext4-ack; real BusyBox PID 1 switch_root to loop-backed userdata ext4 with surviving pre-cutover Dropbear PID and pinned key, real guard watch on ext4 switched root, strict key-only SSH before/after, ack/self-post/radio rejected on wrong PARTNAME and accepted after restoring userdata; no device recovery\n'

@@ -3,12 +3,12 @@
 device: nothing-asteroids
 updated: 2026-10-31
 next_question: >-
-  Which successor, if any, resolves the installed run-69 pre-SSH gap before the separately scheduled button-assisted cold start?
+  Does the one button-assisted cold start of the distinct host-free package reach persistent PID 1, radio and WLAN before the unchanged 160-second recovery deadline?
 active_issue: omnipha/linux-sm7635#223
 subsystems:
   boot:
     state: partial
-    record: records/2026-10-31-044608-coldstart-installed-chain-host-boundary.md
+    record: records/2026-10-31-054706-coldstart-host-free-radio-package.md
   ssh:
     state: partial
     record: records/2026-10-30-203515-run-69-second-boot-guard-wlan.md
@@ -42,8 +42,7 @@ attempted_shas:       # cold-start index only; the flash gate is device-op statu
   - fcb0ed91
   - fef03008        # init_boot, runs 52-57
 notes: >-
-  Run 73 verified host-free PID 1 and the 160-s deadline, then rolled back
-  to installed 2f73c947 / f792174c. Host #223 refutes using that unchanged
-  chain for the full no-host-signal sequence: it lacks guest keep and safe
-  guard re-arm, and radio still waits for host ack/capture. No image was
-  built. The coordinator owns the one cold start; no session is open.
+  Host #223 built distinct becd3784 / adb47dc0 from the pinned persistent
+  root carrier. Guest keep, safe guard re-arm, and no-host radio staging are
+  packaged; independent no-ack recovery remains 160 s. No cold start or WLAN
+  success is claimed. The coordinator owns the one cold start; no session is open.

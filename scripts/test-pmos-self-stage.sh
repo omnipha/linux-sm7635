@@ -11,7 +11,7 @@ PART_SIZE=33554432
 SESSION_SHA=be70a27305145cabc15b70469ae7a0434fab352fb9c3d681943f73d22b92938a
 TRANSITION_SHA=e1dba7135e2335c22aee0a5c0f4edb247fad5acd8100377cba3771abe5044e36
 GUARD_SHA=f72a68a4c3a0e9bb7e72aa88883dcc9087a684985f5af688e34ea13c0226d3ad
-RADIO_SHA=04fe93d76c5048122f1a413457c0e0f1b1abd13f78f3518d8bb12abb18762dd1
+RADIO_SHA=7ef6382644c2e07705d2a8df77840031318c298478c8f93e9bbfd05c00b61812
 LEASE_SHA=86ebff20670faaa066685b1674f085a5e391676788a45a671f32a2c214fe3896
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 hash() { sha256sum "$1" | cut -d ' ' -f 1; }
@@ -472,81 +472,71 @@ $BB rm -rf /run/radio-bringup /run/hook.test
 marker_model() {
 	label=$1
 	want=$2
-	used_in=$3
-	dmesg_has=$4
-	: > /run/wrap.dd
-	$BB printf '%s\n' "kernel: unrelated line" "kernel: $dmesg_has" > /run/model.dmesg
-	$BB printf '%s\n' '#!/run/busybox.real sh' \
-		'case "${1:-}" in' \
-		'	sleep) exit 0;;' \
-		'	dmesg) exec /run/busybox.real cat /run/model.dmesg;;' \
-		'esac' \
-		'exec /run/busybox.real "$@"' > /run/bbshim
-	$BB chmod 700 /run/bbshim
+	setup=$3
 	out=$(
 		BB=/run/bbshim
-		RELEASE=/run/self-stage-capture-marker
-		used=$used_in
+		STATE=/run/radio-bringup
+		GUARD=/run/pid1-guard
+		boot=11111111-2222-3333-4444-555555555555
 		log() { :; }
 		die() { printf 'FAIL: %s\n' "$*"; exit 1; }
-		marker_source=$(/run/busybox.real sed -n '/^next_marker() {$/,/^}$/p' "$POST")
-		[ "$($BB printf '%s\n' "$marker_source" | $BB wc -l)" = 20 ] || die 'marker function extraction changed'
+		marker_source=$(/run/busybox.real sed -n '/^guest_marker() {$/,/^}$/p' "$POST")
+		[ "$($BB printf '%s\n' "$marker_source" | $BB wc -l)" = 24 ] || die 'marker function extraction changed'
 		eval "$marker_source"
-		next_marker model
-		printf 'used=%s\n' "$used"
-		[ ! -e "$RELEASE" ] || printf 'release-left\n'
+		eval "$setup"
+		guest_marker model
 	) && rc=0 || rc=$?
 	case "$want" in
-		ok:*)
+		ok)
 			[ "$rc" = 0 ] || fail "marker model $label rejected: $out"
-			[ "$out" = "used=${want#ok:}" ] || fail "marker model $label state: $out"
+			nonce=$($BB cat /run/pid1-guard/nonce)
+			want_token=$($BB printf '%s' "11111111-2222-3333-4444-555555555555:$nonce:model" | $BB sha256sum | $BB cut -c 1-16)
+			[ "$out" = "guest-radio-model-$want_token" ] || fail "marker model $label state: $out"
+			[ "$($BB cat /run/radio-bringup/model.marker)" = "$out" ] || fail "marker model $label did not retain its marker"
+			[ "$($BB grep -cF "pmos-self-post: guest radio marker $out" /run/model.dmesg)" = 1 ] || fail "marker model $label did not publish kmsg once"
 			;;
 		*)
 			[ "$rc" != 0 ] || fail "marker model $label accepted"
 			[ "$out" = "FAIL: $want" ] || fail "marker model $label wrong failure: $out"
 			;;
 	esac
-	/run/busybox.real rm -f /run/self-stage-capture-marker /run/marker.real
 	printf 'model: %s\n' "$label"
 }
-marker_file() {
-	umask 077
-	$BB printf '%b' "$1" > /run/self-stage-capture-marker
-	$BB chmod "${2:-600}" /run/self-stage-capture-marker
-	umask 022
-}
-marker_file 'capture_0123\n'
-marker_model 'valid marker' 'ok: capture_0123' '' 'capture_0123 seen'
-marker_file 'capture_0123\n'
-marker_model 'second distinct marker' 'ok: older_marker capture_0123' ' older_marker' 'capture_0123 seen'
-marker_file 'capture_0123\n'
-marker_model 'reused marker' 'capture marker reused for another risky stage' ' capture_0123' 'capture_0123 seen'
-marker_file 'capture_0123\n'
-marker_model 'marker absent from kmsg' 'released capture marker is not in this boot kmsg' '' 'other_marker_9'
-marker_file 'capture_0123\n' 644
-marker_model 'mode 644' 'capture marker release is not root-only' '' 'capture_0123'
-marker_file 'capture_0123\n'
-$BB ln /run/self-stage-capture-marker /run/marker.real
-marker_model 'hard-linked marker' 'capture marker release is not root-only' '' 'capture_0123'
-marker_file 'capture_0123'
-marker_model 'no trailing newline' 'capture marker release is not exactly one line' '' 'capture_0123'
-marker_file 'capture_0123\nsecond_line\n'
-marker_model 'two lines' 'capture marker release is not exactly one line' '' 'capture_0123'
-marker_file '\n'
-marker_model 'empty marker' 'invalid capture marker release' '' 'capture_0123'
-marker_file 'capture 0123\n'
-marker_model 'space in marker' 'invalid capture marker release' '' 'capture 0123'
-marker_file 'cap/ture_0123\n'
-marker_model 'slash in marker' 'invalid capture marker release' '' 'cap/ture_0123'
-marker_file 'short_7\n'
-marker_model 'marker of 7 characters' 'capture marker length invalid' '' 'short_7'
-long65=$($BB awk 'BEGIN {for (i = 0; i < 65; i++) printf "a"}')
-marker_file "$long65\\n"
-marker_model 'marker of 65 characters' 'capture marker length invalid' '' "$long65"
-$BB ln -s /run/model.dmesg /run/self-stage-capture-marker
-marker_model 'symlinked marker never accepted' 'no host-verified capture marker released for model' '' 'capture_0123'
-marker_model 'absent marker times out' 'no host-verified capture marker released for model' '' 'capture_0123'
-$BB rm -f /run/bbshim /run/model.dmesg
+$BB mkdir -m 700 /run/radio-bringup /run/pid1-guard
+$BB printf '%s\n' 11111111-2222-3333-4444-555555555555 > /run/pid1-guard/armed
+$BB printf '%s\n' 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef > /run/pid1-guard/nonce
+$BB chmod 600 /run/pid1-guard/nonce
+$BB printf '%s\n' "kernel: unrelated line" > /run/model.dmesg
+$BB printf '%s\n' '#!/run/busybox.real sh' \
+	'case "${1:-}" in' \
+	'	dmesg) exec /run/busybox.real cat /run/model.dmesg;;' \
+	'	printf)' \
+	'		shift' \
+	'		[ "${1:-}" = "pmos-self-post: guest radio marker %s\n" ] && { /run/busybox.real printf "$@" >> /run/model.dmesg; exit; }' \
+	'		exec /run/busybox.real printf "$@";;' \
+	'esac' \
+	'exec /run/busybox.real "$@"' > /run/bbshim
+$BB chmod 700 /run/bbshim
+$BB printf '%s\n' '#!/run/busybox.real sh' \
+	'case "${1:-}" in' \
+	'	dmesg) exec /run/busybox.real grep -vF guest-radio /run/model.dmesg;;' \
+	'	*) exec /run/bbshim "$@";;' \
+	'esac' > /run/bbshim-nokmsg
+$BB chmod 700 /run/bbshim-nokmsg
+marker_model 'valid guest marker' ok ':'
+$BB rm /run/radio-bringup/model.marker
+: > /run/model.dmesg
+marker_model 'second distinct guest marker' ok ':'
+$BB printf '%s\n' old > /run/radio-bringup/model.marker
+marker_model 'pre-existing guest marker' 'guest radio marker for model already exists' ':'
+$BB rm /run/radio-bringup/model.marker
+marker_model 'guest marker absent from kmsg' 'guest radio marker for model is not exactly once in this boot kmsg' \
+	'BB=/run/bbshim-nokmsg'
+$BB printf '%s\n' ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff > /run/pid1-guard/nonce
+$BB rm /run/radio-bringup/model.marker
+marker_model 'wrong nonce changes marker' ok ':'
+[ "$($BB cat /run/radio-bringup/model.marker)" != guest-radio-model-old ] || fail 'wrong nonce reused the prior marker'
+$BB rm -rf /run/bbshim /run/bbshim-nokmsg /run/model.dmesg /run/radio-bringup /run/pid1-guard
 
 if [ -x /usr/bin/qemu-aarch64 ]; then
 	$BB mkdir -p /run/qemu
