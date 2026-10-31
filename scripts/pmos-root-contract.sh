@@ -233,9 +233,22 @@ boot_record_root() {
 	case ",$ROOT_CONTRACT_OPTS," in *,rw,*) :;; *) return 1;; esac
 }
 boot_record_lines() {
-	$BB printf '%s\n' \
+	br_panel_file=${PMOS_PANEL_RECORD:-/run/pmos-pre-ssh-panel.record}
+	br_panel=
+	if [ -e "$br_panel_file" ] || [ -L "$br_panel_file" ]; then
+		[ -f "$br_panel_file" ] && [ ! -L "$br_panel_file" ] &&
+			[ "$($BB stat -c '%u:%a:%h' "$br_panel_file")" = 0:600:1 ] || return 1
+		br_panel=$($BB cat "$br_panel_file") || return 1
+		[ "${#br_panel}" -le 400 ] || return 1
+		$BB printf '%s\n' "$br_panel" | $BB awk '
+			NR == 1 && /^usb-init: pre-SSH panel card0=[ -~]*$/ {ok=1}
+			END {exit(ok && NR == 1 ? 0 : 1)}' || return 1
+	fi
+	set -- \
 		"boot $br_boot" \
-		"pmos-self-stage: diagnostic hold and :22 verified on boot $br_boot" \
+		"pmos-self-stage: diagnostic hold and :22 verified on boot $br_boot"
+	[ -z "$br_panel" ] || set -- "$@" "$br_panel"
+	set -- "$@" \
 		'pmos-stage: using unpacked persistent postmarketOS root' \
 		'pmos-stage: mounted private proc/sys/configfs and guest-only dev, verified nodes and private devpts' \
 		'pmos-stage: second key-only SSH listening on 172.16.42.2:2222 (diagnostic :22 untouched)' \
@@ -246,6 +259,7 @@ boot_record_lines() {
 		"pmos-self-stage: staged postmarketOS root and armed PID 1 request for boot $br_boot" \
 		'usb-init: pid1 transition guard armed; exec switch_root to postmarketOS init' \
 		"pmos-self-post: post-cutover PID 1 on boot $br_boot; guard identity check passed; pid1 identity check passed"
+	$BB printf '%s\n' "$@"
 }
 boot_record_rotate() {
 	# Deterministic per-boot rotation, refusable and never a bypass: only a
