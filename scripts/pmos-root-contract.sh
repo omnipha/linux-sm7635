@@ -247,10 +247,44 @@ boot_record_lines() {
 		'usb-init: pid1 transition guard armed; exec switch_root to postmarketOS init' \
 		"pmos-self-post: post-cutover PID 1 on boot $br_boot; guard identity check passed; pid1 identity check passed"
 }
+boot_record_rotate() {
+	# Deterministic per-boot rotation, refusable and never a bypass: only a
+	# complete, root-only, 0600, link-count-1 regular record whose first line
+	# names a syntactically valid foreign boot ID is rotated to a
+	# bound-limited per-boot archive path on the same persistent root.
+	br_archive=$1/.omnipha-boot-record-$br_old_boot
+	[ "$br_old_size" -ge 42 ] && [ "$br_old_size" -le "$boot_record_bound" ] || return 1
+	[ ! -e "$br_archive" ] && [ ! -L "$br_archive" ] || return 1
+	$BB mv -n "$br_record" "$br_archive" || return 1
+	[ ! -e "$br_record" ] && [ ! -L "$br_record" ] || return 1
+	[ -f "$br_archive" ] && [ ! -L "$br_archive" ] &&
+		[ "$($BB stat -c '%u:%a:%h:%s' "$br_archive")" = "0:600:1:$br_old_size" ] &&
+		[ "$($BB cat "$br_archive")" = "$br_old" ] || return 1
+	$BB sync -f "$br_archive"
+}
 boot_record_open() {
 	boot_record_root "$1" && boot_record_id || return 1
 	br_record=$1/.omnipha-boot-record
-	[ ! -e "$br_record" ] && [ ! -L "$br_record" ] || return 1
+	if [ -e "$br_record" ] || [ -L "$br_record" ]; then
+		[ -f "$br_record" ] && [ ! -L "$br_record" ] || return 1
+		br_old=$($BB cat "$br_record") || return 1
+		br_old_size=$($BB stat -c %s "$br_record" 2>/dev/null) || return 1
+		case "$br_old_size" in ''|*[!0-9]*) return 1;; esac
+		[ "$br_old_size" = "$((${#br_old} + 1))" ] || return 1
+		[ "$($BB stat -c '%u:%a:%h:%s' "$br_record")" = "0:600:1:$br_old_size" ] || return 1
+		br_old_first=
+		while IFS= read -r br_line; do br_old_first=$br_line; break; done <<EOF
+$br_old
+EOF
+		case "$br_old_first" in
+			"boot "????????-????-????-????-????????????)
+				br_old_boot=${br_old_first#boot }
+				case "$br_old_boot" in *[!0-9a-f-]*) return 1;; esac;;
+			*) return 1;;
+		esac
+		[ "$br_old_boot" != "$br_boot" ] || return 1
+		boot_record_rotate "$1" || return 1
+	fi
 	(umask 077; set -C; $BB printf 'boot %s\n' "$br_boot" > "$br_record") || return 1
 	br_size=$($BB stat -c %s "$br_record" 2>/dev/null) || return 1
 	[ -f "$br_record" ] && [ ! -L "$br_record" ] &&

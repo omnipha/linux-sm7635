@@ -3,12 +3,12 @@
 device: nothing-asteroids
 updated: 2026-10-31
 next_question: >-
-  How should the per-boot record handle a persistent root that already carries a previous boot's record, so the cutover and no-ack return can be measured?
-active_issue: null
+  On the rotated successor pair, does staging reach :2222, the cutover and the no-ack return, and why is there no DRM device on this kernel?
+active_issue: omnipha/linux-sm7635#237
 subsystems:
   boot:
     state: partial
-    record: records/2026-10-31-115817-run-83-stale-record-open-refusal.md
+    record: records/2026-10-31-153706-record-rotation-host-image.md
   ssh:
     state: partial
     record: records/2026-10-30-203515-run-69-second-boot-guard-wlan.md
@@ -25,6 +25,8 @@ subsystems:
     state: untested
     record: null
 attempted_shas:       # cold-start index only; the flash gate is device-op status, not this file
+  - 27c4d895        # init_boot_a, #237 successor; built, not flashed
+  - da4651d8        # vendor_boot_b, #237 successor; built, not flashed
   - dd6ce74e        # init_boot_a, run 83; flashed once, never-reflash
   - e7d55580        # vendor_boot_b, run 83; flashed once, never-reflash
   - a4ee7def        # init_boot_a, run 79; flashed once, never-reflash
@@ -48,7 +50,8 @@ attempted_shas:       # cold-start index only; the flash gate is device-op statu
 notes: >-
   Run 83 flashed and verified dd6ce74e / e7d55580 exactly, then stopped at
   4.509 s: the persistent root still held the run-79 record, so the per-boot
-  record open refused before :2222 or cutover. No ack path and no no-ack return
-  were measured; the cutover hypotheses stay unfalsified. Rescue hashes were
-  exact and the measured pair is never-reflash. #234 is closed on this refusal;
-  stale-record handling and the unmeasured cutover boundaries need a successor.
+  record open refused before :2222 or cutover. The host fix rotates a valid
+  foreign-boot record to a per-boot archive and opens a fresh record; the
+  distinct successor pair 27c4d895 / da4651d8 is built and host-verified but
+  unflashed. The display diagnosis waits for the session that rotation makes
+  reachable. #237 stays open for the physical result.

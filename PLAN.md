@@ -21,9 +21,10 @@ blocked by a measurement.
 - [ ] Display works.
       Check: a picture is on the panel, driven by this kernel,
       and it is still there after a reboot.
-      First over the open SSH session: find why there is no DRM device,
-      load the stock module and firmware, name the panel path.
-      Build an image only after that recipe is measured.
+      First the host-side record rotation must boot, so staging
+      reaches a session; then, over that SSH session, find why
+      there is no DRM device, load the stock module and firmware,
+      and name the panel path. No image answers the panel question.
 
 ## Then, in order
 
