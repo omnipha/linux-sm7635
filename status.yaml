@@ -3,7 +3,11 @@
 device: nothing-asteroids
 updated: 2026-10-31
 next_question: >-
-  The stock msm_drm closure now loads before SSH with a pre-SSH panel record; does the panel light from the bootloader handoff?
+  Run 86 measured the pre-SSH load: same panel boundary as #240 (writes accepted,
+  command engine in suspend, reads empty, brightness zero, glass dark). The
+  bootloader-handoff hypothesis is refuted for the recovery-set msm_drm closure;
+  the next lever is the vendor_dlkm module variant or a supply state it alone
+  cannot reach.
 active_issue: omnipha/linux-sm7635#243
 subsystems:
   boot:
@@ -20,11 +24,13 @@ subsystems:
     record: records/2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the.md
   display:
     state: partial
-    record: records/2026-10-31-210949-pre-ssh-panel-host-image.md
+    record: records/2026-10-31-223356-run-86-pre-ssh-panel-same-boundary.md
   cameras:
     state: untested
     record: null
 attempted_shas:       # cold-start index only; the flash gate is device-op status, not this file
+  - fed40c30        # init_boot_a, run 86; flashed once, never-reflash
+  - 1765381c        # vendor_boot_b, run 86; flashed once, never-reflash
   - 27c4d895        # init_boot_a, run 84; flashed once, never-reflash
   - da4651d8        # vendor_boot_b, run 84; flashed once, never-reflash
   - dd6ce74e        # init_boot_a, run 83; flashed once, never-reflash
@@ -48,9 +54,10 @@ attempted_shas:       # cold-start index only; the flash gate is device-op statu
   - fcb0ed91
   - fef03008        # init_boot, runs 52-57
 notes: >-
-  The #243 host pair `init_boot fed40c30` / `vendor_boot_b 1765381c` loads the
-  stock msm_drm closure before SSH and records card0/DSI-1, DCS/reset,
-  suspend-state and actual_brightness to the persistent boot record before
-  :22 exists. The #240 boundary is still the live-session baseline: DCS
-  writes accepted, reads empty, brightness zero. The physical boot decides
-  whether the bootloader handoff lights the glass.
+  Run 86 (#243, pair fed40c30/1765381c) loaded the stock msm_drm closure in
+  the initramfs before SSH and recorded the panel state at 1.5 s; after one
+  SETCRTC the panel boundary is identical to #240: DCS writes accepted while
+  the command engine reports suspend, reads empty, actual_brightness 0, glass
+  dark. Outcome (d): the bootloader-handoff hypothesis is refuted for the
+  recovery-set closure; never reflash this pair. WLAN stays down on this chain
+  because regulatory.db is missing.

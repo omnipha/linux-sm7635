@@ -21,11 +21,13 @@ blocked by a measurement.
 - Step: Display works.
       Check: a picture is on the panel, driven by this kernel,
       and it is still there after a reboot.
-      The record rotation boots (run 84) and the live session measured
-      the panel path: rails on, DCS writes out, reads empty, glass dark.
-      The #243 successor pair loads the stock msm_drm closure before
-      SSH and records the panel boundary on the persistent boot record;
-      the physical boot decides the outcome.
+      Run 86 loaded the stock msm_drm closure before SSH and the glass
+      stayed dark with the same boundary as the #240 live session:
+      DCS writes accepted, command engine in suspend, reads empty,
+      actual_brightness zero. The bootloader-handoff hypothesis is
+      refuted for the recovery-set module closure. The next lever is
+      the vendor_dlkm module variant or a supply state the recovery
+      kernel cannot reach.
 
 ## Then, in order
 
