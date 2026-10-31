@@ -54,6 +54,10 @@ base = builder.base
 vendor = builder.vendor
 require = builder.require
 REFUSED = frozenset((*builder.REFUSED, RUN66,
+                      "3192278b93812ff14cf7d71d4f8bae60a7e00d178c194155fc336817a6c4bcdf",
+                      "ab3a0e6360269d1e56d14626e6849b8249634810895f5270283ed30ebdb4a5a9",
+                      "becd37846fedd0d4298cf562667fd498f76a5c99e2e68810ca5cacf8c1ee72b4",
+                      "adb47dc0228cdbb1ba57dd245ecec49386d53bf24c3ab8f72493e709b78aeae8",
                       "fcb0ed91c83461be1f22df859c2f9b331e72d31a576fcf33876de6c3136c2e0d",
                       "3eeddb35eb32b29323f50bab673c7acc36b029373e911eb4d74a3aa180236522",
                       "762566b758494c53b0265ce7eee13155c6d06b9cca44f8c5eb75ce7cb8fc4e5d"))
@@ -87,7 +91,7 @@ def replace_once(data, old, new):
 def current_scripts():
     original = {name: script_bytes(name) for name in ROOT_NAMES}
     expected = {
-        "pmos-root-contract.sh": "2e95e9d3bef9b38dc71bd132f7054f0a558208800b8e918a34e7b0ec20a5c94c",
+        "pmos-root-contract.sh": "3710c4da9bb532dd29f84051a3b311f45daf34231cea9b177ce6072f2aa2b64b",
         "pmos-session-stage.sh": "be70a27305145cabc15b70469ae7a0434fab352fb9c3d681943f73d22b92938a",
         "pmos-pid1-transition.sh": "e1dba7135e2335c22aee0a5c0f4edb247fad5acd8100377cba3771abe5044e36",
         "pmos-pid1-guard.sh": "f72a68a4c3a0e9bb7e72aa88883dcc9087a684985f5af688e34ea13c0226d3ad",
@@ -97,6 +101,16 @@ def current_scripts():
     }
     require({name: hashlib.sha256(data).hexdigest() for name, data in original.items()} == expected, DELTA_MSG)
     found = dict(original)
+    transition = replace_once(found["pmos-pid1-transition.sh"],
+        b"log 'pid1 transition guard armed; exec switch_root to postmarketOS init'\n",
+        b'''boot_record_append "$ROOT" 'usb-init: pid1 transition guard armed; exec switch_root to postmarketOS init' || { fail 'boot record append refused'; return 1; }
+boot_record_verify "$ROOT" 'usb-init: pid1 transition guard armed; exec switch_root to postmarketOS init' || { fail 'boot record verify refused'; return 1; }
+log 'pid1 transition guard armed; exec switch_root to postmarketOS init'
+''')
+    require(transition.count(b"boot_record_verify") == 1 and
+            transition.index(b"boot_record_verify") < transition.index(b"exec /bin/busybox switch_root"),
+            DELTA_MSG)
+    found["pmos-pid1-transition.sh"] = transition
     stage = found["pmos-session-stage.sh"]
     stage = replace_once(stage, b'''[ -f "$PMOS_TARBALL" ] && [ ! -L "$PMOS_TARBALL" ] || die "missing or symlinked staged tarball $PMOS_TARBALL"
 [ "$($BB stat -c %a "$PMOS_TARBALL")" = 600 ] || die "staged tarball not root-only"
@@ -110,9 +124,26 @@ log "tarball SHA-256 verified"''',
 		die "tarball SHA-256 mismatch"
 	log "tarball SHA-256 verified"
 fi''')
+    stage = replace_once(stage, b'die() { log "FAIL: $*"; exit 1; }\n',
+        b'''die() { log "FAIL: $*"; exit 1; }
+record_stage() {
+	[ "${PMOS_ROOT_KIND:-tmpfs}" = ext4 ] || return 0
+	boot_record_append "$PMOS_ROOT" "pmos-stage: $*" || die 'boot record append refused'
+}
+''')
+    stage = replace_once(stage,
+        b'root_contract_stage_root "$PMOS_ROOT" || die "guest root is not a separate 256m tmpfs"\n',
+        b'''root_contract_stage_root "$PMOS_ROOT" || die "guest root is not a separate 256m tmpfs"
+if [ "${PMOS_ROOT_KIND:-tmpfs}" = ext4 ]; then
+	boot_record_open "$PMOS_ROOT" || die 'boot record open refused'
+	boot_record_id || die 'boot record boot ID invalid'
+	boot_record_append "$PMOS_ROOT" "pmos-self-stage: diagnostic hold and :22 verified on boot $br_boot" || die 'boot record hold append refused'
+fi
+''')
     stage = replace_once(stage, b'$BB tar -xzf "$PMOS_TARBALL" -C "$PMOS_ROOT" || die "extraction failed"',
         b'if [ "${PMOS_ROOT_KIND:-tmpfs}" = ext4 ]; then\n'
         b'\tlog "using unpacked persistent postmarketOS root"\n'
+        b'\trecord_stage "using unpacked persistent postmarketOS root"\n'
         b'else\n'
         b'\t$BB tar -xzf "$PMOS_TARBALL" -C "$PMOS_ROOT" || die "extraction failed"\n'
         b'fi')
@@ -158,6 +189,16 @@ fi''')
         b'\t$BB rm -f "$PMOS_ROOT/etc/dropbear/session_host_key"\n'
         b'fi\n'
         b'$BB chroot "$PMOS_ROOT" /usr/bin/dropbearkey -t ed25519 -f /etc/dropbear/session_host_key \\')
+    stage = replace_once(stage,
+        b'log "mounted private proc/sys/configfs and guest-only dev, verified nodes and private devpts"\n',
+        b'log "mounted private proc/sys/configfs and guest-only dev, verified nodes and private devpts"\nrecord_stage "mounted private proc/sys/configfs and guest-only dev, verified nodes and private devpts"\n')
+    stage = replace_once(stage,
+        b'log "second key-only SSH listening on 172.16.42.2:$PMOS_SSH_PORT (diagnostic :22 untouched)"\n',
+        b'log "second key-only SSH listening on 172.16.42.2:$PMOS_SSH_PORT (diagnostic :22 untouched)"\nrecord_stage "second key-only SSH listening on 172.16.42.2:$PMOS_SSH_PORT (diagnostic :22 untouched)"\n')
+    stage = replace_once(stage,
+        b'log "STAGED ok; enter with: ssh -p $PMOS_SSH_PORT root@172.16.42.2 (accept the printed key)"\n',
+        b'log "STAGED ok; enter with: ssh -p $PMOS_SSH_PORT root@172.16.42.2 (accept the printed key)"\nrecord_stage "STAGED ok; enter with: ssh -p $PMOS_SSH_PORT root@172.16.42.2 (accept the printed key)"\n')
+    require(stage.count(b"record_stage") == 5 and stage.count(b"boot_record_open") == 1, DELTA_MSG)
     found["pmos-session-stage.sh"] = stage
     radio = replace_once(found["pmos-radio-bringup.sh"],
         b"LEASE_SHA=86ebff20670faaa066685b1674f085a5e391676788a45a671f32a2c214fe3896",
@@ -178,11 +219,41 @@ fi''')
         b'\t\treport \'persistent OpenRC WLAN services already running; no reinstall\'\n'
         b'\t\treturn 0\n'
         b'\tfi')
+    radio = replace_once(radio,
+        b"\treport 'stock INI, one-shot helper and service markers verified and staged in guest RAM before cutover'\n\texit 0",
+        b'''\treport 'stock INI, one-shot helper and service markers verified and staged in guest RAM before cutover'
+	if [ "${PMOS_ROOT_KIND:-tmpfs}" = ext4 ]; then
+		[ -f /run/pmos-root-contract.sh ] && [ ! -L /run/pmos-root-contract.sh ] ||
+			fail 'boot record contract unavailable'
+		. /run/pmos-root-contract.sh
+		boot_record_append /run/pmos 'radio-bringup: stock INI, one-shot helper and service markers verified and staged in guest RAM before cutover' || fail 'boot record append refused'
+	fi
+	exit 0''')
+    require(radio.count(b"boot_record_append") == 1, DELTA_MSG)
     found["pmos-radio-bringup.sh"] = radio
     found["pmos-self-post.sh"] = replace_once(found["pmos-self-post.sh"],
         b"RADIO_SHA=7ef6382644c2e07705d2a8df77840031318c298478c8f93e9bbfd05c00b61812",
         b"RADIO_SHA=" + hashlib.sha256(radio).hexdigest().encode())
-    self_stage = found["pmos-self-stage.sh"]
+    self_stage = replace_once(found["pmos-self-stage.sh"],
+        b'die() { log "FAIL: $*"; exit 1; }\n',
+        b'''die() { log "FAIL: $*"; exit 1; }
+record_line() {
+	[ "${PMOS_ROOT_KIND:-tmpfs}" = ext4 ] || return 0
+	CONTRACT=${PMOS_ROOT_CONTRACT:-/run/pmos-root-contract.sh}
+	[ -f "$CONTRACT" ] && [ ! -L "$CONTRACT" ] && . "$CONTRACT" || die 'boot record contract unavailable'
+	case "$1" in
+		open) boot_record_open "$GUEST" || die 'boot record open refused';;
+		*) boot_record_append "$GUEST" "$1" || die "boot record append refused: $1";;
+	esac
+}
+''')
+
+    self_stage = replace_once(self_stage,
+        b"\tlog 'guest :2222 public key matches the diagnostic host key; pin [172.16.42.2]:2222 before the PID 1 request'\n}",
+        b"\tlog 'guest :2222 public key matches the diagnostic host key; pin [172.16.42.2]:2222 before the PID 1 request'\n\trecord_line 'pmos-self-stage: guest :2222 public key matches the diagnostic host key; pin [172.16.42.2]:2222 before the PID 1 request'\n}")
+    self_stage = replace_once(self_stage,
+        b'log "staged postmarketOS root and armed PID 1 request for boot $boot"\n',
+        b'log "staged postmarketOS root and armed PID 1 request for boot $boot"\nrecord_line "pmos-self-stage: staged postmarketOS root and armed PID 1 request for boot $boot"\n')
     start = self_stage.index(b"part_dev=\npart_count=0\n")
     end_marker = b"$BB sh /run/pmos-session-stage.sh || die 'pmos-session-stage failed'"
     end = self_stage.index(end_marker, start) + len(end_marker)
@@ -223,7 +294,11 @@ $BB timeout -k 1 5 $BB mount -t ext4 -o ro,noload "$node" "$GUEST" 2>/dev/null |
 [ "$($BB awk -v m="$GUEST" '$2 == m && $3 == "ext4" && $4 ~ /(^|,)ro(,|$)/ && $4 ~ /(^|,)(noload|norecovery)(,|$)/ {n++} END {print n+0}' /proc/mounts)" = 1 ] ||
 	{ $BB umount "$GUEST" 2>/dev/null || true; $BB rmdir "$GUEST" 2>/dev/null || true; die 'userdata mount is not read-only ext4 with noload'; }
 PMOS_ROOT_KIND=ext4 $BB sh /run/pmos-session-stage.sh || die 'pmos-session-stage failed'
-log "mounted pinned persistent root from read-only $node ($part_dev) and verified its root contract"'''
+log "mounted pinned persistent root from read-only $node ($part_dev) and verified its root contract"
+PMOS_ROOT_KIND=ext4
+export PMOS_ROOT_KIND
+record_line "pmos-self-stage: mounted pinned persistent root from read-only $node ($part_dev) and verified its root contract"
+'''
     self_stage = self_stage[:start] + direct + self_stage[end:]
     self_stage = replace_once(self_stage, b'$BB rm -f "$TARBALL"\n', b'')
     self_stage = replace_once(self_stage, b'''[ ! -e "$hook" ] && [ ! -L "$hook" ] || die 'local.d startup hook already exists'
@@ -247,7 +322,11 @@ fi''')
         self_stage = __import__("re").sub(
             pin.encode() + b"=[0-9a-f]{64}", pin.encode() + b"=" + digest.encode(), self_stage, count=1)
     require(b"STAGE_SHA=be70a273" not in self_stage and b"LEASE_SHA=86ebff" not in self_stage and
-            b"PMOS_ROOT_KIND=ext4 " in self_stage and b'"$wait_n" -lt 145' in self_stage, DELTA_MSG)
+            b"PMOS_ROOT_KIND=ext4 " in self_stage and b'"$wait_n" -lt 145' in self_stage and
+            self_stage.count(b"record_line") == 4 and
+            self_stage.index(b"record_line \"pmos-self-stage: mounted pinned persistent root") <
+            self_stage.index(b"record_line \"pmos-self-stage: staged postmarketOS root"),
+            DELTA_MSG)
     found["pmos-self-stage.sh"] = self_stage
     return found
 

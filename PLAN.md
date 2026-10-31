@@ -13,16 +13,17 @@ One active step, one active issue. Later steps are not pre-created issues.
 
 ## Active step
 
-- Step: close #223 on run 78's inconclusive observation boundary.
-- Issue: omnipha/linux-sm7635#223 until the closeout PR merges, then none.
-- Next: the cold start was performed, but its console was lost and PID 1,
-  radio and WLAN remain unmeasured. Rescue readback passed. Do not repeat the
-  experiment in this issue; the strategist owns any next direction.
+- Step: host-only cold-start boot record for #230, awaiting the coordinator's
+  diagnostic boot. Not a cold start and not a closeout.
+- Issue: omnipha/linux-sm7635#230 stays open after the host PR merges.
+- Next: the coordinator may write only a4ee7def / 6e7c5a2e and use one normal
+  USB diagnostic boot to read the record and confirm the 160-second fastboot
+  return. The button-assisted cold start remains separately scheduled.
 
 ## Next (ordered, not issues yet)
 
-1. Strategist selects how to retain a cold-start observation before any new
-   issue or device experiment; do not treat run 78 as a functional boot result.
+1. After the coordinator's diagnostic evidence is committed, record the first
+   missing line and rescue proof, then close #230. Do not schedule a cold start.
 2. Display, touch, audio, cameras and modem data follow only when their own
    gates are reached. One function per step.
 
@@ -31,6 +32,7 @@ Reopen either only when a measurement shows it blocks the active step.
 
 ## Done (pointers, newest first)
 
+- Host #230: bounded pre-switch_root boot record and distinct pair a4ee7def / 6e7c5a2e verified; run-78 and earlier images refused -> records/2026-10-31-090700-coldstart-boot-record-host-image.md
 - Run 78: button-assisted cold start performed but original console and PID 1/radio/WLAN result unmeasured; rescue verified -> records/2026-10-31-075408-run-78-coldstart-observation-incomplete.md
 - Host #223: run-66 handoff pinned byte-for-byte and distinct pair 3192278b / ab3a0e63 re-verified on merged main -> records/2026-10-31-061706-coldstart-run66-handoff-verified.md
 - Run 76: host verifier refused becd3784 / adb47dc0 before flash; unchanged rescue chain read and fastboot return measured -> records/2026-10-31-055910-preflash-verifier-refusal.md

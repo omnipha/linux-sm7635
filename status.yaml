@@ -3,12 +3,12 @@
 device: nothing-asteroids
 updated: 2026-10-31
 next_question: >-
-  Which strategist-selected observation path can preserve the original cold-start console before any further device experiment?
-active_issue: null
+  Does the new persistent boot record survive a diagnostic boot and the independent 160-second fastboot return, and what is its first missing line?
+active_issue: omnipha/linux-sm7635#230
 subsystems:
   boot:
     state: partial
-    record: records/2026-10-31-075408-run-78-coldstart-observation-incomplete.md
+    record: records/2026-10-31-090700-coldstart-boot-record-host-image.md
   ssh:
     state: partial
     record: records/2026-10-30-203515-run-69-second-boot-guard-wlan.md
@@ -42,8 +42,9 @@ attempted_shas:       # cold-start index only; the flash gate is device-op statu
   - fcb0ed91
   - fef03008        # init_boot, runs 52-57
 notes: >-
-  Run 78 performed one button-assisted cold start of the verified 3192278b /
-  ab3a0e63 pair. The original cold-start console and SSH/WLAN window were
-  not captured; switch_root, PID 1, radio and association are unmeasured.
-  Rescue readback proved stock slot A and the installed pair; responsive
-  fastboot returned. Coordinator session closed, no rollback or new test.
+  Run 78's cold start left switch_root, PID 1, radio and WLAN unmeasured.
+  Host-only successor pair a4ee7def / 6e7c5a2e adds a bounded, root-only,
+  fail-closed boot record on the persistent ext4 root, committed before
+  switch_root. Fixtures and the merged verifier passed; every earlier
+  measured image stays refused and never-reflash. No device operation and
+  no cold start performed; #230 awaits the coordinator's diagnostic boot.
