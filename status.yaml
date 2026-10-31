@@ -3,12 +3,12 @@
 device: nothing-asteroids
 updated: 2026-10-31
 next_question: >-
-  Does the new persistent boot record survive a diagnostic boot and the independent 160-second fastboot return, and what is its first missing line?
-active_issue: omnipha/linux-sm7635#230
+  Which strategist-selected path can make the independent recovery guard acknowledged and prove the 160-second fastboot return without changing the measured record?
+active_issue: null
 subsystems:
   boot:
     state: partial
-    record: records/2026-10-31-090700-coldstart-boot-record-host-image.md
+    record: records/2026-10-31-094401-run-79-record-readable-guard-deadline-unobserved.md
   ssh:
     state: partial
     record: records/2026-10-30-203515-run-69-second-boot-guard-wlan.md
@@ -25,6 +25,8 @@ subsystems:
     state: untested
     record: null
 attempted_shas:       # cold-start index only; the flash gate is device-op status, not this file
+  - a4ee7def        # init_boot_a, run 79; flashed once, never-reflash
+  - 6e7c5a2e        # vendor_boot_b, run 79; flashed once, never-reflash
   - 3eeddb35        # init_boot_a, run 73; flashed once, never-reflash
   - 762566b7        # vendor_boot_b, run 73; flashed once, never-reflash
   - 0b40ac34
@@ -42,9 +44,9 @@ attempted_shas:       # cold-start index only; the flash gate is device-op statu
   - fcb0ed91
   - fef03008        # init_boot, runs 52-57
 notes: >-
-  Run 78's cold start left switch_root, PID 1, radio and WLAN unmeasured.
-  Host-only successor pair a4ee7def / 6e7c5a2e adds a bounded, root-only,
-  fail-closed boot record on the persistent ext4 root, committed before
-  switch_root. Fixtures and the merged verifier passed; every earlier
-  measured image stays refused and never-reflash. No device operation and
-  no cold start performed; #230 awaits the coordinator's diagnostic boot.
+  Run 79 read the complete 933-byte persistent boot record through the final
+  transition line. At 156.358 s self-post refused because the independent
+  recovery guard was not armed and unacknowledged; PID 1 stayed diagnostic.
+  USB Linux was still alive at 274.18 s, so the 160-second fastboot return
+  was not observed and the coordinator ended the boot manually. Rescue hashes
+  were exact and the measured pair is never-reflash. No cold start was run.
