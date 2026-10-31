@@ -13,7 +13,7 @@ OLD_IMAGE = pathlib.Path.home() / "sm7635-build" / "out" / "init_boot-persistent
 OLD_SHA = "ef476d8cbf3cba31fc143680d53b9aaf687cadd0409ad6dcf93c018bd97a233b"
 RUN69_INIT = "2f73c94764be3f443ace02fc46001662686512f37f4951bedfb5900cf3d31c28"
 RUN69_CARRIER = "f792174c3e886b6f3280d447c3da4704403f713fe24228fb4f52f24e7da11095"
-OVERFLOW = 2118229
+RUN72_INIT = "3c97c918ed085d6d72530f00bba81c053130c184d351f372a10ac11b616bc71a"
 
 
 def load(filename, name):
@@ -46,7 +46,7 @@ OVERFLOW_MSG = "raw pinned root contract exceeds the fixed LZ4 envelope"
 
 def refused():
     values = set(builder.REFUSED)
-    values.update((OLD_SHA, RUN69_INIT))
+    values.update((OLD_SHA, RUN69_INIT, RUN69_CARRIER, RUN72_INIT))
     return frozenset(values)
 
 
@@ -208,21 +208,39 @@ def overflow_frame(image, library, decode_frame, found, private, replayed):
     cpio = builder.modules.encode_newc(changed, trailer)
     block = base.compress_hc(library, cpio, base.HC_LEVEL)
     framed = len(block) + 8
-    require(framed > base.MAX_FRAME and (not replayed or framed == OVERFLOW), OVERFLOW_MSG)
+    require(framed > base.MAX_FRAME, OVERFLOW_MSG)
 
 
 def self_test(init_image, carrier, stock_init, base_image, stock_carrier, current,
               library, decode_frame):
     digest, carrier_digest, _cpio_size, size = check_pair(
         init_image, carrier, stock_init, base_image, stock_carrier, current, library, decode_frame)
-    require(digest != RUN69_INIT and carrier_digest == RUN69_CARRIER,
-            "delta must change only init_boot and keep the installed carrier byte-identical")
+    require(digest not in (RUN69_INIT, RUN72_INIT) and carrier_digest != RUN69_CARRIER,
+            "delta must change both carriers and repeat neither measured image")
     git_clean()
     old_image, old_blob, old_members, replayed = omission_fixture(
         base_image, library, decode_frame)
     _entries, _trailer, found, private = builder.base_state(base_image, library, decode_frame)
     found = builder.expected_found(found, current)
-    overflow_frame(old_image, library, decode_frame, found, private, replayed)
+    previous = dict(found)
+    guard = previous["pmos-pid1-guard.sh"]
+    start = guard.index(b'[ ! -e "$root$STATE" ]')
+    end = guard.index(b'[ -f "$0" ]', start)
+    guard = guard[:start] + (b'[ ! -e "$root$STATE" ] && [ ! -L "$root$STATE" ] &&\n'
+                            b'\t[ ! -e "$root/bin/restart2" ] && [ ! -L "$root/bin/restart2" ] || '
+                            b"fail 'guard or RESTART2 already exists'\n\t") + guard[end:]
+    start = guard.index(b'\tif [ "$mode" = real ]; then\n\t\tif [ ! -e')
+    end = guard.index(b'\telse\n\t\t$BB cp "$mock_source"', start)
+    guard = guard[:start] + (b'\tif [ "$mode" = real ]; then\n'
+                            b'\t\t$BB cp /bin/restart2 "$root/bin/restart2" || fail '\
+                            b"'cannot copy RESTART2'\n"
+                            b'\t\t$BB chmod 755 "$root/bin/restart2"\n'
+                            b'\t\t[ "$(hash "$root/bin/restart2")" = "$HELPER_SHA" ] || '
+                            b"fail 'RESTART2 copy changed'\n") + guard[end:]
+    require(hashlib.sha256(guard).hexdigest() ==
+            "2a92fbcfe029ec3be1af8b73d4cd8d0ac317ecd267a9dc9ba9637932207d5da3", OVERFLOW_MSG)
+    previous["pmos-pid1-guard.sh"] = guard
+    overflow_frame(old_image, library, decode_frame, previous, private, replayed)
     require(set(old_members) == set(builder.builder.PUBLIC) | {builder.builder.PRIVATE} and
             "pmos-root-contract.sh" not in old_members and
             b"pmos-root-contract.sh" not in old_blob, OLD_MSG)
@@ -292,6 +310,24 @@ def self_test(init_image, carrier, stock_init, base_image, stock_carrier, curren
         b"PMOS_ROOT_KIND=ext4 ", b"")
     bad("root delta removed", INIT_MSG, source=changed)
     changed = dict(current)
+    changed["pmos-pid1-guard.sh"] = changed["pmos-pid1-guard.sh"].replace(
+        b"if [ ! -e \"$root/bin/restart2\" ] && [ ! -L \"$root/bin/restart2\" ]; then",
+        b"if true; then", 1)
+    bad("helper reuse missing", INIT_MSG, source=changed)
+    changed = dict(current)
+    changed["pmos-pid1-guard.sh"] = changed["pmos-pid1-guard.sh"].replace(
+        b"[ \"$(hash \"$root/bin/restart2\")\" = \"$HELPER_SHA\" ]",
+        b"true")
+    bad("helper hash weakened", INIT_MSG, source=changed)
+    changed = dict(current)
+    changed["pmos-pid1-transition.sh"] = changed["pmos-pid1-transition.sh"].replace(
+        b"arm \"$ROOT\" 160", b"arm \"$ROOT\" 161", 1)
+    bad("deadline weakened", INIT_MSG, source=changed)
+    changed = dict(current)
+    changed["pmos-pid1-guard.sh"] = changed["pmos-pid1-guard.sh"].replace(
+        b"guard state already exists", b"guard state accepted", 1)
+    bad("foreign-state refusal changed", INIT_MSG, source=changed)
+    changed = dict(current)
     changed["pmos-root-contract.sh"] = b"#!/bin/busybox sh\nexit 0\n"
     bad("missing contract body", INIT_MSG, source=changed)
     changed = dict(current)
@@ -305,13 +341,14 @@ def self_test(init_image, carrier, stock_init, base_image, stock_carrier, curren
             b"[ -f /run/keep ] && [ ! -L /run/keep ] &&\n"
             b"\t[ \"$($BB stat -c \"%u:%a:%h\" /run/keep)\" = 0:600:1 ] || exit 0\n")
     installed = with_init(launch.replace(keep, b"", 1))
-    require(hashlib.sha256(installed).hexdigest() == RUN69_INIT, SHA_MSG)
-    bad("installed run-69 init_boot", SHA_MSG, installed)
+    bad("guest keep removed", INIT_MSG, installed)
+    require(RUN69_INIT in refused() and RUN72_INIT in refused() and
+            RUN69_CARRIER in refused(), SHA_MSG)
     reader = builder.carrier_reader(builder.carrier_bundle(found, private))
     bad("reader removed", INIT_MSG, with_init(launch.replace(reader, b"", 1)))
     bad("wrong carrier name", INIT_MSG, with_init(launch.replace(b"vendor_boot_b", b"recovery_b", 1)))
     bad("malformed init", INIT_MSG, with_init(b"#!/bin/busybox sh\nexit 0\n"))
-    bad("guest keep removed", INIT_MSG, with_init(launch.replace(
+    bad("guest keep creation missing", INIT_MSG, with_init(launch.replace(
         b"$BB touch /run/keep || exit 0\n", b"", 1)))
     bad("guest keep mode weakened", INIT_MSG, with_init(launch.replace(
         b"$BB chmod 600 /run/keep || exit 0\n", b"$BB chmod 644 /run/keep || exit 0\n", 1)))

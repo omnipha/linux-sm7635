@@ -3,12 +3,12 @@
 device: nothing-asteroids
 updated: 2026-10-31
 next_question: >-
-  Which successor direction can arm the recovery guard before PID 1 handoff without host assistance?
-active_issue: null
+  Does the validated helper-reuse image arm the guard and reach host-free PID 1 before the bounded recovery deadline?
+active_issue: omnipha/linux-sm7635#220
 subsystems:
   boot:
     state: partial
-    record: records/2026-10-31-024827-run-72-guest-keep-partial-guard-unarmed.md
+    record: records/2026-10-31-034455-guard-rearm-host-image.md
   ssh:
     state: partial
     record: records/2026-10-30-203515-run-69-second-boot-guard-wlan.md
@@ -40,8 +40,8 @@ attempted_shas:       # cold-start index only; the flash gate is device-op statu
   - fcb0ed91
   - fef03008        # init_boot, runs 52-57
 notes: >-
-  Run 72 negative/partial: the guest created root-only /run/keep, self-stage
-  passed the host-hold deadline, persistent ext4 sda13 and :2222 were reached
-  without host keep, guard ack or capture. PID 1 refused on NO_ARMED. The image
-  gate is not verified and no cold start is scheduled. Rollback restored exact
-  run-69 hashes and rescue evidence; only init_boot_a was written. #216 closed.
+  #220 host phase: the measured stale pinned restart2 precondition was
+  reproduced on ext4. Validate-and-reuse and all foreign-state refusal fixtures
+  pass. Both carrier IDs are distinct and unmeasured; no physical image gate is
+  verified. Coordinator measurement and exact run-69 rollback are pending.
+  No cold start is scheduled.

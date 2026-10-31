@@ -86,11 +86,11 @@ def current_scripts():
     expected = {
         "pmos-root-contract.sh": "2e95e9d3bef9b38dc71bd132f7054f0a558208800b8e918a34e7b0ec20a5c94c",
         "pmos-session-stage.sh": "be70a27305145cabc15b70469ae7a0434fab352fb9c3d681943f73d22b92938a",
-        "pmos-pid1-transition.sh": "176422c5536025749d9ffdd306df7ff2dfdd213be0674b24bb4fff4775f8b415",
-        "pmos-pid1-guard.sh": "2a92fbcfe029ec3be1af8b73d4cd8d0ac317ecd267a9dc9ba9637932207d5da3",
+        "pmos-pid1-transition.sh": "e1dba7135e2335c22aee0a5c0f4edb247fad5acd8100377cba3771abe5044e36",
+        "pmos-pid1-guard.sh": "f72a68a4c3a0e9bb7e72aa88883dcc9087a684985f5af688e34ea13c0226d3ad",
         "pmos-self-post.sh": "2d5847f38d6c58e4ac048cfb628dbe8e8b530df8522316d6ce0f1129758ce17a",
         "pmos-radio-bringup.sh": "04fe93d76c5048122f1a413457c0e0f1b1abd13f78f3518d8bb12abb18762dd1",
-        "pmos-self-stage.sh": "fec98717681aba52e64344a4dba43f6bdf8907c3f11aaab10e9bfd46530afa92",
+        "pmos-self-stage.sh": "545a6ac6cd3b6901db2c8adbbc0cddc4dee0d93687c90f827de9670a7cd3d9ad",
     }
     require({name: hashlib.sha256(data).hexdigest() for name, data in original.items()} == expected, DELTA_MSG)
     found = dict(original)
