@@ -2,6 +2,7 @@
 
 ## Latest 10
 
+- [2026-10-31-173408-live-display-drm-kms-panel-command-gap](records/2026-10-31-173408-live-display-drm-kms-panel-command-gap.md) | display | inconclusive | omnipha/linux-sm7635#240 | live display: DRM device reached, KMS active, DSI panel commands fail
 - [2026-10-31-162218-run-84-record-rotation-cutover-noack-return](records/2026-10-31-162218-run-84-record-rotation-cutover-noack-return.md) | boot run 84 | confirmed | omnipha/linux-sm7635#237 | run 84: record rotation boots, cutover acks, no-ack return is independent
 - [2026-10-31-153706-record-rotation-host-image](records/2026-10-31-153706-record-rotation-host-image.md) | boot | confirmed | omnipha/linux-sm7635#237 | Record rotation: host fix, fixtures and successor pair
 - [2026-10-31-115817-run-83-stale-record-open-refusal](records/2026-10-31-115817-run-83-stale-record-open-refusal.md) | boot run 83 | refuted | omnipha/linux-sm7635#234 | Run 83: stale boot record refused before the cutover
@@ -11,7 +12,6 @@
 - [2026-10-31-090700-coldstart-boot-record-host-image](records/2026-10-31-090700-coldstart-boot-record-host-image.md) | boot | confirmed | omnipha/linux-sm7635#230 | Cold-start boot record: host fixture and successor pair
 - [2026-10-31-075408-run-78-coldstart-observation-incomplete](records/2026-10-31-075408-run-78-coldstart-observation-incomplete.md) | boot run 78 | inconclusive | omnipha/linux-sm7635#223 | Run 78: cold start performed, observation incomplete
 - [2026-10-31-061706-coldstart-run66-handoff-verified](records/2026-10-31-061706-coldstart-run66-handoff-verified.md) | boot | confirmed | omnipha/linux-sm7635#223 | Cold-start run-66 handoff preserved and re-verified
-- [2026-10-31-055910-preflash-verifier-refusal](records/2026-10-31-055910-preflash-verifier-refusal.md) | boot run 76 | refuted | omnipha/linux-sm7635#223 | Run 76: host verifier refuses the cold-start pair before flash
 
 ## By subsystem (latest 3, total in brackets)
 
@@ -19,6 +19,9 @@
 - [2026-10-31-162218-run-84-record-rotation-cutover-noack-return](records/2026-10-31-162218-run-84-record-rotation-cutover-noack-return.md) | boot run 84 | confirmed | omnipha/linux-sm7635#237 | run 84: record rotation boots, cutover acks, no-ack return is independent
 - [2026-10-31-153706-record-rotation-host-image](records/2026-10-31-153706-record-rotation-host-image.md) | boot | confirmed | omnipha/linux-sm7635#237 | Record rotation: host fix, fixtures and successor pair
 - [2026-10-31-115817-run-83-stale-record-open-refusal](records/2026-10-31-115817-run-83-stale-record-open-refusal.md) | boot run 83 | refuted | omnipha/linux-sm7635#234 | Run 83: stale boot record refused before the cutover
+
+### display [1]
+- [2026-10-31-173408-live-display-drm-kms-panel-command-gap](records/2026-10-31-173408-live-display-drm-kms-panel-command-gap.md) | display | inconclusive | omnipha/linux-sm7635#240 | live display: DRM device reached, KMS active, DSI panel commands fail
 
 ### modem [12]
 - [2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the](records/2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the.md) | modem run 55 | confirmed | omnipha/linux-sm7635#155 | Run-55 measured post-cutover modem hold past the EFS request (#155, 2026-10-29)
@@ -42,4 +45,4 @@
 
 ## By month
 
-- [2026-10](records/index-2026-10.md) [157]
+- [2026-10](records/index-2026-10.md) [158]

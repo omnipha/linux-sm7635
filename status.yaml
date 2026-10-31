@@ -3,8 +3,8 @@
 device: nothing-asteroids
 updated: 2026-10-31
 next_question: >-
-  Over the live session on the installed record-rotation pair, why is there no DRM device on this kernel?
-active_issue: omnipha/linux-sm7635#237
+  DSI command transfers to the RM69220 panel fail with a live KMS pipeline; the remaining change must execute before SSH exists (panel power/reset timing or vendor module variant).
+active_issue: omnipha/linux-sm7635#240
 subsystems:
   boot:
     state: confirmed
@@ -19,8 +19,8 @@ subsystems:
     state: partial        # stays running past the EFS request after PID-1 cutover (run 55); no voice/SIM/data claim
     record: records/2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the.md
   display:
-    state: untested
-    record: null
+    state: partial
+    record: records/2026-10-31-173408-live-display-drm-kms-panel-command-gap.md
   cameras:
     state: untested
     record: null
@@ -48,10 +48,10 @@ attempted_shas:       # cold-start index only; the flash gate is device-op statu
   - fcb0ed91
   - fef03008        # init_boot, runs 52-57
 notes: >-
-  Run 84 verified the record-rotation pair 27c4d895 / da4651d8: rotation
-  archived the run-79 record and opened a fresh one, staging reached :2222,
-  the cutover accepted exactly one host pid1-ack, postmarketOS became PID 1,
-  and a clean no-ack guest reboot returned independently to responsive
-  fastboot. Radio/WLAN stayed down on this chain (no wlan0, wpa_supplicant
-  failed). Display diagnosis remains open for the live session; #237 stays
-  open for that. Stock slot-A rescue hashes verified exact, no restore.
+  Run 84 verified the record-rotation pair 27c4d895 / da4651d8. Live display
+  diagnosis (#240, boot 07f16bc0) loaded the stock msm_drm closure from the
+  staged vendor_boot ramdisk: card0 and DSI-1 appear, the RM69220 VXN panel
+  binds and the KMS CRTC runs at 1080x2392@120, but DSI command transfers to
+  the panel fail and the backlight stays at zero, so no picture yet. The
+  remaining gap needs a change that executes before SSH exists. WLAN stays
+  down on this chain because regulatory.db is missing.
