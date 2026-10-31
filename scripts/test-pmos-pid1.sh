@@ -158,6 +158,11 @@ if [ "${1:-}" = --client ]; then
 			[ ! -e /proc/1/root/run/pid1-guard/accepted ] || fail 'late ack accepted after the deadline'
 			[ ! -e /proc/1/root/run/self-post-accepted ] || fail 'post-cutover waiter accepted a late ack'
 			sh "$HOST_ACK" "$BOOT_ID" /run/known_hosts /run/client_key >/dev/null 2>&1 && fail 'host ack accepted after the deadline'
+			rootfs=$($BB awk '$2 == "/" {print $3}' /proc/1/mounts)
+			if [ "$rootfs" = ext4 ]; then
+				$BB grep -q 'pmos-self-post: FAIL: guard ack not accepted (uptime ' /proc/1/root/.omnipha-boot-record ||
+					{ $BB cat /proc/1/root/.omnipha-boot-record >&2 2>/dev/null; fail 'refusal path left no post-cutover FAIL line'; }
+			fi
 			;;
 		timeout)
 			attempt=0
@@ -371,6 +376,8 @@ MOCK
 	if [ "$CASE" = ack ] || [ "$CASE" = late ]; then budget=50; else budget=12; fi
 	if [ "$CASE" = stale ]; then budget=10; fi
 	$BB sh /oldroot"$HOST_GUARD" mock-arm /guest "$budget" /guest/run/mock "$MOCK_SHA" >/guest/run/mock-guard.log 2>&1 || fail 'real guard mock-arm failed'
+	$BB cp /oldroot"$HOST_CONTRACT" /guest/run/pmos-root-contract.sh
+	$BB chmod 700 /guest/run/pmos-root-contract.sh
 	[ "$(hash /guest/run/pid1-guard/guard.sh)" = "$(hash /oldroot"$HOST_GUARD")" ] &&
 		[ "$(hash /guest/run/pid1-guard/mock-restart2)" = "$MOCK_SHA" ] &&
 		[ "$($BB cat /guest/run/pid1-guard/armed)" = "$BOOT_ID" ] &&
@@ -409,10 +416,11 @@ LATE
 			$BB grep -qF 'independent recovery guard remains unacknowledged' /oldroot"$HOST_POST" || fail 'self-post no longer requires the unacknowledged armed guard'
 		$BB printf '%s\n' '#!/bin/busybox sh' 'set -eu' 'BB=/bin/busybox' \
 			'export PATH=/bin:/sbin:/usr/bin:/usr/sbin' 'GUARD=/run/pid1-guard' \
-			'die() { $BB touch /run/self-post-failed; exit 1; }' \
+			'record_fail() { [ "${POST_RECORD_FAIL:-0}" = 0 ] || return 0; POST_RECORD_FAIL=1; contract=${PMOS_ROOT_CONTRACT:-/run/pmos-root-contract.sh}; [ -f "$contract" ] && [ ! -L "$contract" ] && . "$contract" || return 0; boot_record_id || return 0; stamp=$($BB awk "NF == 2 && \$1 ~ /^[0-9]+([.][0-9]+)?\$/ {print \$1; ok=1} END {exit(!ok)}" /proc/uptime 2>/dev/null) || stamp=unknown; boot_record_append / "pmos-self-post: FAIL: $* (uptime $stamp)" || true; }' \
+			'die() { $BB touch /run/self-post-failed; record_fail "$*"; exit 1; }' \
 			'boot=$($BB cat /proc/sys/kernel/random/boot_id)' \
 			'$BB touch /run/self-post-waiting' \
-			'i=0; until [ -f "$GUARD/accepted" ] && [ "$($BB cat "$GUARD/accepted")" = "$boot" ]; do [ "$i" -lt 20 ] || die; $BB sleep 1; i=$((i + 1)); done' \
+			'i=0; until [ -f "$GUARD/accepted" ] && [ "$($BB cat "$GUARD/accepted")" = "$boot" ]; do [ "$i" -lt 20 ] || die "guard ack not accepted"; $BB sleep 1; i=$((i + 1)); done' \
 			'$BB touch /run/self-post-accepted' > /guest/run/radio-bringup/pmos-self-post.sh
 		$BB chmod 700 /guest/run/radio-bringup/pmos-self-post.sh
 	fi
@@ -442,5 +450,6 @@ for case in ack late stale timeout preplanted symlinked; do
 		env HOST_ARCHIVE="$ARCHIVE" HOST_SCRIPT="$HERE/test-pmos-pid1.sh" \
 		HOST_GUARD="$HERE/pmos-pid1-guard.sh" HOST_ACK="$HERE/pmos-pid1-ack.sh" \
 		HOST_POST="$HERE/pmos-self-post.sh" \
+		HOST_CONTRACT="$HERE/pmos-root-contract.sh" \
 		/bin/busybox sh "$HERE/test-pmos-pid1.sh" --inner "$case" || fail "$case isolated switch_root fixture"
 done

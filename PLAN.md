@@ -13,11 +13,12 @@ One active step, one active issue. Later steps are not pre-created issues.
 
 ## Active step
 
-- Step: close #230 on run 79's measured record and stop boundaries.
-- Issue: omnipha/linux-sm7635#230 until the closeout PR merges, then none.
-- Next: record readability is measured. The first missing post-cutover line
-  and the unobserved 160-second return are recorded. Do not reflash the
-  measured pair or schedule a cold start; the strategist owns the next path.
+- Step: deliver #234's post-cutover record host image and await the coordinator's measured outcome.
+- Issue: omnipha/linux-sm7635#234 until the measured closeout PR merges, then none.
+- Next: the host pair dd6ce74e / e7d55580 is verified and never-reflash for
+  every earlier measured image. The coordinator owns the one diagnostic boot,
+  the acknowledged PID 1, and the independent no-ack return. Do not reflash a
+  measured pair or schedule a cold start.
 
 ## Next (ordered, not issues yet)
 
@@ -31,6 +32,7 @@ Reopen either only when a measurement shows it blocks the active step.
 
 ## Done (pointers, newest first)
 
+- Host #234: bounded post-cutover record, FAIL line and distinct pair dd6ce74e / e7d55580 verified; run-79 and earlier images refused; no re-entered arm tail -> records/2026-10-31-110810-cutover-record-host-image.md
 - Run 79: persistent boot record readable through the transition line; self-post refused and 160-second return unobserved; rescue verified -> records/2026-10-31-094401-run-79-record-readable-guard-deadline-unobserved.md
 - Host #230: bounded pre-switch_root boot record and distinct pair a4ee7def / 6e7c5a2e verified; run-78 and earlier images refused -> records/2026-10-31-090700-coldstart-boot-record-host-image.md
 - Run 78: button-assisted cold start performed but original console and PID 1/radio/WLAN result unmeasured; rescue verified -> records/2026-10-31-075408-run-78-coldstart-observation-incomplete.md

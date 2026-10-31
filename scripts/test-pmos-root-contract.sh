@@ -121,8 +121,29 @@ RCS
 	$BB cp "$HOST_RUN/uevent.saved" /proc/1/root/sys/class/block/sda13/uevent
 	$BB rm -f /proc/1/root/run/pid1-guard/accepted /proc/1/root/run/pid1-guard/ack
 	$BB printf '%s\n' fixture-nonce > /proc/1/root/run/pid1-guard/nonce
+	$BB chroot /proc/1/root /bin/busybox sh -c '
+BB=/bin/busybox
+. /run/pid1-guard/root-contract.sh
+boot=$($BB cat /proc/sys/kernel/random/boot_id)
+root_contract_switched_root /proc/1/mounts /proc/1/mountinfo || exit 1
+boot_record_open / || exit 1
+for line in \
+	"pmos-self-stage: diagnostic hold and :22 verified on boot $boot" \
+	"pmos-stage: using unpacked persistent postmarketOS root" \
+	"pmos-stage: mounted private proc/sys/configfs and guest-only dev, verified nodes and private devpts" \
+	"pmos-stage: second key-only SSH listening on 172.16.42.2:2222 (diagnostic :22 untouched)" \
+	"pmos-stage: STAGED ok; enter with: ssh -p 2222 root@172.16.42.2 (accept the printed key)" \
+	"pmos-self-stage: mounted pinned persistent root from read-only /dev/block/sda13 (sda13) and verified its root contract" \
+	"pmos-self-stage: guest :2222 public key matches the diagnostic host key; pin [172.16.42.2]:2222 before the PID 1 request" \
+	"radio-bringup: stock INI, one-shot helper and service markers verified and staged in guest RAM before cutover" \
+	"pmos-self-stage: staged postmarketOS root and armed PID 1 request for boot $boot" \
+	"usb-init: pid1 transition guard armed; exec switch_root to postmarketOS init"; do
+	boot_record_append / "$line" || exit 1
+done' || fail 'self-post fixture pre-cutover record refused on the persistent root'
 	$BB chroot /proc/1/root /bin/busybox sh /run/pmos-self-post.sh >"$HOST_RUN/post-ok.out" 2>&1 && fail 'self-post succeeded without radio script at /run/radio-bringup'
 	$BB grep -q 'cold-start post-cutover PID 1.*independent recovery guard remains unacknowledged' "$HOST_RUN/post-ok.out" || { $BB cat "$HOST_RUN/post-ok.out" >&2; fail 'self-post rejected valid ext4 switched root'; }
+	$BB grep -q "pmos-self-post: post-cutover PID 1 on boot $boot; guard identity check passed; pid1 identity check passed" /proc/1/root/.omnipha-boot-record ||
+		{ $BB cat /proc/1/root/.omnipha-boot-record >&2; fail 'post-cutover record line missing on the persistent root'; }
 	$BB chroot /proc/1/root /bin/busybox sh /run/pmos-radio-bringup.sh "$boot" modem capture-ok >"$HOST_RUN/radio-ok.out" 2>&1 && fail 'radio bring-up succeeded without staged INI'
 	$BB grep -q 'pre-cutover staged stock INI missing' "$HOST_RUN/radio-ok.out" || { $BB cat "$HOST_RUN/radio-ok.out" >&2; fail 'radio bring-up rejected valid ext4 switched root'; }
 	printf 'pass: ext4-ack; real BusyBox PID 1 switch_root to loop-backed userdata ext4 with surviving pre-cutover Dropbear PID and pinned key, real guard watch on ext4 switched root, strict key-only SSH before/after, ack/self-post/radio rejected on wrong PARTNAME and accepted after restoring userdata; no device recovery\n'
@@ -192,6 +213,10 @@ INIT
 	$BB chmod 755 /run/pmos/init
 	$BB cp /run/pmos/init /run/pmos/sbin/init
 	$BB chmod 755 /run/pmos/sbin/init
+	$BB cp /run/pmos-root-contract.sh /run/pmos/run/pmos-root-contract.sh
+	$BB chmod 700 /run/pmos/run/pmos-root-contract.sh
+	$BB cp /run/pmos-root-contract.sh /run/pmos/run/pmos-root-contract.sh
+	$BB chmod 700 /run/pmos/run/pmos-root-contract.sh
 	$BB mkdir -p /run/pmos/sys/class/block
 	$BB mount --bind /sys/class/block /run/pmos/sys/class/block
 	$BB mount --make-private /run/pmos/sys/class/block
