@@ -13,11 +13,11 @@ One active step, one active issue. Later steps are not pre-created issues.
 
 ## Active step
 
-- Step: owner fallback after #214 measured no device-native RTC cold start.
-- Issue: omnipha/linux-sm7635#213
-- Next: owner selects one cold-start power path (operator button, independent
-  watchdog/power carrier, switchable USB, or skip). Then measure exactly one
-  passive cold start; do not repeat the run-71 mechanism.
+- Step: guest-owned keep image before any button-assisted cold-start measurement.
+- Issue: omnipha/linux-sm7635#216
+- Next: coordinator measures the new init_boot with installed vendor_boot_b and
+  pinned userdata, verifies rollback to installed hashes, then records the result.
+  No host-created keep, guard ack, or capture in the boot being measured.
 
 ## Next (ordered, not issues yet)
 
@@ -33,6 +33,7 @@ Reopen either only when a measurement shows it blocks the active step.
 
 ## Done (pointers, newest first)
 
+- Host #216: guest-owned keep init_boot built and verified; carrier unchanged -> records/2026-10-31-015710-guest-owned-keep-host-image.md
 - Run 71: device-native RTC alarm accepted but no power-off or cold start; result (d) -> records/2026-10-30-222652-run-71-device-native-rtc-poweroff-coldstart.md
 - Run 70: no host-free cold-start power path; result (d), no boot or partition write -> records/2026-10-30-212551-run-70-coldstart-host-free-power-boundary.md
 

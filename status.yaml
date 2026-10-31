@@ -1,14 +1,14 @@
 # Current measured state only. Limit 80 lines. No protocol text: link records.
 # Public claims: omnipha/ports devices/nothing-asteroids/device.yaml (updated separately).
 device: nothing-asteroids
-updated: 2026-10-30
+updated: 2026-10-31
 next_question: >-
-  Which owner-selected power path can cold-start the unchanged installed chain?
-active_issue: omnipha/linux-sm7635#213
+  Does the guest-owned-keep image reach persistent root, PID 1 and armed guard without host hold, guard ack or capture?
+active_issue: omnipha/linux-sm7635#216
 subsystems:
   boot:
     state: partial
-    record: records/2026-10-30-222652-run-71-device-native-rtc-poweroff-coldstart.md
+    record: records/2026-10-31-015710-guest-owned-keep-host-image.md
   ssh:
     state: partial
     record: records/2026-10-30-203515-run-69-second-boot-guard-wlan.md
@@ -39,9 +39,8 @@ attempted_shas:       # cold-start index only; the flash gate is device-op statu
   - fcb0ed91
   - fef03008        # init_boot, runs 52-57
 notes: >-
-  Run 71 result (d): the unchanged run-69 chain accepted one 180-second
-  PMIC RTC alarm and one normal poweroff, but the same diagnostic boot stayed
-  alive and no cold start or pstore stop line occurred. No image, script,
-  guard, or partition changed; slot-A rescue hashes and installed image hashes
-  remained exact, and the session closed in fastboot. Next: owner fallback #213
-  chooses the measured cold-start power path; do not repeat this mechanism.
+  Host-only #216 built init_boot 3c97c918 with five added init lines that create
+  and verify a root-only /run/keep before self-stage. The installed vendor_boot_b
+  f792174c and pinned userdata aa8da109 are unchanged. Two serial builds matched;
+  host negative fixtures passed. No device operation or physical boot result;
+  coordinator measurement and verified rollback to run-69 hashes remain pending.
