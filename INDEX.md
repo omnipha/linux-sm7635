@@ -2,6 +2,7 @@
 
 ## Latest 10
 
+- [2026-10-31-095935-run-81-repeated-preflash-refusal](records/2026-10-31-095935-run-81-repeated-preflash-refusal.md) | boot run 81 | refuted | omnipha/agents#77 | Run 81: repeated pre-flash refusal of the stale artifact pair, no write
 - [2026-10-31-094401-run-79-record-readable-guard-deadline-unobserved](records/2026-10-31-094401-run-79-record-readable-guard-deadline-unobserved.md) | boot run 79 | inconclusive | omnipha/linux-sm7635#230 | Run 79: record readable, post-cutover milestones unmeasured
 - [2026-10-31-090700-coldstart-boot-record-host-image](records/2026-10-31-090700-coldstart-boot-record-host-image.md) | boot | confirmed | omnipha/linux-sm7635#230 | Cold-start boot record: host fixture and successor pair
 - [2026-10-31-075408-run-78-coldstart-observation-incomplete](records/2026-10-31-075408-run-78-coldstart-observation-incomplete.md) | boot run 78 | inconclusive | omnipha/linux-sm7635#223 | Run 78: cold start performed, observation incomplete
@@ -11,14 +12,13 @@
 - [2026-10-31-044608-coldstart-installed-chain-host-boundary](records/2026-10-31-044608-coldstart-installed-chain-host-boundary.md) | boot | refuted | omnipha/linux-sm7635#223 | Cold-start installed-chain host boundary
 - [2026-10-31-040929-guard-rearm-run73](records/2026-10-31-040929-guard-rearm-run73.md) | boot | confirmed | omnipha/linux-sm7635#220 | Run 73: host-free guard rearm and recovery deadline
 - [2026-10-31-034455-guard-rearm-host-image](records/2026-10-31-034455-guard-rearm-host-image.md) | boot | confirmed | omnipha/linux-sm7635#220 | Guard rearm on persistent root: host fixture and image
-- [2026-10-31-024827-run-72-guest-keep-partial-guard-unarmed](records/2026-10-31-024827-run-72-guest-keep-partial-guard-unarmed.md) | boot run 72 | confirmed | omnipha/linux-sm7635#216 | Run 72: guest-owned keep reached, guard unarmed
 
 ## By subsystem (latest 3, total in brackets)
 
-### boot [67]
+### boot [68]
+- [2026-10-31-095935-run-81-repeated-preflash-refusal](records/2026-10-31-095935-run-81-repeated-preflash-refusal.md) | boot run 81 | refuted | omnipha/agents#77 | Run 81: repeated pre-flash refusal of the stale artifact pair, no write
 - [2026-10-31-094401-run-79-record-readable-guard-deadline-unobserved](records/2026-10-31-094401-run-79-record-readable-guard-deadline-unobserved.md) | boot run 79 | inconclusive | omnipha/linux-sm7635#230 | Run 79: record readable, post-cutover milestones unmeasured
 - [2026-10-31-090700-coldstart-boot-record-host-image](records/2026-10-31-090700-coldstart-boot-record-host-image.md) | boot | confirmed | omnipha/linux-sm7635#230 | Cold-start boot record: host fixture and successor pair
-- [2026-10-31-075408-run-78-coldstart-observation-incomplete](records/2026-10-31-075408-run-78-coldstart-observation-incomplete.md) | boot run 78 | inconclusive | omnipha/linux-sm7635#223 | Run 78: cold start performed, observation incomplete
 
 ### modem [12]
 - [2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the](records/2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the.md) | modem run 55 | confirmed | omnipha/linux-sm7635#155 | Run-55 measured post-cutover modem hold past the EFS request (#155, 2026-10-29)
@@ -42,4 +42,4 @@
 
 ## By month
 
-- [2026-10](records/index-2026-10.md) [152]
+- [2026-10](records/index-2026-10.md) [153]
