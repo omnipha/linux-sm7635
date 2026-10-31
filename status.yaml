@@ -3,12 +3,12 @@
 device: nothing-asteroids
 updated: 2026-10-31
 next_question: >-
-  Why does the merged host verifier reject the distinct host-free pair before its one cold start?
+  Does the one button-assisted cold start of the merged-verifier pair 3192278b / ab3a0e63 reach persistent PID 1, radio and WLAN before the unchanged 160-second recovery deadline?
 active_issue: omnipha/linux-sm7635#223
 subsystems:
   boot:
     state: partial
-    record: records/2026-10-31-055910-preflash-verifier-refusal.md
+    record: records/2026-10-31-061706-coldstart-run66-handoff-verified.md
   ssh:
     state: partial
     record: records/2026-10-30-203515-run-69-second-boot-guard-wlan.md
@@ -42,6 +42,7 @@ attempted_shas:       # cold-start index only; the flash gate is device-op statu
   - fcb0ed91
   - fef03008        # init_boot, runs 52-57
 notes: >-
-  Run 76 refused becd3784 / adb47dc0 before flash because the merged verifier
-  fails INIT_MSG. Diagnostic boot d09ae982 proved the installed rescue chain;
-  fastboot is responsive. No cold start or candidate boot was measured.
+  Run 76 refused becd3784 / adb47dc0 because the verifier ran from a stale
+  checkout, not merged main. Host repair re-verified a distinct pair,
+  3192278b / ab3a0e63, on merged main with the run-66 handoff pinned
+  byte-for-byte and the 160-s recovery unchanged. No cold start is claimed.

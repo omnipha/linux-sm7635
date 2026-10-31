@@ -53,7 +53,7 @@ done
 	[ ! -e "$GUARD/accepted" ] && [ ! -L "$GUARD/accepted" ] &&
 	[ ! -e "$GUARD/ack" ] && [ ! -L "$GUARD/ack" ] ||
 	die 'independent recovery guard is not armed and unacknowledged'
-log "post-cutover PID 1 on boot $boot; independent recovery guard remains unacknowledged"
+log "cold-start post-cutover PID 1 on boot $boot; independent recovery guard remains unacknowledged"
 
 [ -f "$RADIO" ] && [ ! -L "$RADIO" ] &&
 	[ "$($BB stat -c '%u:%a' "$RADIO")" = 0:700 ] &&

@@ -405,7 +405,8 @@ LATE
 		$BB chmod 700 /guest/etc/local.d/10-omnipha-self-stage.start
 		$BB mkdir -m 700 /guest/run/radio-bringup
 		! $BB grep -qF 'host-owned guard ack' /oldroot"$HOST_POST" || fail 'host-ack wait remains in self-post'
-		$BB grep -qF 'independent recovery guard remains unacknowledged' /oldroot"$HOST_POST" || fail 'self-post no longer requires the unacknowledged armed guard'
+		$BB grep -qF 'cold-start post-cutover PID 1' /oldroot"$HOST_POST" &&
+			$BB grep -qF 'independent recovery guard remains unacknowledged' /oldroot"$HOST_POST" || fail 'self-post no longer requires the unacknowledged armed guard'
 		$BB printf '%s\n' '#!/bin/busybox sh' 'set -eu' 'BB=/bin/busybox' \
 			'export PATH=/bin:/sbin:/usr/bin:/usr/sbin' 'GUARD=/run/pid1-guard' \
 			'die() { $BB touch /run/self-post-failed; exit 1; }' \

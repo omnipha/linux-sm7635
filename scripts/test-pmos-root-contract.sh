@@ -122,7 +122,7 @@ RCS
 	$BB rm -f /proc/1/root/run/pid1-guard/accepted /proc/1/root/run/pid1-guard/ack
 	$BB printf '%s\n' fixture-nonce > /proc/1/root/run/pid1-guard/nonce
 	$BB chroot /proc/1/root /bin/busybox sh /run/pmos-self-post.sh >"$HOST_RUN/post-ok.out" 2>&1 && fail 'self-post succeeded without radio script at /run/radio-bringup'
-	$BB grep -q 'independent recovery guard remains unacknowledged' "$HOST_RUN/post-ok.out" || { $BB cat "$HOST_RUN/post-ok.out" >&2; fail 'self-post rejected valid ext4 switched root'; }
+	$BB grep -q 'cold-start post-cutover PID 1.*independent recovery guard remains unacknowledged' "$HOST_RUN/post-ok.out" || { $BB cat "$HOST_RUN/post-ok.out" >&2; fail 'self-post rejected valid ext4 switched root'; }
 	$BB chroot /proc/1/root /bin/busybox sh /run/pmos-radio-bringup.sh "$boot" modem capture-ok >"$HOST_RUN/radio-ok.out" 2>&1 && fail 'radio bring-up succeeded without staged INI'
 	$BB grep -q 'pre-cutover staged stock INI missing' "$HOST_RUN/radio-ok.out" || { $BB cat "$HOST_RUN/radio-ok.out" >&2; fail 'radio bring-up rejected valid ext4 switched root'; }
 	printf 'pass: ext4-ack; real BusyBox PID 1 switch_root to loop-backed userdata ext4 with surviving pre-cutover Dropbear PID and pinned key, real guard watch on ext4 switched root, strict key-only SSH before/after, ack/self-post/radio rejected on wrong PARTNAME and accepted after restoring userdata; no device recovery\n'

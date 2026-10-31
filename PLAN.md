@@ -13,11 +13,11 @@ One active step, one active issue. Later steps are not pre-created issues.
 
 ## Active step
 
-- Step: reconcile the merged verifier with the host-free pair before any flash.
+- Step: one coordinator-owned button-assisted cold start of the re-verified pair.
 - Issue: omnipha/linux-sm7635#223
-- Next: run 76 refuted physical readiness of becd3784 / adb47dc0. No image was
-  written; rescue readback and fastboot return are measured. Do not bypass the
-  verifier or start the cold-start experiment until a distinct verified pair exists.
+- Next: 3192278b / ab3a0e63 passed the merged-main verifier with the run-66
+  handoff preserved byte-for-byte. The coordinator verifies from merged main
+  and owns the single cold start; no device operation is done here.
 
 ## Next (ordered, not issues yet)
 
@@ -34,6 +34,7 @@ Reopen either only when a measurement shows it blocks the active step.
 
 ## Done (pointers, newest first)
 
+- Host #223: run-66 handoff pinned byte-for-byte and distinct pair 3192278b / ab3a0e63 re-verified on merged main -> records/2026-10-31-061706-coldstart-run66-handoff-verified.md
 - Run 76: host verifier refused becd3784 / adb47dc0 before flash; unchanged rescue chain read and fastboot return measured -> records/2026-10-31-055910-preflash-verifier-refusal.md
 
 - Host #223: distinct no-host radio package and unchanged 160-s recovery verified -> records/2026-10-31-054706-coldstart-host-free-radio-package.md
