@@ -21,10 +21,11 @@ blocked by a measurement.
 - Step: Display works.
       Check: a picture is on the panel, driven by this kernel,
       and it is still there after a reboot.
-      First the host-side record rotation must boot, so staging
-      reaches a session; then, over that SSH session, find why
-      there is no DRM device, load the stock module and firmware,
-      and name the panel path. No image answers the panel question.
+      The record rotation boots (run 84): staging, cutover and the
+      independent no-ack return are measured. What remains is the
+      live session: over SSH, find why there is no DRM device, load
+      the stock module and firmware, and name the panel path. No
+      image answers the panel question.
 
 ## Then, in order
 
