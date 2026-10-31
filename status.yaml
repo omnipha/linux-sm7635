@@ -3,12 +3,12 @@
 device: nothing-asteroids
 updated: 2026-10-31
 next_question: >-
-  Does the validated helper-reuse image arm the guard and reach host-free PID 1 before the bounded recovery deadline?
-active_issue: omnipha/linux-sm7635#220
+  When separately scheduled, can a button-assisted cold start reach the verified persistent root without a host push?
+active_issue: null
 subsystems:
   boot:
     state: partial
-    record: records/2026-10-31-034455-guard-rearm-host-image.md
+    record: records/2026-10-31-040929-guard-rearm-run73.md
   ssh:
     state: partial
     record: records/2026-10-30-203515-run-69-second-boot-guard-wlan.md
@@ -25,6 +25,8 @@ subsystems:
     state: untested
     record: null
 attempted_shas:       # cold-start index only; the flash gate is device-op status, not this file
+  - 3eeddb35        # init_boot_a, run 73; flashed once, never-reflash
+  - 762566b7        # vendor_boot_b, run 73; flashed once, never-reflash
   - 0b40ac34
   - 0f998e29
   - 3c97c918        # init_boot_a, run 72; flashed once, never-reflash
@@ -40,8 +42,9 @@ attempted_shas:       # cold-start index only; the flash gate is device-op statu
   - fcb0ed91
   - fef03008        # init_boot, runs 52-57
 notes: >-
-  #220 host phase: the measured stale pinned restart2 precondition was
-  reproduced on ext4. Validate-and-reuse and all foreign-state refusal fixtures
-  pass. Both carrier IDs are distinct and unmeasured; no physical image gate is
-  verified. Coordinator measurement and exact run-69 rollback are pending.
-  No cold start is scheduled.
+  Run 73 verified the image gate host-free: guest keep, self-stage,
+  persistent ext4 root, guard armed on the used root, switch_root, key-only
+  :2222 with postmarketOS PID 1, and the independent 160-s deadline returned
+  the device to fastboot with no host ack. Exact run-69 rollback and stock
+  rescue hashes verified. 3eeddb35 and 762566b7 are measured never-reflash.
+  Cold start remains a separate owner decision; no session is open.
