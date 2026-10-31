@@ -13,17 +13,17 @@ One active step, one active issue. Later steps are not pre-created issues.
 
 ## Active step
 
-- Step: one coordinator-owned button-assisted cold start of the corrected package.
+- Step: reconcile the merged verifier with the host-free pair before any flash.
 - Issue: omnipha/linux-sm7635#223
-- Next: host-free successor becd3784 / adb47dc0 is built and verified, not
-  booted. Record the exact first missing line and independent 160-s recovery;
-  coordinator alone owns the single physical experiment.
+- Next: run 76 refuted physical readiness of becd3784 / adb47dc0. No image was
+  written; rescue readback and fastboot return are measured. Do not bypass the
+  verifier or start the cold-start experiment until a distinct verified pair exists.
 
 ## Next (ordered, not issues yet)
 
-1. Coordinator measures the one button-assisted cold start with no USB host
-   signals until the boot has had its chance; distinguish PID 1, radio, WLAN,
-   deadline return or never-enumerated, then verify rescue readback.
+1. After a newly verified distinct pair passes the merged verifier, the
+   coordinator measures one button-assisted cold start and records PID 1, radio,
+   WLAN, deadline return or the exact first missing line, then rescue readback.
 2. Display over the open SSH session: identify why /dev/dri is absent, load the
    measured stock module or firmware, and record the working recipe. Build one
    image only after that recipe is measured.
@@ -33,6 +33,8 @@ One active step, one active issue. Later steps are not pre-created issues.
 Reopen either only when a measurement shows it blocks the active step.
 
 ## Done (pointers, newest first)
+
+- Run 76: host verifier refused becd3784 / adb47dc0 before flash; unchanged rescue chain read and fastboot return measured -> records/2026-10-31-055910-preflash-verifier-refusal.md
 
 - Host #223: distinct no-host radio package and unchanged 160-s recovery verified -> records/2026-10-31-054706-coldstart-host-free-radio-package.md
 - Host #223: unchanged installed chain refuted for the full no-host cold-start sequence; no image built -> records/2026-10-31-044608-coldstart-installed-chain-host-boundary.md
