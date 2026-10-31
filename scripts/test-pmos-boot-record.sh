@@ -37,7 +37,7 @@ PY
 	nums="$((0x$(stat -c %t "$dev"))):$((0x$(stat -c %T "$dev")))"
 	sudo -n timeout -k 2 120 unshare --mount --pid --fork --kill-child --mount-proc \
 		env SOURCE="$CONTRACT" STAGED="$STAGED" MAIN_NUMS="$nums" /bin/busybox sh "$0" --inner
-	printf 'pass: boot record fixtures; complete record with the post-cutover line survives interrupted transition and remount readback; failure at named stage keeps prefix only; refusal path keeps the reached lines plus bounded FAIL lines and no success line; symlink/wrong-root/over-bound/foreign-boot refusals; no device\n'
+	printf 'pass: boot record fixtures; complete record with the post-cutover line survives interrupted transition and remount readback; failure at named stage keeps prefix only; refusal path keeps the reached lines plus bounded FAIL lines and no success line; symlink/wrong-root/over-bound/foreign-boot refusals; valid foreign record rotates and the new boot opens; rotation refusals leave the prior record; no device\n'
 	exit 0
 fi
 
@@ -257,7 +257,92 @@ fi
 if boot_record_verify "$R" 'usb-init: pid1 transition guard armed; exec switch_root to postmarketOS init'; then
 	fail 'foreign-boot record verify accepted'
 fi
-$BB printf 'f: record state copied from a previous boot refused\n'
-$BB umount "$R" || fail 'unmount after (f)'
-$BB rmdir "$R"
-exit 0
+	$BB printf 'f: record state copied from a previous boot refused\n'
+	$BB umount "$R" || fail 'unmount after (f)'
+	$BB rmdir "$R"
+
+	# (g) valid prior record present: rotate to the per-boot archive, open a
+	# fresh record for this boot, then remount and read both files back.
+	foreign=11111111-2222-3333-4444-555555555555
+	prior="boot $foreign
+pmos-self-stage: diagnostic hold and :22 verified on boot $foreign
+pmos-stage: using unpacked persistent postmarketOS root"
+	mount_root
+	$BB printf '%s\n' "$prior" > "$R/.omnipha-boot-record"
+	$BB chmod 600 "$R/.omnipha-boot-record"
+	boot_record_open "$R" || fail 'valid prior record did not rotate and open'
+	[ "$($BB cat "$R/.omnipha-boot-record")" = "boot $boot" ] || fail 'fresh record is not this boot'
+	[ "$($BB stat -c '%u:%a:%h' "$R/.omnipha-boot-record")" = 0:600:1 ] || fail 'fresh record is not root-only link-count-1'
+	[ -f "$R/.omnipha-boot-record-$foreign" ] && [ ! -L "$R/.omnipha-boot-record-$foreign" ] || fail 'rotated archive missing'
+	[ "$($BB cat "$R/.omnipha-boot-record-$foreign")" = "$prior" ] || fail 'rotated archive content changed'
+	[ "$($BB stat -c '%u:%a:%h' "$R/.omnipha-boot-record-$foreign")" = 0:600:1 ] || fail 'rotated archive is not root-only link-count-1'
+	boot_record_append "$R" "pmos-self-stage: diagnostic hold and :22 verified on boot $boot" || fail 'append after rotation refused'
+	$BB umount -l "$R" || fail 'lazy detach after rotation'
+	$BB mount -t ext4 -o ro,noload /dev/block/sda13 "$R" || fail 'remount after rotation'
+	[ "$($BB cat "$R/.omnipha-boot-record")" = "boot $boot
+pmos-self-stage: diagnostic hold and :22 verified on boot $boot" ] || fail 'rotated fresh record did not survive remount'
+	[ "$($BB cat "$R/.omnipha-boot-record-$foreign")" = "$prior" ] || fail 'rotated archive did not survive remount'
+	$BB printf 'g: valid prior record rotated to the per-boot archive; new boot opened and survived remount\n'
+	$BB umount "$R" || fail 'unmount after (g)'
+	$BB rmdir "$R"
+
+	# (h) rotation refusals: symlink, hard link, wrong mode, wrong owner,
+	# over-bound, hostile first line, same-boot, and a pre-existing archive
+	# all refuse and leave the prior record in place.
+	rotate_refused() {
+		label=$1
+		before=$($BB cat "$R/.omnipha-boot-record")
+		if boot_record_open "$R"; then fail "$label accepted"; fi
+		[ "$($BB cat "$R/.omnipha-boot-record")" = "$before" ] || fail "$label changed the prior record"
+	}
+	mount_root
+	$BB ln -s /run/keep "$R/.omnipha-boot-record"
+	if boot_record_open "$R"; then fail 'symlinked prior record rotated'; fi
+	[ -L "$R/.omnipha-boot-record" ] || fail 'symlink refusal replaced the prior record'
+	$BB rm "$R/.omnipha-boot-record"
+	$BB printf '%s\n' "$prior" > "$R/.omnipha-boot-record"
+	$BB ln "$R/.omnipha-boot-record" "$R/.omnipha-boot-record-extra"
+	$BB chmod 600 "$R/.omnipha-boot-record" "$R/.omnipha-boot-record-extra"
+	rotate_refused 'hardlinked prior record'
+	$BB rm "$R/.omnipha-boot-record-extra"
+	$BB chmod 644 "$R/.omnipha-boot-record"
+	rotate_refused 'wrong-mode prior record'
+	$BB chmod 600 "$R/.omnipha-boot-record"
+	$BB chown 1:0 "$R/.omnipha-boot-record"
+	rotate_refused 'wrong-owner prior record'
+	$BB chown 0:0 "$R/.omnipha-boot-record"
+	$BB printf '%s\n' "$($BB head -c 4400 /dev/zero | $BB tr '\0' 'x')" > "$R/.omnipha-boot-record"
+	$BB chmod 600 "$R/.omnipha-boot-record"
+	rotate_refused 'over-bound prior record'
+	$BB printf 'not a boot line\n' > "$R/.omnipha-boot-record"
+	$BB chmod 600 "$R/.omnipha-boot-record"
+	rotate_refused 'hostile prior record'
+	$BB printf 'boot %s\n' "GGGGGGGG-2222-3333-4444-555555555555" > "$R/.omnipha-boot-record"
+	$BB chmod 600 "$R/.omnipha-boot-record"
+	rotate_refused 'non-hex prior boot ID'
+	$BB printf 'boot %s\n' "$boot" > "$R/.omnipha-boot-record"
+	$BB chmod 600 "$R/.omnipha-boot-record"
+	rotate_refused 'same-boot prior record'
+	$BB printf '%s\n' "$prior" > "$R/.omnipha-boot-record"
+	$BB chmod 600 "$R/.omnipha-boot-record"
+	$BB printf 'archive\n' > "$R/.omnipha-boot-record-$foreign"
+	$BB chmod 600 "$R/.omnipha-boot-record-$foreign"
+	rotate_refused 'pre-existing archive'
+	[ "$($BB cat "$R/.omnipha-boot-record-$foreign")" = archive ] || fail 'pre-existing archive changed'
+	$BB rm "$R/.omnipha-boot-record-$foreign"
+	$BB ln -s /run/keep "$R/.omnipha-boot-record-$foreign"
+	rotate_refused 'symlinked archive'
+	[ -L "$R/.omnipha-boot-record-$foreign" ] || fail 'symlink archive refusal replaced the archive'
+	$BB rm "$R/.omnipha-boot-record-$foreign"
+	$BB printf 'PARTNAME=other\n' > /sys/class/block/sda13/uevent
+	$BB printf '%s\n' "$prior" > "$R/.omnipha-boot-record"
+	$BB chmod 600 "$R/.omnipha-boot-record"
+	if boot_record_open "$R"; then fail 'wrong-root rotation accepted'; fi
+	[ "$($BB cat "$R/.omnipha-boot-record")" = "$prior" ] || fail 'wrong-root rotation changed the prior record'
+	[ ! -e "$R/.omnipha-boot-record-$foreign" ] && [ ! -L "$R/.omnipha-boot-record-$foreign" ] || fail 'wrong-root rotation created an archive'
+	$BB printf 'PARTNAME=userdata\n' > /sys/class/block/sda13/uevent
+	boot_record_open "$R" || fail 'valid prior record refused after rotation refusals'
+	$BB printf 'h: rotation refusals left every hostile prior record in place\n'
+	$BB umount "$R" || fail 'unmount after (h)'
+	$BB rmdir "$R"
+	exit 0

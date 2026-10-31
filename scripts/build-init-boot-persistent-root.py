@@ -62,7 +62,9 @@ REFUSED = frozenset((*builder.REFUSED, RUN66,
                       "3eeddb35eb32b29323f50bab673c7acc36b029373e911eb4d74a3aa180236522",
                       "762566b758494c53b0265ce7eee13155c6d06b9cca44f8c5eb75ce7cb8fc4e5d",
                       "a4ee7def41e645301f59bdc4dc043c97253a4002d8774016ee3557633b0cb6e3",
-                      "6e7c5a2e26981fc19c9eba97356d1a52f80e768cb6b9536bc9cb4fd906a8c59e"))
+                      "6e7c5a2e26981fc19c9eba97356d1a52f80e768cb6b9536bc9cb4fd906a8c59e",
+                      "dd6ce74e47827814c3c0010d6c71f0b9d0874a370cb147bb455e05f018ed6f41",
+                      "e7d5558037b903de3ab817619ce527319f6b54fb4ec97782e729078c666268fc"))
 
 
 def regular(path):
@@ -93,7 +95,7 @@ def replace_once(data, old, new):
 def current_scripts():
     original = {name: script_bytes(name) for name in ROOT_NAMES}
     expected = {
-        "pmos-root-contract.sh": "7ae3ea0172b498e27064d51dddb36fdff8ce3b3cb5aaf012cf1088be9aa83e01",
+        "pmos-root-contract.sh": "08a764cfb18d2d1e380228dfc1f3a0f65bde6568b90407bb74da36642eb68e8e",
         "pmos-session-stage.sh": "be70a27305145cabc15b70469ae7a0434fab352fb9c3d681943f73d22b92938a",
         "pmos-pid1-transition.sh": "e1dba7135e2335c22aee0a5c0f4edb247fad5acd8100377cba3771abe5044e36",
         "pmos-pid1-guard.sh": "f72a68a4c3a0e9bb7e72aa88883dcc9087a684985f5af688e34ea13c0226d3ad",
