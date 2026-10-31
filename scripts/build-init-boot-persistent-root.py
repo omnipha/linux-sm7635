@@ -53,7 +53,10 @@ modules = builder.modules
 base = builder.base
 vendor = builder.vendor
 require = builder.require
-REFUSED = frozenset((*builder.REFUSED, RUN66, "fcb0ed91c83461be1f22df859c2f9b331e72d31a576fcf33876de6c3136c2e0d"))
+REFUSED = frozenset((*builder.REFUSED, RUN66,
+                      "fcb0ed91c83461be1f22df859c2f9b331e72d31a576fcf33876de6c3136c2e0d",
+                      "3eeddb35eb32b29323f50bab673c7acc36b029373e911eb4d74a3aa180236522",
+                      "762566b758494c53b0265ce7eee13155c6d06b9cca44f8c5eb75ce7cb8fc4e5d"))
 
 
 def regular(path):
@@ -88,9 +91,9 @@ def current_scripts():
         "pmos-session-stage.sh": "be70a27305145cabc15b70469ae7a0434fab352fb9c3d681943f73d22b92938a",
         "pmos-pid1-transition.sh": "e1dba7135e2335c22aee0a5c0f4edb247fad5acd8100377cba3771abe5044e36",
         "pmos-pid1-guard.sh": "f72a68a4c3a0e9bb7e72aa88883dcc9087a684985f5af688e34ea13c0226d3ad",
-        "pmos-self-post.sh": "2d5847f38d6c58e4ac048cfb628dbe8e8b530df8522316d6ce0f1129758ce17a",
-        "pmos-radio-bringup.sh": "04fe93d76c5048122f1a413457c0e0f1b1abd13f78f3518d8bb12abb18762dd1",
-        "pmos-self-stage.sh": "545a6ac6cd3b6901db2c8adbbc0cddc4dee0d93687c90f827de9670a7cd3d9ad",
+        "pmos-self-post.sh": "c6c34c6015aa5338e1097d3561ab1728b3ecb54b2227ae5f3bb1041d98e90648",
+        "pmos-radio-bringup.sh": "7ef6382644c2e07705d2a8df77840031318c298478c8f93e9bbfd05c00b61812",
+        "pmos-self-stage.sh": "92e9045894df3da3db2b093aebc03840a63d8e2b4b89c6cffc835b62d10614c6",
     }
     require({name: hashlib.sha256(data).hexdigest() for name, data in original.items()} == expected, DELTA_MSG)
     found = dict(original)
@@ -177,7 +180,7 @@ fi''')
         b'\tfi')
     found["pmos-radio-bringup.sh"] = radio
     found["pmos-self-post.sh"] = replace_once(found["pmos-self-post.sh"],
-        b"RADIO_SHA=04fe93d76c5048122f1a413457c0e0f1b1abd13f78f3518d8bb12abb18762dd1",
+        b"RADIO_SHA=7ef6382644c2e07705d2a8df77840031318c298478c8f93e9bbfd05c00b61812",
         b"RADIO_SHA=" + hashlib.sha256(radio).hexdigest().encode())
     self_stage = found["pmos-self-stage.sh"]
     start = self_stage.index(b"part_dev=\npart_count=0\n")

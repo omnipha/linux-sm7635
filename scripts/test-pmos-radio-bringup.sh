@@ -193,7 +193,9 @@ $BB cp -a "$R/run/pmos/run/." "$R/run/"
 $BB printf 'ID="postmarketos"\n' > "$R/etc/os-release"
 $BB mkdir -p "$R/run/openrc" "$R/run/pid1-guard" "$R/sys/class/remoteproc/remoteproc2" "$R/sys/class/remoteproc/remoteproc3" "$R/sys/class/net" "$R/sys/class/ieee80211" "$R/sys/class/wlan/wlan" "$R/sys/module"
 $BB printf 'default\n' > "$R/run/openrc/softlevel"
-$BB printf '%s\n' "$BOOT" > "$R/run/pid1-guard/accepted"
+$BB printf '%s\n' "$BOOT" > "$R/run/pid1-guard/armed"
+$BB printf '%s\n' 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef > "$R/run/pid1-guard/nonce"
+$BB chmod 600 "$R/run/pid1-guard/nonce"
 $BB printf 'tmpfs / tmpfs rw 0 0\n' > "$R/proc/1/mounts"
 $BB printf '#!/bin/busybox sh\nexit 0\n' > "$R/sbin/rc-service"
 $BB chmod 755 "$R/sbin/rc-service"
@@ -209,7 +211,7 @@ for part in mdt b00 b01 b02 b03 b04 b05 b06 b07 b08 b09 b10 b12; do
 	$BB printf 'fw\n' > "$R/proc/358/root/vendor/firmware_mnt/image/qca6750/wpss.$part"
 done
 $BB printf 'pd-mapper\ntqftpserv\nrmtfs\n' > "$R/tmp/ps.txt"
-$BB printf 'capture-ok\nicnss2_qmi: QMI DMS service connected\nicnss2: WLAN FW is ready\n' > "$R/tmp/dmesg.txt"
+$BB printf 'icnss2_qmi: QMI DMS service connected\nicnss2: WLAN FW is ready\n' > "$R/tmp/dmesg.txt"
 $BB mkdir -p "$R/sys/bus/platform/devices/17110040.qcom,wcn6750/driver" "$R/sys/kernel/icnss" "$R/sys/class/wlan/wlan"
 $BB touch "$R/sys/kernel/icnss/wpss_boot"
 $BB cat > "$R/sbin/ip" <<'IP'
@@ -223,36 +225,53 @@ $BB cat > "$R/usr/sbin/iw" <<'IW'
 /bin/busybox.real printf 'BSS 02:00:00:00:00:01(on wlan0)\n\tfreq: 2412\nBSS 02:00:00:00:00:02(on wlan0)\n\tfreq: 5180\n'
 IW
 $BB chmod 755 "$R/sbin/ip" "$R/usr/sbin/iw"
+for stage in modem wpss driver scan services; do
+	token="guest-radio-$stage-$($BB printf '%s' "$BOOT:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef:$stage" | $BB sha256sum | $BB cut -c 1-16)"
+	eval "${stage}_token=\$token"
+	$BB printf '%s\n' "$token" > "$R/run/radio-bringup/$stage.marker"
+	$BB chmod 600 "$R/run/radio-bringup/$stage.marker"
+	$BB printf 'pmos-self-post: guest radio marker %s\n' "$token" >> "$R/tmp/dmesg.txt"
+done
 
 reject_stage modem "$BOOT" modem
+$BB printf '%s\n' ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff > "$R/run/pid1-guard/nonce"
+reject_stage modem "$BOOT" modem "$modem_token"
+expect "$R/tmp/modem.out" 'guest radio marker does not match this guard nonce' 'nonce substitution accepted'
+$BB printf '%s\n' 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef > "$R/run/pid1-guard/nonce"
+$BB printf '%s\n' "$BOOT" > "$R/run/pid1-guard/accepted"
+reject_stage modem "$BOOT" modem "$modem_token"
+expect "$R/tmp/modem.out" 'guard is not armed and unacknowledged' 'already-acknowledged guard accepted'
+$BB rm "$R/run/pid1-guard/accepted"
 $BB printf 'offline\n' > "$R/sys/class/remoteproc/remoteproc2/state"
 reject_stage modem "$BOOT" modem missing-marker
 $BB mv "$R/sys/class/uio/uio0/name" "$R/tmp/uio-name.hidden"
-reject_stage modem "$BOOT" modem capture-ok
+$BB printf 'icnss2_qmi: QMI DMS service connected\nicnss2: WLAN FW is ready\n' > "$R/tmp/dmesg.txt"
+$BB printf 'pmos-self-post: guest radio marker %s\n' "$modem_token" >> "$R/tmp/dmesg.txt"
+reject_stage modem "$BOOT" modem "$modem_token"
 expect "$R/tmp/modem.out" 'kernel sharedmem UIO is not the rmtfs client' 'missing UIO reason'
 [ ! -e "$R/run/radio-bringup/modem.attempted" ] || fail 'modem start armed with the sharedmem UIO absent'
 $BB mv "$R/tmp/uio-name.hidden" "$R/sys/class/uio/uio0/name"
 $BB mv "$R/run/radio-bringup/rmtfs.pid" "$R/tmp/rmtfs.pid.hidden"
-reject_stage modem "$BOOT" modem capture-ok
+reject_stage modem "$BOOT" modem "$modem_token"
 expect "$R/tmp/modem.out" 'expected exactly one pinned rmtfs process' 'copied status marker accepted without prepared rmtfs'
 [ ! -e "$R/run/radio-bringup/modem.attempted" ] || fail 'modem start armed without the prepared rmtfs process identity'
 $BB mv "$R/tmp/rmtfs.pid.hidden" "$R/run/radio-bringup/rmtfs.pid"
 $BB mv "$R/run/radio-bringup/rmtfs.log" "$R/tmp/rmtfs.log.hidden"
-reject_stage modem "$BOOT" modem capture-ok
+reject_stage modem "$BOOT" modem "$modem_token"
 expect "$R/tmp/modem.out" 'rmtfs did not log the UIO map and QRTR publish' 'missing rmtfs publish log reason'
 $BB mv "$R/tmp/rmtfs.log.hidden" "$R/run/radio-bringup/rmtfs.log"
 $BB mv "$R/proc/628/maps" "$R/tmp/rmtfs.maps.hidden"
 $BB printf '' > "$R/proc/628/maps"
-reject_stage modem "$BOOT" modem capture-ok
+reject_stage modem "$BOOT" modem "$modem_token"
 expect "$R/tmp/modem.out" 'rmtfs does not hold the mapped sharedmem UIO' 'missing UIO mapping reason'
 $BB mv "$R/tmp/rmtfs.maps.hidden" "$R/proc/628/maps"
 $BB printf 'PARTNAME=other\n' > "$R/sys/class/block/sdf3/uevent"
-reject_stage modem "$BOOT" modem capture-ok
+reject_stage modem "$BOOT" modem "$modem_token"
 expect "$R/tmp/modem.out" 'modemst2 PARTNAME changed' 'wrong backing partition reason'
 [ ! -e "$R/run/radio-bringup/modem.attempted" ] || fail 'modem start armed with the wrong modemst backing'
 $BB printf 'PARTNAME=modemst2\n' > "$R/sys/class/block/sdf3/uevent"
 $BB rm "$R/tmp/modemst.img"
-reject_stage modem "$BOOT" modem capture-ok
+reject_stage modem "$BOOT" modem "$modem_token"
 expect "$R/tmp/modem.out" 'modemst1 backing node is not readable' 'unreadable backing store reason'
 $BB printf '%512s\n' '' > "$R/tmp/modemst.img"
 $BB rm "$R/proc/628/root"
@@ -264,68 +283,74 @@ $BB cp -a "$R/boot/modemst1" "$R/proc/628/root/boot/modemst1"
 $BB cp -a "$R/boot/modemst2" "$R/proc/628/root/boot/modemst2"
 $BB mv "$R/proc/628/exe" "$R/tmp/rmtfs.exe.hidden"
 $BB ln -s /bin/busybox.real "$R/proc/628/exe"
-reject_stage modem "$BOOT" modem capture-ok
+reject_stage modem "$BOOT" modem "$modem_token"
 expect "$R/tmp/modem.out" 'expected exactly one pinned rmtfs process' 'non-pinned rmtfs reason'
 [ ! -e "$R/run/radio-bringup/modem.attempted" ] || fail 'modem start armed against a non-pinned rmtfs process'
 $BB rm "$R/proc/628/exe"
 $BB mv "$R/tmp/rmtfs.exe.hidden" "$R/proc/628/exe"
 $BB mv "$R/proc/358/root/vendor/firmware_mnt/image/modem.mdt" "$R/tmp/modem.mdt.hidden"
-reject_stage modem "$BOOT" modem capture-ok
+reject_stage modem "$BOOT" modem "$modem_token"
 [ ! -e "$R/run/radio-bringup/modem.attempted" ] || fail 'modem start armed before firmware was reachable'
 $BB mv "$R/tmp/modem.mdt.hidden" "$R/proc/358/root/vendor/firmware_mnt/image/modem.mdt"
 $BB rm "$R/proc/628/root/boot/modemst1" "$R/proc/628/root/boot/modemst2" "$R/proc/628/root/dev/uio0" "$R/proc/628/root/dev/block/sdf2"
-run_stage modem capture-ok
+run_stage modem "$modem_token"
 expect "$R/tmp/modem.out" 'restored backing links: uio0 sdf2 modemst1 modemst2' 'cutover-deleted rmtfs paths not restored'
 [ -c "$R/proc/628/root/dev/uio0" ] && [ -b "$R/proc/628/root/dev/block/sdf2" ] && [ -b "$R/proc/628/root/dev/block/sdf3" ] &&
 	[ "$($BB readlink "$R/proc/628/root/boot/modemst1")" = /dev/block/sdf2 ] &&
 	[ "$($BB readlink "$R/proc/628/root/boot/modemst2")" = /dev/block/sdf3 ] || fail 'rmtfs backing links not restored before start'
 [ -r "$R/vendor/firmware_mnt/image/modem.mdt" ] || fail 'modem firmware not bound before start'
 [ "$($BB cat "$R/sys/class/remoteproc/remoteproc2/state")" = running ] || fail 'modem not running'
-run_stage modem capture-ok
+run_stage modem "$modem_token"
 $BB printf 'offline\n' > "$R/sys/class/remoteproc/remoteproc2/state"
-reject_stage modem "$BOOT" modem capture-ok
+reject_stage modem "$BOOT" modem "$modem_token"
 $BB printf 'running\n' > "$R/sys/class/remoteproc/remoteproc2/state"
 
 $BB rm "$R/dev/wlan"
-reject_stage wpss "$BOOT" wpss capture-ok
+$BB printf 'icnss2_qmi: QMI DMS service connected\nicnss2: WLAN FW is ready\n' > "$R/tmp/dmesg.txt"
+$BB printf 'pmos-self-post: guest radio marker %s\n' "$wpss_token" >> "$R/tmp/dmesg.txt"
+reject_stage wpss "$BOOT" wpss "$wpss_token"
 expect "$R/tmp/wpss.out" 'no /dev/wlan and no valid live wlan class device' 'missing wlan class device accepted'
 $BB printf '495:0\n' > "$R/sys/class/wlan/wlan/dev"
 $BB printf 'Character devices:\n 496 qcwlanstate\nBlock devices:\n 495 qcwlanstate\n' > "$R/proc/devices"
-reject_stage wpss "$BOOT" wpss capture-ok
+reject_stage wpss "$BOOT" wpss "$wpss_token"
 expect "$R/tmp/wpss.out" 'wlan class major does not match one character qcwlanstate' 'block or mismatched qcwlanstate major accepted'
 [ ! -e "$R/dev/wlan" ] && [ ! -e "$R/run/radio-bringup/wpss.attempted" ] || fail 'wpss armed or left node on qcwlanstate major mismatch'
 $BB printf 'Character devices:\n 495 qcwlanstate\nBlock devices:\n' > "$R/proc/devices"
 $BB touch "$R/dev/wlan"
-reject_stage wpss "$BOOT" wpss capture-ok
+reject_stage wpss "$BOOT" wpss "$wpss_token"
 expect "$R/tmp/wpss.out" '/dev/wlan is not a character node' 'non-character /dev/wlan accepted'
 [ ! -e "$R/run/radio-bringup/wpss.attempted" ] || fail 'wpss armed with non-character /dev/wlan'
 $BB rm "$R/dev/wlan"
 $BB mknod -m 0600 "$R/dev/wlan" c 494 0
-reject_stage wpss "$BOOT" wpss capture-ok
+reject_stage wpss "$BOOT" wpss "$wpss_token"
 expect "$R/tmp/wpss.out" 'existing /dev/wlan differs from live wlan class device or is not root-only' 'mismatched copied /dev/wlan accepted'
 [ ! -e "$R/run/radio-bringup/wpss.attempted" ] || fail 'wpss armed with a mismatched /dev/wlan node'
 $BB rm "$R/dev/wlan"
-run_stage wpss capture-ok
+run_stage wpss "$wpss_token"
 expect "$R/tmp/wpss.out" 'derived /dev/wlan character 495:0' 'wpss did not derive /dev/wlan from class device'
 expect "$R/tmp/wpss.out" 'helper exit 10' 'wpss did not accept helper exit 10'
 [ -c "$R/dev/wlan" ] && [ "$($BB stat -c '%t:%T:%a' "$R/dev/wlan")" = '1ef:0:600' ] || fail 'derived /dev/wlan node invalid'
 [ "$($BB cat "$R/sys/class/remoteproc/remoteproc3/state")" = running ] || fail 'wpss not running'
 $BB printf 'offline\n' > "$R/sys/class/remoteproc/remoteproc3/state"
-reject_stage wpss "$BOOT" wpss capture-ok
+reject_stage wpss "$BOOT" wpss "$wpss_token"
 $BB printf 'running\n' > "$R/sys/class/remoteproc/remoteproc3/state"
 
-run_stage driver capture-ok
+$BB printf 'icnss2_qmi: QMI DMS service connected\nicnss2: WLAN FW is ready\n' > "$R/tmp/dmesg.txt"
+$BB printf 'pmos-self-post: guest radio marker %s\n' "$driver_token" >> "$R/tmp/dmesg.txt"
+run_stage driver "$driver_token"
 [ "$($BB wc -l < "$R/tmp/mod.log")" -eq 3 ] || fail 'driver did not run insmod -> rmmod -> insmod'
 [ -d "$R/sys/class/net/wlan0" ] && [ -d "$R/sys/class/ieee80211/phy0" ] || fail 'wlan0/phy0 not registered'
 $BB rm -rf "$R/sys/class/net/wlan0"
-reject_stage driver "$BOOT" driver capture-ok
+reject_stage driver "$BOOT" driver "$driver_token"
 $BB mkdir -p "$R/sys/class/net/wlan0"
 $BB printf '0x1002\n' > "$R/sys/class/net/wlan0/flags"
+$BB printf 'icnss2_qmi: QMI DMS service connected\nicnss2: WLAN FW is ready\n' > "$R/tmp/dmesg.txt"
+$BB printf 'pmos-self-post: guest radio marker %s\n' "$scan_token" >> "$R/tmp/dmesg.txt"
 
-run_stage scan
+run_stage scan "$scan_token"
 expect "$R/tmp/scan.out" 'BSS count 2' 'scan count not reported'
 [ "$($BB stat -c '%a' "$R/run/radio-bringup/scan.raw")" = 600 ] || fail 'scan output not root-only'
-reject_stage scan "$BOOT" scan
+reject_stage scan "$BOOT" scan "$scan_token"
 
 $BB mkdir -p "$R/etc/init.d" "$R/etc/conf.d" "$R/etc/network" "$R/etc/wpa_supplicant" "$R/etc/runlevels/sysinit" "$R/etc/runlevels/boot" "$R/etc/runlevels/default" "$R/etc/runlevels/nonetwork" "$R/etc/runlevels/shutdown" "$R/proc/452" "$R/proc/net"
 $BB printf '#!/sbin/openrc-run\n' > "$R/etc/init.d/networking"
@@ -371,43 +396,49 @@ $BB printf '452\n' > "$R/run/dropbear-session.pid"
 $BB printf '  0: 022A10AC:08AE 00000000:0000 0A 0 0 0 0 0 0 0\n' > "$R/proc/net/tcp"
 
 reject_stage services "$BOOT" services missing-marker
-reject_stage services "$BOOT" services capture-ok
+$BB printf 'icnss2_qmi: QMI DMS service connected\nicnss2: WLAN FW is ready\n' > "$R/tmp/dmesg.txt"
+$BB printf 'pmos-self-post: guest radio marker %s\n' "$services_token" >> "$R/tmp/dmesg.txt"
+reject_stage services "$BOOT" services "$services_token"
 expect "$R/tmp/services.out" 'OpenRC or /sbin/ip prerequisites changed' 'missing service prerequisites reason'
 $BB rm "$R/bin/ip-bad"
 $BB touch "$R/sbin/wpa_supplicant" "$R/sbin/ifup"
 $BB chmod 755 "$R/sbin/wpa_supplicant" "$R/sbin/ifup"
 for service in sshd udev tmpfs; do
 	$BB ln -s "/etc/init.d/$service" "$R/etc/runlevels/default/$service"
-	reject_stage services "$BOOT" services capture-ok
+	reject_stage services "$BOOT" services "$services_token"
 	expect "$R/tmp/services.out" 'another OpenRC service enabled' "pre-enabled $service accepted"
 	$BB rm "$R/etc/runlevels/default/$service"
 done
 $BB printf 'wpa_supplicant_args="-f /run/log"\n' > "$R/etc/conf.d/wpa_supplicant"
-reject_stage services "$BOOT" services capture-ok
+reject_stage services "$BOOT" services "$services_token"
 expect "$R/tmp/services.out" 'unexpected supplicant arguments; no -f supported' 'supplicant -f accepted'
 $BB printf 'wpa_supplicant_args=""\n' > "$R/etc/conf.d/wpa_supplicant"
 $BB ln -s /sbin/ip "$R/bin/ip"
-reject_stage services "$BOOT" services capture-ok
+reject_stage services "$BOOT" services "$services_token"
 expect "$R/tmp/services.out" 'OpenRC or /sbin/ip prerequisites changed' 'bin/ip not refused'
 $BB rm "$R/bin/ip"
 $BB mv "$R/run/dropbear-session.pid" "$R/tmp/ssh-pid.hidden"
-reject_stage services "$BOOT" services capture-ok
+reject_stage services "$BOOT" services "$services_token"
 expect "$R/tmp/services.out" 'guest :2222 pidfile absent' 'missing guest SSH accepted'
 $BB mv "$R/tmp/ssh-pid.hidden" "$R/run/dropbear-session.pid"
 $BB printf 'fatal error received: mock\n' >> "$R/tmp/dmesg.txt"
-reject_stage services "$BOOT" services capture-ok
+reject_stage services "$BOOT" services "$services_token"
 expect "$R/tmp/services.out" 'radio fatal in this boot' 'modem fatal accepted'
-$BB printf 'capture-ok\nicnss2_qmi: QMI DMS service connected\nicnss2: WLAN FW is ready\n' > "$R/tmp/dmesg.txt"
-$BB chroot "$R" /bin/busybox sh /radio.sh "$BOOT" services capture-ok </dev/null > "$R/tmp/missing-profile.out" 2>&1 && fail 'missing profile accepted'
+$BB printf 'icnss2_qmi: QMI DMS service connected\nicnss2: WLAN FW is ready\n' > "$R/tmp/dmesg.txt"
+for stage in modem wpss driver services; do
+	eval "token=\${${stage}_token}"
+	$BB printf 'pmos-self-post: guest radio marker %s\n' "$token" >> "$R/tmp/dmesg.txt"
+done
+$BB chroot "$R" /bin/busybox sh /radio.sh "$BOOT" services "$services_token" </dev/null > "$R/tmp/missing-profile.out" 2>&1 && fail 'missing profile accepted'
 expect "$R/tmp/missing-profile.out" 'profile missing or not root-only' 'missing profile reason'
 [ ! -e "$R/etc/wpa_supplicant/wpa_supplicant.conf" ] && [ ! -e "$R/etc/runlevels/default/networking" ] || fail 'missing profile enabled services'
 $BB touch "$R/run/radio-bringup/wpa-fail"
-$BB printf 'ctrl_interface=/run/wpa_supplicant\nnetwork={\nssid="synthetic"\npsk="synthetic-only"\n}\n' | $BB chroot "$R" /bin/busybox sh /radio.sh "$BOOT" services capture-ok > "$R/tmp/wpa-fail.out" 2>&1 && fail 'failed wpa service accepted'
+$BB printf 'ctrl_interface=/run/wpa_supplicant\nnetwork={\nssid="synthetic"\npsk="synthetic-only"\n}\n' | $BB chroot "$R" /bin/busybox sh /radio.sh "$BOOT" services "$services_token" > "$R/tmp/wpa-fail.out" 2>&1 && fail 'failed wpa service accepted'
 expect "$R/tmp/wpa-fail.out" 'wpa_supplicant first service error' 'first failed service not reported'
 [ "$($BB cat "$R/run/radio-bringup/order")" = wpa ] && [ ! -e "$R/run/radio-bringup/networking.started" ] || fail 'networking attempted after wpa failure'
 $BB rm "$R/run/radio-bringup/wpa-fail" "$R/run/radio-bringup/order" "$R/run/radio-bringup/services.attempted" "$R/etc/network/interfaces" "$R/etc/wpa_supplicant/wpa_supplicant.conf" "$R/etc/conf.d/networking" "$R/bin/run-parts" "$R/sbin/udhcpc" "$R/run/radio-bringup/ifquery-wlan" "$R/run/radio-bringup/lease-wrapper.sh" "$R/etc/runlevels/default/wpa_supplicant" "$R/etc/runlevels/default/networking"
 $BB printf 'wpa_supplicant_args=""\n' > "$R/etc/conf.d/wpa_supplicant"
-$BB printf 'ctrl_interface=/run/wpa_supplicant\nnetwork={\nssid="synthetic"\npsk="synthetic-only"\n}\n' | $BB chroot "$R" /bin/busybox sh /radio.sh "$BOOT" services capture-ok > "$R/tmp/services-ok.out" 2>&1 || { $BB cat "$R/tmp/services-ok.out" >&2; fail 'services stage failed'; }
+$BB printf 'ctrl_interface=/run/wpa_supplicant\nnetwork={\nssid="synthetic"\npsk="synthetic-only"\n}\n' | $BB chroot "$R" /bin/busybox sh /radio.sh "$BOOT" services "$services_token" > "$R/tmp/services-ok.out" 2>&1 || { $BB cat "$R/tmp/services-ok.out" >&2; fail 'services stage failed'; }
 expect "$R/tmp/services-ok.out" 'OpenRC wpa_supplicant then networking started' 'services stage summary missing'
 [ "$($BB cat "$R/run/radio-bringup/order")" = 'wpa
 net' ] || fail 'services did not start wpa_supplicant then networking'
@@ -421,5 +452,5 @@ $BB grep -q '^IP_CMD=/sbin/ip$' "$R/run/radio-bringup/lease-wrapper.sh" &&
 [ "$($BB find "$R/etc/runlevels" -type l | $BB sort)" = "$R/etc/runlevels/default/local
 $R/etc/runlevels/default/networking
 $R/etc/runlevels/default/wpa_supplicant" ] || fail 'unexpected enabled OpenRC runlevel entries'
-reject_stage services "$BOOT" services capture-ok
+reject_stage services "$BOOT" services "$services_token"
 $BB printf 'pass: host-only radio bring-up stages, one-shot guards, fail-closed /dev/wlan derivation, helper exit 10, single reload, root-only scan, pinned lease-helper staging and OpenRC wpa_supplicant/networking stage verified\n'

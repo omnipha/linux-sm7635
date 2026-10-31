@@ -404,15 +404,14 @@ MOCK
 LATE
 		$BB chmod 700 /guest/etc/local.d/10-omnipha-self-stage.start
 		$BB mkdir -m 700 /guest/run/radio-bringup
-		wait_loop=$($BB sed -n '/^until \[ -f "\$GUARD\/accepted" \]/,/^done$/p' /oldroot"$HOST_POST")
-		[ "$($BB printf '%s\n' "$wait_loop" | $BB wc -l)" = 8 ] &&
-			$BB printf '%s\n' "$wait_loop" | $BB grep -qF "die 'host-owned guard ack not seen before the guard deadline'" &&
-			$BB printf '%s\n' "$wait_loop" | $BB grep -qF '"$i" -lt 150' || fail 'reviewed guard-ack wait loop changed shape'
+		! $BB grep -qF 'host-owned guard ack' /oldroot"$HOST_POST" || fail 'host-ack wait remains in self-post'
+		$BB grep -qF 'independent recovery guard remains unacknowledged' /oldroot"$HOST_POST" || fail 'self-post no longer requires the unacknowledged armed guard'
 		$BB printf '%s\n' '#!/bin/busybox sh' 'set -eu' 'BB=/bin/busybox' \
 			'export PATH=/bin:/sbin:/usr/bin:/usr/sbin' 'GUARD=/run/pid1-guard' \
 			'die() { $BB touch /run/self-post-failed; exit 1; }' \
 			'boot=$($BB cat /proc/sys/kernel/random/boot_id)' \
-			'$BB touch /run/self-post-waiting' 'i=0' "$wait_loop" \
+			'$BB touch /run/self-post-waiting' \
+			'i=0; until [ -f "$GUARD/accepted" ] && [ "$($BB cat "$GUARD/accepted")" = "$boot" ]; do [ "$i" -lt 20 ] || die; $BB sleep 1; i=$((i + 1)); done' \
 			'$BB touch /run/self-post-accepted' > /guest/run/radio-bringup/pmos-self-post.sh
 		$BB chmod 700 /guest/run/radio-bringup/pmos-self-post.sh
 	fi
