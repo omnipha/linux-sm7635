@@ -211,6 +211,88 @@ root_contract_switched_root() {
 	return 0
 }
 
+boot_record_bound=4096
+boot_record_id() {
+	br_boot=$($BB cat /proc/sys/kernel/random/boot_id 2>/dev/null) || return 1
+	case "$br_boot" in
+		????????-????-????-????-????????????)
+			case "$br_boot" in *[!0-9a-f-]*) return 1;; esac;;
+		*) return 1;;
+	esac
+}
+boot_record_root() {
+	br_path=$1
+	[ -d "$br_path" ] && [ ! -L "$br_path" ] &&
+		[ "$($BB stat -c %u "$br_path" 2>/dev/null)" = 0 ] || return 1
+	root_contract_pinned_userdata "$br_path" || return 1
+	case ",$ROOT_CONTRACT_OPTS," in *,rw,*) :;; *) return 1;; esac
+}
+boot_record_lines() {
+	$BB printf '%s\n' \
+		"boot $br_boot" \
+		"pmos-self-stage: diagnostic hold and :22 verified on boot $br_boot" \
+		'pmos-stage: using unpacked persistent postmarketOS root' \
+		'pmos-stage: mounted private proc/sys/configfs and guest-only dev, verified nodes and private devpts' \
+		'pmos-stage: second key-only SSH listening on 172.16.42.2:2222 (diagnostic :22 untouched)' \
+		'pmos-stage: STAGED ok; enter with: ssh -p 2222 root@172.16.42.2 (accept the printed key)' \
+		'pmos-self-stage: mounted pinned persistent root from read-only /dev/block/sda13 (sda13) and verified its root contract' \
+		'pmos-self-stage: guest :2222 public key matches the diagnostic host key; pin [172.16.42.2]:2222 before the PID 1 request' \
+		'radio-bringup: stock INI, one-shot helper and service markers verified and staged in guest RAM before cutover' \
+		"pmos-self-stage: staged postmarketOS root and armed PID 1 request for boot $br_boot" \
+		'usb-init: pid1 transition guard armed; exec switch_root to postmarketOS init'
+}
+boot_record_open() {
+	boot_record_root "$1" && boot_record_id || return 1
+	br_record=$1/.omnipha-boot-record
+	[ ! -e "$br_record" ] && [ ! -L "$br_record" ] || return 1
+	(umask 077; set -C; $BB printf 'boot %s\n' "$br_boot" > "$br_record") || return 1
+	br_size=$($BB stat -c %s "$br_record" 2>/dev/null) || return 1
+	[ -f "$br_record" ] && [ ! -L "$br_record" ] &&
+		[ "$($BB stat -c '%u:%a:%h:%s' "$br_record")" = "0:600:1:$br_size" ] &&
+		[ "$br_size" = 42 ] &&
+		[ "$($BB cat "$br_record")" = "boot $br_boot" ] || return 1
+	$BB sync -f "$br_record"
+}
+boot_record_append() {
+	boot_record_root "$1" && boot_record_id || return 1
+	br_record=$1/.omnipha-boot-record
+	[ -f "$br_record" ] && [ ! -L "$br_record" ] || return 1
+	br_old=$($BB cat "$br_record") || return 1
+	br_size=$($BB stat -c %s "$br_record" 2>/dev/null) || return 1
+	[ "$br_size" -ge 42 ] && [ "$br_size" -le "$boot_record_bound" ] &&
+		[ "$br_size" = "$((${#br_old} + 1))" ] &&
+		[ "$($BB stat -c '%u:%a:%h:%s' "$br_record")" = "0:600:1:$br_size" ] || return 1
+	br_next="$br_old
+$2"
+	br_all=$(boot_record_lines) || return 1
+	case "$br_all" in
+		"$br_next"|"$br_next
+"*) :;;
+		*) return 1;;
+	esac
+	[ "$((br_size + ${#2} + 1))" -le "$boot_record_bound" ] || return 1
+	$BB printf '%s\n' "$2" >> "$br_record" || return 1
+	br_size=$($BB stat -c %s "$br_record" 2>/dev/null) || return 1
+	[ "$br_size" = "$((${#br_next} + 1))" ] &&
+		[ "$($BB stat -c '%u:%a:%h:%s' "$br_record")" = "0:600:1:$br_size" ] &&
+		[ "$($BB cat "$br_record")" = "$br_next" ] || return 1
+	$BB sync -f "$br_record"
+}
+boot_record_verify() {
+	boot_record_root "$1" && boot_record_id || return 1
+	br_record=$1/.omnipha-boot-record
+	[ -f "$br_record" ] && [ ! -L "$br_record" ] || return 1
+	br_size=$($BB stat -c %s "$br_record" 2>/dev/null) || return 1
+	[ "$br_size" -ge 42 ] && [ "$br_size" -le "$boot_record_bound" ] &&
+		[ "$($BB stat -c '%u:%a:%h:%s' "$br_record")" = "0:600:1:$br_size" ] || return 1
+	br_all=$(boot_record_lines) || return 1
+	[ "$2" = 'usb-init: pid1 transition guard armed; exec switch_root to postmarketOS init' ] &&
+		[ "$($BB cat "$br_record")" = "$br_all" ] &&
+		[ "$br_size" = "$((${#br_all} + 1))" ] || return 1
+	$BB sync -f "$br_record" || return 1
+	[ "$($BB cat "$br_record")" = "$br_all" ]
+}
+
 root_contract_promote() {
 	rc_path=$1
 	root_contract_pinned_userdata "$rc_path" || return 1
