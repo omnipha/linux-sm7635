@@ -20,6 +20,8 @@ RUN78_INIT = "3192278b93812ff14cf7d71d4f8bae60a7e00d178c194155fc336817a6c4bcdf"
 RUN78_CARRIER = "ab3a0e6360269d1e56d14626e6849b8249634810895f5270283ed30ebdb4a5a9"
 RUN76_INIT = "becd37846fedd0d4298cf562667fd498f76a5c99e2e68810ca5cacf8c1ee72b4"
 RUN76_CARRIER = "adb47dc0228cdbb1ba57dd245ecec49386d53bf24c3ab8f72493e709b78aeae8"
+RUN79_INIT = "a4ee7def41e645301f59bdc4dc043c97253a4002d8774016ee3557633b0cb6e3"
+RUN79_CARRIER = "6e7c5a2e26981fc19c9eba97356d1a52f80e768cb6b9536bc9cb4fd906a8c59e"
 
 
 def load(filename, name):
@@ -53,7 +55,8 @@ OVERFLOW_MSG = "raw pinned root contract exceeds the fixed LZ4 envelope"
 def refused():
     values = set(builder.REFUSED)
     values.update((OLD_SHA, RUN69_INIT, RUN69_CARRIER, RUN72_INIT, RUN73_INIT,
-                    RUN73_CARRIER, RUN78_INIT, RUN78_CARRIER, RUN76_INIT, RUN76_CARRIER))
+                    RUN73_CARRIER, RUN78_INIT, RUN78_CARRIER, RUN76_INIT, RUN76_CARRIER,
+                    RUN79_INIT, RUN79_CARRIER))
     return frozenset(values)
 
 
@@ -222,8 +225,10 @@ def self_test(init_image, carrier, stock_init, base_image, stock_carrier, curren
               library, decode_frame):
     digest, carrier_digest, _cpio_size, size = check_pair(
         init_image, carrier, stock_init, base_image, stock_carrier, current, library, decode_frame)
-    require(digest not in (RUN69_INIT, RUN72_INIT, RUN73_INIT, RUN78_INIT, RUN76_INIT) and
-            carrier_digest not in (RUN69_CARRIER, RUN73_CARRIER, RUN78_CARRIER, RUN76_CARRIER),
+    require(digest not in (RUN69_INIT, RUN72_INIT, RUN73_INIT, RUN78_INIT, RUN76_INIT,
+                           RUN79_INIT) and
+            carrier_digest not in (RUN69_CARRIER, RUN73_CARRIER, RUN78_CARRIER,
+                                   RUN76_CARRIER, RUN79_CARRIER),
             "delta must change both carriers and repeat neither measured image")
     git_clean()
     old_image, old_blob, old_members, replayed = omission_fixture(
@@ -238,6 +243,11 @@ def self_test(init_image, carrier, stock_init, base_image, stock_carrier, curren
             found["pmos-self-stage.sh"] and
             found["pmos-pid1-transition.sh"].count(b"boot_record_verify") == 1 and
             found["pmos-radio-bringup.sh"].count(b"boot_record_append") == 1 and
+            found["pmos-self-post.sh"].count(b"boot_record_append") == 2 and
+            found["pmos-self-post.sh"].count(b"boot_record_verify") == 1 and
+            b"post-cutover PID 1 on boot" in found["pmos-self-post.sh"] and
+            found["pmos-self-post.sh"].index(b"boot_record_verify") <
+            found["pmos-self-post.sh"].index(b"pinned radio bring-up script missing") and
             b"boot_record_bound=4096" in found["pmos-root-contract.sh"], DELTA_MSG)
     guard = previous["pmos-pid1-guard.sh"]
     start = guard.index(b'[ ! -e "$root$STATE" ]')
@@ -359,6 +369,10 @@ def self_test(init_image, carrier, stock_init, base_image, stock_carrier, curren
         b"root_contract_pinned_userdata", b"root_contract_unpinned", 1)
     bad("weakened contract", INIT_MSG, source=changed)
     launch = next(item["data"] for item in parsed() if item["name"] == "init")
+    require(b'[ -f "$ROOT/run/pid1-guard/armed" ]' not in launch and
+            launch.count(b". \"$PID1_SCRIPT\"") == 1 and
+            b"while :; do $BB sleep 60; done" not in launch and
+            b"PID1_SETTLE_START=$(/bin/busybox awk" in launch, INIT_MSG)
     keep = (b"[ ! -e /run/keep ] && [ ! -L /run/keep ] || exit 0\n"
             b"$BB touch /run/keep || exit 0\n"
             b"$BB chmod 600 /run/keep || exit 0\n"
@@ -370,7 +384,8 @@ def self_test(init_image, carrier, stock_init, base_image, stock_carrier, curren
             RUN69_CARRIER in refused() and RUN73_INIT in refused() and
             RUN73_CARRIER in refused() and RUN78_INIT in refused() and
             RUN78_CARRIER in refused() and RUN76_INIT in refused() and
-            RUN76_CARRIER in refused(), SHA_MSG)
+            RUN76_CARRIER in refused() and RUN79_INIT in refused() and
+            RUN79_CARRIER in refused(), SHA_MSG)
     reader = builder.carrier_reader(builder.carrier_bundle(found, private))
     bad("reader removed", INIT_MSG, with_init(launch.replace(reader, b"", 1)))
     bad("wrong carrier name", INIT_MSG, with_init(launch.replace(b"vendor_boot_b", b"recovery_b", 1)))

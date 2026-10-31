@@ -3,12 +3,12 @@
 device: nothing-asteroids
 updated: 2026-10-31
 next_question: >-
-  Which strategist-selected path can make the independent recovery guard acknowledged and prove the 160-second fastboot return without changing the measured record?
-active_issue: null
+  Does the acknowledged diagnostic boot commit the post-cutover PID 1 line and then return to fastboot with no ack?
+active_issue: omnipha/linux-sm7635#234
 subsystems:
   boot:
     state: partial
-    record: records/2026-10-31-094401-run-79-record-readable-guard-deadline-unobserved.md
+    record: records/2026-10-31-110810-cutover-record-host-image.md
   ssh:
     state: partial
     record: records/2026-10-30-203515-run-69-second-boot-guard-wlan.md
@@ -44,9 +44,9 @@ attempted_shas:       # cold-start index only; the flash gate is device-op statu
   - fcb0ed91
   - fef03008        # init_boot, runs 52-57
 notes: >-
-  Run 79 read the complete 933-byte persistent boot record through the final
-  transition line. At 156.358 s self-post refused because the independent
-  recovery guard was not armed and unacknowledged; PID 1 stayed diagnostic.
-  USB Linux was still alive at 274.18 s, so the 160-second fastboot return
-  was not observed and the coordinator ended the boot manually. Rescue hashes
-  were exact and the measured pair is never-reflash. No cold start was run.
+  Host #234 built and verified the post-cutover record pair dd6ce74e / e7d55580.
+  The success line commits on the persistent root after the guard identity
+  checks; the refusal path keeps the reached lines plus a kernel-stamped FAIL
+  line. Run-79 timing shows the guard was ended about 42 s before its deadline,
+  and the delivered init has no re-entered arm tail. The measured outcome is
+  pending on the coordinator; #234 stays open.

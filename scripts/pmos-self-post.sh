@@ -14,7 +14,16 @@ log() {
 	$BB printf 'pmos-self-post: %s\n' "$*" | $BB tee -a "$STATE/self-post.log" >&2
 	$BB printf 'pmos-self-post: %s\n' "$*" >/dev/kmsg 2>/dev/null || true
 }
-die() { log "FAIL: $*"; exit 1; }
+record_fail() {
+	[ "${POST_RECORD_FAIL:-0}" = 0 ] || return 0
+	POST_RECORD_FAIL=1
+	contract=${PMOS_ROOT_CONTRACT:-/run/pmos-root-contract.sh}
+	[ -f "$contract" ] && [ ! -L "$contract" ] && . "$contract" || return 0
+	boot_record_id || return 0
+	stamp=$($BB awk 'NF == 2 && $1 ~ /^[0-9]+([.][0-9]+)?$/ {print $1; ok=1} END {exit(!ok)}' /proc/uptime 2>/dev/null) || stamp=unknown
+	boot_record_append / "pmos-self-post: FAIL: $* (uptime $stamp)" || true
+}
+die() { log "FAIL: $*"; record_fail "$*"; exit 1; }
 hash() { $BB sha256sum "$1" 2>/dev/null | $BB cut -d ' ' -f 1; }
 scrub() { $BB rm -f "$PROFILE"; }
 trap scrub EXIT
@@ -53,6 +62,12 @@ done
 	[ ! -e "$GUARD/accepted" ] && [ ! -L "$GUARD/accepted" ] &&
 	[ ! -e "$GUARD/ack" ] && [ ! -L "$GUARD/ack" ] ||
 	die 'independent recovery guard is not armed and unacknowledged'
+contract=${PMOS_ROOT_CONTRACT:-/run/pmos-root-contract.sh}
+[ -f "$contract" ] && [ ! -L "$contract" ] && . "$contract" || die 'post-cutover boot record contract unavailable'
+boot_record_append / "pmos-self-post: post-cutover PID 1 on boot $boot; guard identity check passed; pid1 identity check passed" ||
+	die 'post-cutover boot record append refused'
+boot_record_verify / "pmos-self-post: post-cutover PID 1 on boot $boot; guard identity check passed; pid1 identity check passed" ||
+	die 'post-cutover boot record verify refused'
 log "cold-start post-cutover PID 1 on boot $boot; independent recovery guard remains unacknowledged"
 
 [ -f "$RADIO" ] && [ ! -L "$RADIO" ] &&

@@ -18,7 +18,7 @@ root_contract_pinned_userdata() {
 	rc_info=${3:-/proc/self/mountinfo}
 	[ -n "$rc_path" ] || return 1
 	case "$rc_path" in /*) :;; *) return 1;; esac
-	case "$rc_path" in */) return 1;; esac
+	case "$rc_path" in /) :;; */) return 1;; esac
 	[ -d "$rc_path" ] && [ ! -L "$rc_path" ] &&
 		[ "$($BB stat -c %u "$rc_path" 2>/dev/null)" = 0 ] || return 1
 	rc_part=
@@ -208,6 +208,7 @@ root_contract_switched_root() {
 	ROOT_CONTRACT_KIND=ext4
 	ROOT_CONTRACT_NODE=$rc_source
 	ROOT_CONTRACT_SIZE=$rc_size
+	ROOT_CONTRACT_OPTS=$rc_opts
 	return 0
 }
 
@@ -224,7 +225,11 @@ boot_record_root() {
 	br_path=$1
 	[ -d "$br_path" ] && [ ! -L "$br_path" ] &&
 		[ "$($BB stat -c %u "$br_path" 2>/dev/null)" = 0 ] || return 1
-	root_contract_pinned_userdata "$br_path" || return 1
+	if [ "$br_path" = / ]; then
+		root_contract_switched_root /proc/1/mounts /proc/1/mountinfo || return 1
+	else
+		root_contract_pinned_userdata "$br_path" || return 1
+	fi
 	case ",$ROOT_CONTRACT_OPTS," in *,rw,*) :;; *) return 1;; esac
 }
 boot_record_lines() {
@@ -239,7 +244,8 @@ boot_record_lines() {
 		'pmos-self-stage: guest :2222 public key matches the diagnostic host key; pin [172.16.42.2]:2222 before the PID 1 request' \
 		'radio-bringup: stock INI, one-shot helper and service markers verified and staged in guest RAM before cutover' \
 		"pmos-self-stage: staged postmarketOS root and armed PID 1 request for boot $br_boot" \
-		'usb-init: pid1 transition guard armed; exec switch_root to postmarketOS init'
+		'usb-init: pid1 transition guard armed; exec switch_root to postmarketOS init' \
+		"pmos-self-post: post-cutover PID 1 on boot $br_boot; guard identity check passed; pid1 identity check passed"
 }
 boot_record_open() {
 	boot_record_root "$1" && boot_record_id || return 1
@@ -265,10 +271,32 @@ boot_record_append() {
 	br_next="$br_old
 $2"
 	br_all=$(boot_record_lines) || return 1
+	br_post="pmos-self-post: post-cutover PID 1 on boot $br_boot; guard identity check passed; pid1 identity check passed"
 	case "$br_all" in
 		"$br_next"|"$br_next
 "*) :;;
-		*) return 1;;
+		*)
+			br_cutover=${br_all%"
+$br_post"}
+			case "$br_old" in
+				"$br_cutover"|"$br_cutover
+pmos-self-post: FAIL: "*) :;;
+				*) return 1;;
+			esac
+			case "$2" in
+				"pmos-self-post: FAIL: "*) :;;
+				*) return 1;;
+			esac
+			br_fails=0
+			br_rest=$br_next
+			while :; do
+				case "$br_rest" in
+					*"pmos-self-post: FAIL: "*) br_fails=$((br_fails + 1)); br_rest=${br_rest#*pmos-self-post: FAIL: };;
+					*) break;;
+				esac
+			done
+			[ "$br_fails" -le 2 ] || return 1
+			;;
 	esac
 	[ "$((br_size + ${#2} + 1))" -le "$boot_record_bound" ] || return 1
 	$BB printf '%s\n' "$2" >> "$br_record" || return 1
@@ -286,11 +314,30 @@ boot_record_verify() {
 	[ "$br_size" -ge 42 ] && [ "$br_size" -le "$boot_record_bound" ] &&
 		[ "$($BB stat -c '%u:%a:%h:%s' "$br_record")" = "0:600:1:$br_size" ] || return 1
 	br_all=$(boot_record_lines) || return 1
-	[ "$2" = 'usb-init: pid1 transition guard armed; exec switch_root to postmarketOS init' ] &&
-		[ "$($BB cat "$br_record")" = "$br_all" ] &&
-		[ "$br_size" = "$((${#br_all} + 1))" ] || return 1
+	br_body=$($BB cat "$br_record") || return 1
+	[ "$br_size" = "$((${#br_body} + 1))" ] || return 1
+	case "$2" in
+		'usb-init: pid1 transition guard armed; exec switch_root to postmarketOS init')
+			case "$br_all" in
+				"$br_body
+"*) :;;
+				*) return 1;;
+			esac
+			case "$br_body" in
+				*"
+$2") :;;
+				*) return 1;;
+			esac;;
+		"pmos-self-post: post-cutover PID 1 on boot $br_boot; guard identity check passed; pid1 identity check passed")
+			[ "$br_body" = "$br_all" ] || return 1;;
+		*) return 1;;
+	esac
 	$BB sync -f "$br_record" || return 1
-	[ "$($BB cat "$br_record")" = "$br_all" ]
+	case "$2" in
+		'usb-init: pid1 transition guard armed; exec switch_root to postmarketOS init')
+			[ "$($BB cat "$br_record")" = "$br_body" ];;
+		*) [ "$($BB cat "$br_record")" = "$br_all" ];;
+	esac
 }
 
 root_contract_promote() {
