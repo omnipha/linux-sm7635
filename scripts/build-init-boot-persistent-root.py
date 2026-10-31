@@ -91,7 +91,7 @@ def current_scripts():
         "pmos-session-stage.sh": "be70a27305145cabc15b70469ae7a0434fab352fb9c3d681943f73d22b92938a",
         "pmos-pid1-transition.sh": "e1dba7135e2335c22aee0a5c0f4edb247fad5acd8100377cba3771abe5044e36",
         "pmos-pid1-guard.sh": "f72a68a4c3a0e9bb7e72aa88883dcc9087a684985f5af688e34ea13c0226d3ad",
-        "pmos-self-post.sh": "c6c34c6015aa5338e1097d3561ab1728b3ecb54b2227ae5f3bb1041d98e90648",
+        "pmos-self-post.sh": "628c3a075794ea2bdc24a9b67fdd49af45b0403770b93822adb9869b8171d71d",
         "pmos-radio-bringup.sh": "7ef6382644c2e07705d2a8df77840031318c298478c8f93e9bbfd05c00b61812",
         "pmos-self-stage.sh": "92e9045894df3da3db2b093aebc03840a63d8e2b4b89c6cffc835b62d10614c6",
     }
@@ -424,7 +424,10 @@ def expected_init(original, found, blob):
     old_sha = b"0b85d1dc3c05b58f703618994363a9d0dbd09ecf8139573d2db15628d2497549"
     new_sha = hashlib.sha256(found["pmos-pid1-transition.sh"]).hexdigest().encode()
     require(original.count(old_sha) == 2, INIT_MSG)
-    return replace_once(original[:start] + hook(found, blob) + original[end:], old_sha, new_sha)
+    handoff = original[end:]
+    require(handoff.count(old_sha) == 1, INIT_MSG)
+    preserved = replace_once(handoff, old_sha, new_sha)
+    return original[:start] + hook(found, blob) + preserved
 
 
 def candidate_cpio(entries, trailer, found, private):

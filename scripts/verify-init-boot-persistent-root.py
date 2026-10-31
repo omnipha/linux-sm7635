@@ -352,6 +352,11 @@ def self_test(init_image, carrier, stock_init, base_image, stock_carrier, curren
     bad("reader removed", INIT_MSG, with_init(launch.replace(reader, b"", 1)))
     bad("wrong carrier name", INIT_MSG, with_init(launch.replace(b"vendor_boot_b", b"recovery_b", 1)))
     bad("malformed init", INIT_MSG, with_init(b"#!/bin/busybox sh\nexit 0\n"))
+    bad("run-66 handoff changed", INIT_MSG, with_init(launch.replace(
+        b"PID1_SETTLE_START=$(/bin/busybox awk", b"PID1_SETTLE_START=$(/bin/busybox true", 1)))
+    bad("run-66 handoff pin removed", INIT_MSG, with_init(launch.replace(
+        b"PID1_SHA256=" + hashlib.sha256(current["pmos-pid1-transition.sh"]).hexdigest().encode(),
+        b"PID1_SHA256=0", 1)))
     bad("guest keep creation missing", INIT_MSG, with_init(launch.replace(
         b"$BB touch /run/keep || exit 0\n", b"", 1)))
     bad("guest keep mode weakened", INIT_MSG, with_init(launch.replace(
