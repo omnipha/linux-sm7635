@@ -325,9 +325,19 @@ def hook(found, blob):
         b'$BB mv "$D/pmos-session-stage.sh" /run/pmos-session-stage.sh || exit 0\n',
         b'$BB mv "$D/pmos-root-contract.sh" /run/pmos-root-contract.sh || exit 0\n'
         b'$BB mv "$D/pmos-session-stage.sh" /run/pmos-session-stage.sh || exit 0\n', 1)
+    body = body.replace(
+        b'setsid /bin/busybox sh /run/pmos-self-stage.sh >/dev/null 2>&1 &\n',
+        b'[ ! -e /run/keep ] && [ ! -L /run/keep ] || exit 0\n'
+        b'$BB touch /run/keep || exit 0\n'
+        b'$BB chmod 600 /run/keep || exit 0\n'
+        b'[ -f /run/keep ] && [ ! -L /run/keep ] &&\n'
+        b'\t[ "$($BB stat -c "%u:%a:%h" /run/keep)" = 0:600:1 ] || exit 0\n'
+        b'setsid /bin/busybox sh /run/pmos-self-stage.sh >/dev/null 2>&1 &\n', 1)
     require(body.count(b"@PINS@") == 0 and body.count(b"pmos-root-contract.sh") == 3 and
-            body.count(b"/run/keep") == 0 and body.count(b"sleep 150") == 0 and
-            body.count(b"151.01") == 0 and body.count(carrier_reader(blob)) == 1, INIT_MSG)
+            body.count(b"/run/keep") == 7 and body.count(b"sleep 150") == 0 and
+            body.count(b"151.01") == 0 and body.count(carrier_reader(blob)) == 1 and
+            body.index(b'touch /run/keep') < body.index(b'setsid /bin/busybox sh /run/pmos-self-stage.sh'),
+            INIT_MSG)
     return body
 
 

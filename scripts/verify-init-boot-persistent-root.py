@@ -11,6 +11,8 @@ import tarfile
 HERE = pathlib.Path(__file__).parent
 OLD_IMAGE = pathlib.Path.home() / "sm7635-build" / "out" / "init_boot-persistent-root.img"
 OLD_SHA = "ef476d8cbf3cba31fc143680d53b9aaf687cadd0409ad6dcf93c018bd97a233b"
+RUN69_INIT = "2f73c94764be3f443ace02fc46001662686512f37f4951bedfb5900cf3d31c28"
+RUN69_CARRIER = "f792174c3e886b6f3280d447c3da4704403f713fe24228fb4f52f24e7da11095"
 OVERFLOW = 2118229
 
 
@@ -44,7 +46,7 @@ OVERFLOW_MSG = "raw pinned root contract exceeds the fixed LZ4 envelope"
 
 def refused():
     values = set(builder.REFUSED)
-    values.add(OLD_SHA)
+    values.update((OLD_SHA, RUN69_INIT))
     return frozenset(values)
 
 
@@ -213,6 +215,8 @@ def self_test(init_image, carrier, stock_init, base_image, stock_carrier, curren
               library, decode_frame):
     digest, carrier_digest, _cpio_size, size = check_pair(
         init_image, carrier, stock_init, base_image, stock_carrier, current, library, decode_frame)
+    require(digest != RUN69_INIT and carrier_digest == RUN69_CARRIER,
+            "delta must change only init_boot and keep the installed carrier byte-identical")
     git_clean()
     old_image, old_blob, old_members, replayed = omission_fixture(
         base_image, library, decode_frame)
@@ -295,10 +299,28 @@ def self_test(init_image, carrier, stock_init, base_image, stock_carrier, curren
         b"root_contract_pinned_userdata", b"root_contract_unpinned", 1)
     bad("weakened contract", INIT_MSG, source=changed)
     launch = next(item["data"] for item in parsed() if item["name"] == "init")
+    keep = (b"[ ! -e /run/keep ] && [ ! -L /run/keep ] || exit 0\n"
+            b"$BB touch /run/keep || exit 0\n"
+            b"$BB chmod 600 /run/keep || exit 0\n"
+            b"[ -f /run/keep ] && [ ! -L /run/keep ] &&\n"
+            b"\t[ \"$($BB stat -c \"%u:%a:%h\" /run/keep)\" = 0:600:1 ] || exit 0\n")
+    installed = with_init(launch.replace(keep, b"", 1))
+    require(hashlib.sha256(installed).hexdigest() == RUN69_INIT, SHA_MSG)
+    bad("installed run-69 init_boot", SHA_MSG, installed)
     reader = builder.carrier_reader(builder.carrier_bundle(found, private))
     bad("reader removed", INIT_MSG, with_init(launch.replace(reader, b"", 1)))
     bad("wrong carrier name", INIT_MSG, with_init(launch.replace(b"vendor_boot_b", b"recovery_b", 1)))
     bad("malformed init", INIT_MSG, with_init(b"#!/bin/busybox sh\nexit 0\n"))
+    bad("guest keep removed", INIT_MSG, with_init(launch.replace(
+        b"$BB touch /run/keep || exit 0\n", b"", 1)))
+    bad("guest keep mode weakened", INIT_MSG, with_init(launch.replace(
+        b"$BB chmod 600 /run/keep || exit 0\n", b"$BB chmod 644 /run/keep || exit 0\n", 1)))
+    bad("pre-existing keep accepted", INIT_MSG, with_init(launch.replace(
+        b"[ ! -e /run/keep ] && [ ! -L /run/keep ] || exit 0\n", b"", 1)))
+    bad("guest keep after self-stage", INIT_MSG, with_init(launch.replace(
+        b"$BB touch /run/keep || exit 0\n", b"", 1).replace(
+        b"setsid /bin/busybox sh /run/pmos-self-stage.sh >/dev/null 2>&1 &\n",
+        b"setsid /bin/busybox sh /run/pmos-self-stage.sh >/dev/null 2>&1 &\n$BB touch /run/keep || exit 0\n", 1)))
     bad("malformed carrier", CARRIER_MSG, init_image, b"")
     header = bytearray(builder.carrier_header(builder.carrier_bundle(found, private)))
     header[len(builder.CARRIER_MARKER)] ^= 1
