@@ -13,16 +13,17 @@ One active step, one active issue. Later steps are not pre-created issues.
 
 ## Active step
 
-- Step: guest-owned keep image before any button-assisted cold-start measurement.
-- Issue: omnipha/linux-sm7635#216
-- Next: coordinator measures the new init_boot with installed vendor_boot_b and
-  pinned userdata, verifies rollback to installed hashes, then records the result.
-  No host-created keep, guard ack, or capture in the boot being measured.
+- Step: strategist selects the direction after run 72's negative/partial guest-keep result.
+- Issue: none until selected
+- Next: no button-assisted cold start; guest-owned keep reached persistent ext4
+  and :2222, but PID 1 refused because the recovery guard was unarmed. Installed
+  hashes and rescue evidence were restored and verified. #216 is closed.
 
 ## Next (ordered, not issues yet)
 
-1. Cold start of the persistent root without USB host signals: own /run/keep,
-   guard and radio start, then MINDSTORMS and SSH without a host push.
+1. After the strategist's selection, cold start of the persistent root without
+   USB host signals: own /run/keep, guard and radio start, then MINDSTORMS and
+   SSH without a host push. Blocked on a successful measured boot.
 2. Display over the open SSH session: identify why /dev/dri is absent, load the
    measured stock module or firmware, and record the working recipe. Build one
    image only after that recipe is measured.
@@ -33,6 +34,7 @@ Reopen either only when a measurement shows it blocks the active step.
 
 ## Done (pointers, newest first)
 
+- Run 72: guest keep and persistent root reached; PID 1 refused on NO_ARMED, rollback verified -> records/2026-10-31-024827-run-72-guest-keep-partial-guard-unarmed.md
 - Host #216: guest-owned keep init_boot built and verified; carrier unchanged -> records/2026-10-31-015710-guest-owned-keep-host-image.md
 - Run 71: device-native RTC alarm accepted but no power-off or cold start; result (d) -> records/2026-10-30-222652-run-71-device-native-rtc-poweroff-coldstart.md
 - Run 70: no host-free cold-start power path; result (d), no boot or partition write -> records/2026-10-30-212551-run-70-coldstart-host-free-power-boundary.md

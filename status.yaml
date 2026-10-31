@@ -3,12 +3,12 @@
 device: nothing-asteroids
 updated: 2026-10-31
 next_question: >-
-  Does the guest-owned-keep image reach persistent root, PID 1 and armed guard without host hold, guard ack or capture?
-active_issue: omnipha/linux-sm7635#216
+  Which successor direction can arm the recovery guard before PID 1 handoff without host assistance?
+active_issue: null
 subsystems:
   boot:
     state: partial
-    record: records/2026-10-31-015710-guest-owned-keep-host-image.md
+    record: records/2026-10-31-024827-run-72-guest-keep-partial-guard-unarmed.md
   ssh:
     state: partial
     record: records/2026-10-30-203515-run-69-second-boot-guard-wlan.md
@@ -27,6 +27,7 @@ subsystems:
 attempted_shas:       # cold-start index only; the flash gate is device-op status, not this file
   - 0b40ac34
   - 0f998e29
+  - 3c97c918        # init_boot_a, run 72; flashed once, never-reflash
   - 1bdb7c22        # vendor_boot_b, run 58
   - 41cab142        # recovery_b, run 61
   - 4b83ea24        # init_boot, run 58
@@ -39,8 +40,8 @@ attempted_shas:       # cold-start index only; the flash gate is device-op statu
   - fcb0ed91
   - fef03008        # init_boot, runs 52-57
 notes: >-
-  Host-only #216 built init_boot 3c97c918 with five added init lines that create
-  and verify a root-only /run/keep before self-stage. The installed vendor_boot_b
-  f792174c and pinned userdata aa8da109 are unchanged. Two serial builds matched;
-  host negative fixtures passed. No device operation or physical boot result;
-  coordinator measurement and verified rollback to run-69 hashes remain pending.
+  Run 72 negative/partial: the guest created root-only /run/keep, self-stage
+  passed the host-hold deadline, persistent ext4 sda13 and :2222 were reached
+  without host keep, guard ack or capture. PID 1 refused on NO_ARMED. The image
+  gate is not verified and no cold start is scheduled. Rollback restored exact
+  run-69 hashes and rescue evidence; only init_boot_a was written. #216 closed.
