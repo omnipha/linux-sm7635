@@ -3,12 +3,12 @@
 device: nothing-asteroids
 updated: 2026-10-31
 next_question: >-
-  Does the one button-assisted cold start of the merged-verifier pair 3192278b / ab3a0e63 reach persistent PID 1, radio and WLAN before the unchanged 160-second recovery deadline?
-active_issue: omnipha/linux-sm7635#223
+  Which strategist-selected observation path can preserve the original cold-start console before any further device experiment?
+active_issue: null
 subsystems:
   boot:
     state: partial
-    record: records/2026-10-31-061706-coldstart-run66-handoff-verified.md
+    record: records/2026-10-31-075408-run-78-coldstart-observation-incomplete.md
   ssh:
     state: partial
     record: records/2026-10-30-203515-run-69-second-boot-guard-wlan.md
@@ -42,7 +42,8 @@ attempted_shas:       # cold-start index only; the flash gate is device-op statu
   - fcb0ed91
   - fef03008        # init_boot, runs 52-57
 notes: >-
-  Run 76 refused becd3784 / adb47dc0 because the verifier ran from a stale
-  checkout, not merged main. Host repair re-verified a distinct pair,
-  3192278b / ab3a0e63, on merged main with the run-66 handoff pinned
-  byte-for-byte and the 160-s recovery unchanged. No cold start is claimed.
+  Run 78 performed one button-assisted cold start of the verified 3192278b /
+  ab3a0e63 pair. The original cold-start console and SSH/WLAN window were
+  not captured; switch_root, PID 1, radio and association are unmeasured.
+  Rescue readback proved stock slot A and the installed pair; responsive
+  fastboot returned. Coordinator session closed, no rollback or new test.

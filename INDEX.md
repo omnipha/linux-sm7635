@@ -2,6 +2,7 @@
 
 ## Latest 10
 
+- [2026-10-31-075408-run-78-coldstart-observation-incomplete](records/2026-10-31-075408-run-78-coldstart-observation-incomplete.md) | boot run 78 | inconclusive | omnipha/linux-sm7635#223 | Run 78: cold start performed, observation incomplete
 - [2026-10-31-061706-coldstart-run66-handoff-verified](records/2026-10-31-061706-coldstart-run66-handoff-verified.md) | boot | confirmed | omnipha/linux-sm7635#223 | Cold-start run-66 handoff preserved and re-verified
 - [2026-10-31-055910-preflash-verifier-refusal](records/2026-10-31-055910-preflash-verifier-refusal.md) | boot run 76 | refuted | omnipha/linux-sm7635#223 | Run 76: host verifier refuses the cold-start pair before flash
 - [2026-10-31-054706-coldstart-host-free-radio-package](records/2026-10-31-054706-coldstart-host-free-radio-package.md) | boot | confirmed | omnipha/linux-sm7635#223 | Cold-start host-free radio package
@@ -11,14 +12,13 @@
 - [2026-10-31-024827-run-72-guest-keep-partial-guard-unarmed](records/2026-10-31-024827-run-72-guest-keep-partial-guard-unarmed.md) | boot run 72 | confirmed | omnipha/linux-sm7635#216 | Run 72: guest-owned keep reached, guard unarmed
 - [2026-10-31-015710-guest-owned-keep-host-image](records/2026-10-31-015710-guest-owned-keep-host-image.md) | boot | confirmed | omnipha/linux-sm7635#216 | Guest-owned keep host image
 - [2026-10-30-222652-run-71-device-native-rtc-poweroff-coldstart](records/2026-10-30-222652-run-71-device-native-rtc-poweroff-coldstart.md) | boot run 71 | refuted | omnipha/linux-sm7635#214 | Run 71: device-native RTC alarm does not power off the phone
-- [2026-10-30-212551-run-70-coldstart-host-free-power-boundary](records/2026-10-30-212551-run-70-coldstart-host-free-power-boundary.md) | boot run 70 | confirmed | omnipha/linux-sm7635#197 | Run 70: no host-free cold-start power path exists on VMWARE006
 
 ## By subsystem (latest 3, total in brackets)
 
-### boot [64]
+### boot [65]
+- [2026-10-31-075408-run-78-coldstart-observation-incomplete](records/2026-10-31-075408-run-78-coldstart-observation-incomplete.md) | boot run 78 | inconclusive | omnipha/linux-sm7635#223 | Run 78: cold start performed, observation incomplete
 - [2026-10-31-061706-coldstart-run66-handoff-verified](records/2026-10-31-061706-coldstart-run66-handoff-verified.md) | boot | confirmed | omnipha/linux-sm7635#223 | Cold-start run-66 handoff preserved and re-verified
 - [2026-10-31-055910-preflash-verifier-refusal](records/2026-10-31-055910-preflash-verifier-refusal.md) | boot run 76 | refuted | omnipha/linux-sm7635#223 | Run 76: host verifier refuses the cold-start pair before flash
-- [2026-10-31-054706-coldstart-host-free-radio-package](records/2026-10-31-054706-coldstart-host-free-radio-package.md) | boot | confirmed | omnipha/linux-sm7635#223 | Cold-start host-free radio package
 
 ### modem [12]
 - [2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the](records/2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the.md) | modem run 55 | confirmed | omnipha/linux-sm7635#155 | Run-55 measured post-cutover modem hold past the EFS request (#155, 2026-10-29)
@@ -42,4 +42,4 @@
 
 ## By month
 
-- [2026-10](records/index-2026-10.md) [149]
+- [2026-10](records/index-2026-10.md) [150]

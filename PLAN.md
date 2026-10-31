@@ -13,27 +13,25 @@ One active step, one active issue. Later steps are not pre-created issues.
 
 ## Active step
 
-- Step: one coordinator-owned button-assisted cold start of the re-verified pair.
-- Issue: omnipha/linux-sm7635#223
-- Next: 3192278b / ab3a0e63 passed the merged-main verifier with the run-66
-  handoff preserved byte-for-byte. The coordinator verifies from merged main
-  and owns the single cold start; no device operation is done here.
+- Step: close #223 on run 78's inconclusive observation boundary.
+- Issue: omnipha/linux-sm7635#223 until the closeout PR merges, then none.
+- Next: the cold start was performed, but its console was lost and PID 1,
+  radio and WLAN remain unmeasured. Rescue readback passed. Do not repeat the
+  experiment in this issue; the strategist owns any next direction.
 
 ## Next (ordered, not issues yet)
 
-1. After a newly verified distinct pair passes the merged verifier, the
-   coordinator measures one button-assisted cold start and records PID 1, radio,
-   WLAN, deadline return or the exact first missing line, then rescue readback.
-2. Display over the open SSH session: identify why /dev/dri is absent, load the
-   measured stock module or firmware, and record the working recipe. Build one
-   image only after that recipe is measured.
-3. Touch, then audio, cameras and modem data. One function per step.
+1. Strategist selects how to retain a cold-start observation before any new
+   issue or device experiment; do not treat run 78 as a functional boot result.
+2. Display, touch, audio, cameras and modem data follow only when their own
+   gates are reached. One function per step.
 
 #144 (interactive PTY) and #12 (stock-kernel boot boundary) are not next.
 Reopen either only when a measurement shows it blocks the active step.
 
 ## Done (pointers, newest first)
 
+- Run 78: button-assisted cold start performed but original console and PID 1/radio/WLAN result unmeasured; rescue verified -> records/2026-10-31-075408-run-78-coldstart-observation-incomplete.md
 - Host #223: run-66 handoff pinned byte-for-byte and distinct pair 3192278b / ab3a0e63 re-verified on merged main -> records/2026-10-31-061706-coldstart-run66-handoff-verified.md
 - Run 76: host verifier refused becd3784 / adb47dc0 before flash; unchanged rescue chain read and fastboot return measured -> records/2026-10-31-055910-preflash-verifier-refusal.md
 
