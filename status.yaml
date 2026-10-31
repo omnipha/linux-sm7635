@@ -3,7 +3,7 @@
 device: nothing-asteroids
 updated: 2026-10-31
 next_question: >-
-  DSI command transfers to the RM69220 panel fail with a live KMS pipeline; the remaining change must execute before SSH exists (panel power/reset timing or vendor module variant).
+  All DT panel rails are enabled and DCS writes go out, but the panel never returns data and stays dark; the remaining change executes before SSH exists (bootloader panel handoff).
 active_issue: omnipha/linux-sm7635#240
 subsystems:
   boot:
