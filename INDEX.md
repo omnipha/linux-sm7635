@@ -2,6 +2,7 @@
 
 ## Latest 10
 
+- [2026-10-31-210949-pre-ssh-panel-host-image](records/2026-10-31-210949-pre-ssh-panel-host-image.md) | display | confirmed | omnipha/linux-sm7635#243 | Pre-SSH panel: host image for the bootloader-handoff test
 - [2026-10-31-180105-live-display-rails-enabled-dcs-readback-fails](records/2026-10-31-180105-live-display-rails-enabled-dcs-readback-fails.md) | display | inconclusive | omnipha/linux-sm7635#240 | live display: rails enabled, DCS writes accepted, readback fails
 - [2026-10-31-173408-live-display-drm-kms-panel-command-gap](records/2026-10-31-173408-live-display-drm-kms-panel-command-gap.md) | display | inconclusive | omnipha/linux-sm7635#240 | live display: DRM device reached, KMS active, DSI panel commands fail
 - [2026-10-31-162218-run-84-record-rotation-cutover-noack-return](records/2026-10-31-162218-run-84-record-rotation-cutover-noack-return.md) | boot run 84 | confirmed | omnipha/linux-sm7635#237 | run 84: record rotation boots, cutover acks, no-ack return is independent
@@ -11,7 +12,6 @@
 - [2026-10-31-095935-run-81-repeated-preflash-refusal](records/2026-10-31-095935-run-81-repeated-preflash-refusal.md) | boot run 81 | refuted | omnipha/agents#77 | Run 81: repeated pre-flash refusal of the stale artifact pair, no write
 - [2026-10-31-094401-run-79-record-readable-guard-deadline-unobserved](records/2026-10-31-094401-run-79-record-readable-guard-deadline-unobserved.md) | boot run 79 | inconclusive | omnipha/linux-sm7635#230 | Run 79: record readable, post-cutover milestones unmeasured
 - [2026-10-31-090700-coldstart-boot-record-host-image](records/2026-10-31-090700-coldstart-boot-record-host-image.md) | boot | confirmed | omnipha/linux-sm7635#230 | Cold-start boot record: host fixture and successor pair
-- [2026-10-31-075408-run-78-coldstart-observation-incomplete](records/2026-10-31-075408-run-78-coldstart-observation-incomplete.md) | boot run 78 | inconclusive | omnipha/linux-sm7635#223 | Run 78: cold start performed, observation incomplete
 
 ## By subsystem (latest 3, total in brackets)
 
@@ -20,7 +20,8 @@
 - [2026-10-31-153706-record-rotation-host-image](records/2026-10-31-153706-record-rotation-host-image.md) | boot | confirmed | omnipha/linux-sm7635#237 | Record rotation: host fix, fixtures and successor pair
 - [2026-10-31-115817-run-83-stale-record-open-refusal](records/2026-10-31-115817-run-83-stale-record-open-refusal.md) | boot run 83 | refuted | omnipha/linux-sm7635#234 | Run 83: stale boot record refused before the cutover
 
-### display [2]
+### display [3]
+- [2026-10-31-210949-pre-ssh-panel-host-image](records/2026-10-31-210949-pre-ssh-panel-host-image.md) | display | confirmed | omnipha/linux-sm7635#243 | Pre-SSH panel: host image for the bootloader-handoff test
 - [2026-10-31-180105-live-display-rails-enabled-dcs-readback-fails](records/2026-10-31-180105-live-display-rails-enabled-dcs-readback-fails.md) | display | inconclusive | omnipha/linux-sm7635#240 | live display: rails enabled, DCS writes accepted, readback fails
 - [2026-10-31-173408-live-display-drm-kms-panel-command-gap](records/2026-10-31-173408-live-display-drm-kms-panel-command-gap.md) | display | inconclusive | omnipha/linux-sm7635#240 | live display: DRM device reached, KMS active, DSI panel commands fail
 
@@ -46,4 +47,4 @@
 
 ## By month
 
-- [2026-10](records/index-2026-10.md) [159]
+- [2026-10](records/index-2026-10.md) [160]

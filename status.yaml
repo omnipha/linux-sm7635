@@ -3,8 +3,8 @@
 device: nothing-asteroids
 updated: 2026-10-31
 next_question: >-
-  All DT panel rails are enabled and DCS writes go out, but the panel never returns data and stays dark; the remaining change executes before SSH exists (bootloader panel handoff).
-active_issue: omnipha/linux-sm7635#240
+  The stock msm_drm closure now loads before SSH with a pre-SSH panel record; does the panel light from the bootloader handoff?
+active_issue: omnipha/linux-sm7635#243
 subsystems:
   boot:
     state: confirmed
@@ -20,7 +20,7 @@ subsystems:
     record: records/2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the.md
   display:
     state: partial
-    record: records/2026-10-31-173408-live-display-drm-kms-panel-command-gap.md
+    record: records/2026-10-31-210949-pre-ssh-panel-host-image.md
   cameras:
     state: untested
     record: null
@@ -48,10 +48,9 @@ attempted_shas:       # cold-start index only; the flash gate is device-op statu
   - fcb0ed91
   - fef03008        # init_boot, runs 52-57
 notes: >-
-  Run 84 verified the record-rotation pair 27c4d895 / da4651d8. Live display
-  diagnosis (#240, boot 07f16bc0) loaded the stock msm_drm closure from the
-  staged vendor_boot ramdisk: card0 and DSI-1 appear, the RM69220 VXN panel
-  binds and the KMS CRTC runs at 1080x2392@120, but DSI command transfers to
-  the panel fail and the backlight stays at zero, so no picture yet. The
-  remaining gap needs a change that executes before SSH exists. WLAN stays
-  down on this chain because regulatory.db is missing.
+  The #243 host pair `init_boot fed40c30` / `vendor_boot_b 1765381c` loads the
+  stock msm_drm closure before SSH and records card0/DSI-1, DCS/reset,
+  suspend-state and actual_brightness to the persistent boot record before
+  :22 exists. The #240 boundary is still the live-session baseline: DCS
+  writes accepted, reads empty, brightness zero. The physical boot decides
+  whether the bootloader handoff lights the glass.

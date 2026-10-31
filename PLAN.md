@@ -21,12 +21,11 @@ blocked by a measurement.
 - Step: Display works.
       Check: a picture is on the panel, driven by this kernel,
       and it is still there after a reboot.
-      The record rotation boots (run 84): staging, cutover and the
-      independent no-ack return are measured. What remains is the
-      live session measured the panel path: the stock msm_drm module
-      gives a DRM device and a running KMS pipeline, but DSI commands
-      to the RM69220 panel fail and the backlight stays off. The
-      remaining change executes before SSH exists.
+      The record rotation boots (run 84) and the live session measured
+      the panel path: rails on, DCS writes out, reads empty, glass dark.
+      The #243 successor pair loads the stock msm_drm closure before
+      SSH and records the panel boundary on the persistent boot record;
+      the physical boot decides the outcome.
 
 ## Then, in order
 

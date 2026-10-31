@@ -95,7 +95,7 @@ def replace_once(data, old, new):
 def current_scripts():
     original = {name: script_bytes(name) for name in ROOT_NAMES}
     expected = {
-        "pmos-root-contract.sh": "08a764cfb18d2d1e380228dfc1f3a0f65bde6568b90407bb74da36642eb68e8e",
+        "pmos-root-contract.sh": "732dadc125b4be6f05ed92deb6fbde4728c88e09cdc9998f556d9b95408e1021",
         "pmos-session-stage.sh": "be70a27305145cabc15b70469ae7a0434fab352fb9c3d681943f73d22b92938a",
         "pmos-pid1-transition.sh": "e1dba7135e2335c22aee0a5c0f4edb247fad5acd8100377cba3771abe5044e36",
         "pmos-pid1-guard.sh": "f72a68a4c3a0e9bb7e72aa88883dcc9087a684985f5af688e34ea13c0226d3ad",
@@ -202,7 +202,28 @@ fi
     stage = replace_once(stage,
         b'log "STAGED ok; enter with: ssh -p $PMOS_SSH_PORT root@172.16.42.2 (accept the printed key)"\n',
         b'log "STAGED ok; enter with: ssh -p $PMOS_SSH_PORT root@172.16.42.2 (accept the printed key)"\nrecord_stage "STAGED ok; enter with: ssh -p $PMOS_SSH_PORT root@172.16.42.2 (accept the printed key)"\n')
-    require(stage.count(b"record_stage") == 5 and stage.count(b"boot_record_open") == 1, DELTA_MSG)
+    stage = replace_once(stage,
+        b'''if [ "${PMOS_ROOT_KIND:-tmpfs}" = ext4 ]; then
+	boot_record_open "$PMOS_ROOT" || die 'boot record open refused'
+	boot_record_id || die 'boot record boot ID invalid'
+	boot_record_append "$PMOS_ROOT" "pmos-self-stage: diagnostic hold and :22 verified on boot $br_boot" || die 'boot record hold append refused'
+fi''',
+        b'''if [ "${PMOS_ROOT_KIND:-tmpfs}" = ext4 ]; then
+	boot_record_open "$PMOS_ROOT" || die 'boot record open refused'
+	boot_record_id || die 'boot record boot ID invalid'
+	boot_record_append "$PMOS_ROOT" "pmos-self-stage: diagnostic hold and :22 verified on boot $br_boot" || die 'boot record hold append refused'
+	[ -f /run/pre-ssh-panel.record ] && [ ! -L /run/pre-ssh-panel.record ] &&
+		[ "$($BB stat -c '%u:%a:%h' /run/pre-ssh-panel.record)" = 0:600:1 ] ||
+		die 'pre-SSH panel record missing or unsafe'
+	$BB cp /run/pre-ssh-panel.record /run/pmos-pre-ssh-panel.record ||
+		die 'cannot preserve pre-SSH panel record'
+	$BB chmod 600 /run/pmos-pre-ssh-panel.record || die 'cannot protect pre-SSH panel record'
+	panel_line=$($BB cat /run/pmos-pre-ssh-panel.record) || die 'pre-SSH panel record unreadable'
+	boot_record_append "$PMOS_ROOT" "$panel_line" || die 'pre-SSH panel record append refused'
+fi''')
+    require(stage.count(b"record_stage") == 5 and stage.count(b"boot_record_open") == 1 and
+            stage.count(b"/run/pre-ssh-panel.record") == 4 and
+            stage.count(b"/run/pmos-pre-ssh-panel.record") == 3, DELTA_MSG)
     found["pmos-session-stage.sh"] = stage
     radio = replace_once(found["pmos-radio-bringup.sh"],
         b"LEASE_SHA=86ebff20670faaa066685b1674f085a5e391676788a45a671f32a2c214fe3896",
@@ -498,7 +519,74 @@ $BB rm -f "$page" || exit 0
 '''.encode()
 
 
+def display_phase():
+    return b'''DISPLAY_MODULES='
+qti_battery_charger.ko
+panel_event_notifier.ko
+hwmon.ko
+qti_amoled_ecm.ko
+qseecom_proxy.ko
+smcinvoke_dlkm.ko
+hdcp_qseecom_dlkm.ko
+sync_fence.ko
+nt_display_notifier.ko
+llcc-qcom.ko
+msm_ext_display.ko
+drm_display_helper.ko
+gh_mem_notifier.ko
+gh_irq_lend.ko
+altmode-glink.ko
+fsa4480-i2c.ko
+qpnp-amoled-regulator.ko
+qcom-spmi-wled.ko
+msm_drm.ko
+'
+log 'display module load begin'
+for module in $DISPLAY_MODULES; do
+	if err=$(insmod "/lib/modules/$module" 2>&1); then
+		log "display module $module loaded"
+	else
+		log "display module $module failed: $err"
+	fi
+done
+log 'display module load end'
+dp_card0=0
+dp_dsi1=0
+dp_bl=none
+dp_suspend=clear
+dp_dcs=none
+dp_reset=none
+[ -d /sys/class/drm/card0 ] && dp_card0=1
+[ -d /sys/class/drm/card0-DSI-1 ] && dp_dsi1=1
+for bl in /sys/class/backlight/*; do
+	[ -e "$bl/actual_brightness" ] || continue
+	case "$bl" in *panel0-backlight*)
+		dp_bl=$(cat "$bl/actual_brightness" 2>/dev/null) || dp_bl=none
+		case "$dp_bl" in ''|*[!0-9]*) dp_bl=none;; esac;;
+	esac
+done
+/bin/busybox dmesg >/run/display-init.dmesg 2>/dev/null || true
+if /bin/busybox grep -q 'suspend state' /run/display-init.dmesg 2>/dev/null; then
+	dp_suspend=suspend-state
+fi
+if /bin/busybox grep -qE 'DSI_CMD_SET|dsi_panel_tx_cmd_set|failed to send DSI_CMD' /run/display-init.dmesg 2>/dev/null; then
+	dp_dcs=init-ran
+fi
+if /bin/busybox grep -qE 'dsi_panel.*reset|reset_gpio' /run/display-init.dmesg 2>/dev/null; then
+	dp_reset=seen
+fi
+panel_line="usb-init: pre-SSH panel card0=$dp_card0 dsi1=$dp_dsi1 dcs=$dp_dcs reset=$dp_reset suspend=$dp_suspend brightness=$dp_bl boot $(cat /proc/sys/kernel/random/boot_id 2>/dev/null)"
+log "$panel_line"
+(umask 077; printf '%s\\n' "$panel_line" >/run/pre-ssh-panel.record)
+chmod 600 /run/pre-ssh-panel.record
+
+'''
+
+
 def expected_init(original, found, blob):
+    anchor = b"mkdir -p /etc/dropbear /var/run\n"
+    original = replace_once(original, anchor, display_phase() + anchor)
+    require(display_phase() in original, INIT_MSG)
     marker = b"setsid cttyhack /bin/sh &\n"
     start = original.index(marker) + len(marker)
     end = original.index(b"setsid /bin/busybox sh /run/pmos-self-stage.sh >/dev/null 2>&1 &\n' >/dev/null 2>&1 &\n", start)
