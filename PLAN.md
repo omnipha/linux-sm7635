@@ -18,7 +18,7 @@ blocked by a measurement.
 
 ## Now
 
-- [ ] Display works.
+- Step: Display works.
       Check: a picture is on the panel, driven by this kernel,
       and it is still there after a reboot.
       First over the open SSH session: find why there is no DRM device,
