@@ -2,6 +2,7 @@
 
 ## Latest 10
 
+- [2026-10-31-055910-preflash-verifier-refusal](records/2026-10-31-055910-preflash-verifier-refusal.md) | boot run 76 | refuted | omnipha/linux-sm7635#223 | Run 76: host verifier refuses the cold-start pair before flash
 - [2026-10-31-054706-coldstart-host-free-radio-package](records/2026-10-31-054706-coldstart-host-free-radio-package.md) | boot | confirmed | omnipha/linux-sm7635#223 | Cold-start host-free radio package
 - [2026-10-31-044608-coldstart-installed-chain-host-boundary](records/2026-10-31-044608-coldstart-installed-chain-host-boundary.md) | boot | refuted | omnipha/linux-sm7635#223 | Cold-start installed-chain host boundary
 - [2026-10-31-040929-guard-rearm-run73](records/2026-10-31-040929-guard-rearm-run73.md) | boot | confirmed | omnipha/linux-sm7635#220 | Run 73: host-free guard rearm and recovery deadline
@@ -11,14 +12,13 @@
 - [2026-10-30-222652-run-71-device-native-rtc-poweroff-coldstart](records/2026-10-30-222652-run-71-device-native-rtc-poweroff-coldstart.md) | boot run 71 | refuted | omnipha/linux-sm7635#214 | Run 71: device-native RTC alarm does not power off the phone
 - [2026-10-30-212551-run-70-coldstart-host-free-power-boundary](records/2026-10-30-212551-run-70-coldstart-host-free-power-boundary.md) | boot run 70 | confirmed | omnipha/linux-sm7635#197 | Run 70: no host-free cold-start power path exists on VMWARE006
 - [2026-10-30-204752-run-69-bootloader-start-rescue](records/2026-10-30-204752-run-69-bootloader-start-rescue.md) | boot run 69 | confirmed | omnipha/linux-sm7635#204 | Run 69: bootloader start and slot-A rescue
-- [2026-10-30-203515-run-69-second-boot-guard-wlan](records/2026-10-30-203515-run-69-second-boot-guard-wlan.md) | boot run 69 | confirmed | omnipha/linux-sm7635#204 | Run 69: second-boot guard and WLAN
 
 ## By subsystem (latest 3, total in brackets)
 
-### boot [62]
+### boot [63]
+- [2026-10-31-055910-preflash-verifier-refusal](records/2026-10-31-055910-preflash-verifier-refusal.md) | boot run 76 | refuted | omnipha/linux-sm7635#223 | Run 76: host verifier refuses the cold-start pair before flash
 - [2026-10-31-054706-coldstart-host-free-radio-package](records/2026-10-31-054706-coldstart-host-free-radio-package.md) | boot | confirmed | omnipha/linux-sm7635#223 | Cold-start host-free radio package
 - [2026-10-31-044608-coldstart-installed-chain-host-boundary](records/2026-10-31-044608-coldstart-installed-chain-host-boundary.md) | boot | refuted | omnipha/linux-sm7635#223 | Cold-start installed-chain host boundary
-- [2026-10-31-040929-guard-rearm-run73](records/2026-10-31-040929-guard-rearm-run73.md) | boot | confirmed | omnipha/linux-sm7635#220 | Run 73: host-free guard rearm and recovery deadline
 
 ### modem [12]
 - [2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the](records/2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the.md) | modem run 55 | confirmed | omnipha/linux-sm7635#155 | Run-55 measured post-cutover modem hold past the EFS request (#155, 2026-10-29)
@@ -42,4 +42,4 @@
 
 ## By month
 
-- [2026-10](records/index-2026-10.md) [147]
+- [2026-10](records/index-2026-10.md) [148]

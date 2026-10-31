@@ -3,12 +3,12 @@
 device: nothing-asteroids
 updated: 2026-10-31
 next_question: >-
-  Does the one button-assisted cold start of the distinct host-free package reach persistent PID 1, radio and WLAN before the unchanged 160-second recovery deadline?
+  Why does the merged host verifier reject the distinct host-free pair before its one cold start?
 active_issue: omnipha/linux-sm7635#223
 subsystems:
   boot:
     state: partial
-    record: records/2026-10-31-054706-coldstart-host-free-radio-package.md
+    record: records/2026-10-31-055910-preflash-verifier-refusal.md
   ssh:
     state: partial
     record: records/2026-10-30-203515-run-69-second-boot-guard-wlan.md
@@ -42,7 +42,6 @@ attempted_shas:       # cold-start index only; the flash gate is device-op statu
   - fcb0ed91
   - fef03008        # init_boot, runs 52-57
 notes: >-
-  Host #223 built distinct becd3784 / adb47dc0 from the pinned persistent
-  root carrier. Guest keep, safe guard re-arm, and no-host radio staging are
-  packaged; independent no-ack recovery remains 160 s. No cold start or WLAN
-  success is claimed. The coordinator owns the one cold start; no session is open.
+  Run 76 refused becd3784 / adb47dc0 before flash because the merged verifier
+  fails INIT_MSG. Diagnostic boot d09ae982 proved the installed rescue chain;
+  fastboot is responsive. No cold start or candidate boot was measured.
