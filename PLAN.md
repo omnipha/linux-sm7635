@@ -23,9 +23,10 @@ blocked by a measurement.
       and it is still there after a reboot.
       The record rotation boots (run 84): staging, cutover and the
       independent no-ack return are measured. What remains is the
-      live session: over SSH, find why there is no DRM device, load
-      the stock module and firmware, and name the panel path. No
-      image answers the panel question.
+      live session measured the panel path: the stock msm_drm module
+      gives a DRM device and a running KMS pipeline, but DSI commands
+      to the RM69220 panel fail and the backlight stays off. The
+      remaining change executes before SSH exists.
 
 ## Then, in order
 
