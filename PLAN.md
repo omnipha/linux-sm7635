@@ -13,17 +13,17 @@ One active step, one active issue. Later steps are not pre-created issues.
 
 ## Active step
 
-- Step: strategist schedules the button-assisted cold start after verified run 73.
-- Issue: none until selected
-- Next: run 73 reached host-free PID 1 with an armed guard, then the designed
-  160-second deadline returned the device to fastboot. Rollback and rescue were
-  verified. #220 is closed. Do not perform cold start in this issue.
+- Step: record the installed-chain boundary before the button-assisted cold start.
+- Issue: omnipha/linux-sm7635#223
+- Next: the installed run-69 chain is the identity-preserving start, but it
+  cannot produce guest keep, safe guard re-arm, and no-host radio. No image
+  was built. The coordinator alone owns the one scheduled cold start.
 
 ## Next (ordered, not issues yet)
 
-1. Button-assisted cold start of the persistent root without USB host signals:
-   own /run/keep, guard and radio start, then MINDSTORMS and SSH without a
-   host push. Separate issue; blocked until the owner schedules it.
+1. Resolve the recorded run-69 pre-SSH gap before claiming a host-free cold
+   start: guest keep, safe guard re-arm, then radio without host ack/capture.
+   The coordinator owns the one scheduled button-assisted measurement.
 2. Display over the open SSH session: identify why /dev/dri is absent, load the
    measured stock module or firmware, and record the working recipe. Build one
    image only after that recipe is measured.
@@ -34,6 +34,7 @@ Reopen either only when a measurement shows it blocks the active step.
 
 ## Done (pointers, newest first)
 
+- Host #223: unchanged installed chain refuted for the full no-host cold-start sequence; no image built -> records/2026-10-31-044608-coldstart-installed-chain-host-boundary.md
 - Run 73: host-free guard rearm, postmarketOS PID 1, 160-s deadline return and exact rollback -> records/2026-10-31-040929-guard-rearm-run73.md
 - Host #220: persistent-root guard rearm image built and verified -> records/2026-10-31-034455-guard-rearm-host-image.md
 - Run 72: guest keep and persistent root reached; PID 1 refused on NO_ARMED, rollback verified -> records/2026-10-31-024827-run-72-guest-keep-partial-guard-unarmed.md

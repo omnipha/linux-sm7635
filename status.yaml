@@ -3,12 +3,12 @@
 device: nothing-asteroids
 updated: 2026-10-31
 next_question: >-
-  When separately scheduled, can a button-assisted cold start reach the verified persistent root without a host push?
-active_issue: null
+  Which successor, if any, resolves the installed run-69 pre-SSH gap before the separately scheduled button-assisted cold start?
+active_issue: omnipha/linux-sm7635#223
 subsystems:
   boot:
     state: partial
-    record: records/2026-10-31-040929-guard-rearm-run73.md
+    record: records/2026-10-31-044608-coldstart-installed-chain-host-boundary.md
   ssh:
     state: partial
     record: records/2026-10-30-203515-run-69-second-boot-guard-wlan.md
@@ -42,9 +42,8 @@ attempted_shas:       # cold-start index only; the flash gate is device-op statu
   - fcb0ed91
   - fef03008        # init_boot, runs 52-57
 notes: >-
-  Run 73 verified the image gate host-free: guest keep, self-stage,
-  persistent ext4 root, guard armed on the used root, switch_root, key-only
-  :2222 with postmarketOS PID 1, and the independent 160-s deadline returned
-  the device to fastboot with no host ack. Exact run-69 rollback and stock
-  rescue hashes verified. 3eeddb35 and 762566b7 are measured never-reflash.
-  Cold start remains a separate owner decision; no session is open.
+  Run 73 verified host-free PID 1 and the 160-s deadline, then rolled back
+  to installed 2f73c947 / f792174c. Host #223 refutes using that unchanged
+  chain for the full no-host-signal sequence: it lacks guest keep and safe
+  guard re-arm, and radio still waits for host ack/capture. No image was
+  built. The coordinator owns the one cold start; no session is open.

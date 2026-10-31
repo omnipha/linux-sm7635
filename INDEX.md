@@ -2,6 +2,7 @@
 
 ## Latest 10
 
+- [2026-10-31-044608-coldstart-installed-chain-host-boundary](records/2026-10-31-044608-coldstart-installed-chain-host-boundary.md) | boot | refuted | omnipha/linux-sm7635#223 | Cold-start installed-chain host boundary
 - [2026-10-31-040929-guard-rearm-run73](records/2026-10-31-040929-guard-rearm-run73.md) | boot | confirmed | omnipha/linux-sm7635#220 | Run 73: host-free guard rearm and recovery deadline
 - [2026-10-31-034455-guard-rearm-host-image](records/2026-10-31-034455-guard-rearm-host-image.md) | boot | confirmed | omnipha/linux-sm7635#220 | Guard rearm on persistent root: host fixture and image
 - [2026-10-31-024827-run-72-guest-keep-partial-guard-unarmed](records/2026-10-31-024827-run-72-guest-keep-partial-guard-unarmed.md) | boot run 72 | confirmed | omnipha/linux-sm7635#216 | Run 72: guest-owned keep reached, guard unarmed
@@ -11,14 +12,13 @@
 - [2026-10-30-204752-run-69-bootloader-start-rescue](records/2026-10-30-204752-run-69-bootloader-start-rescue.md) | boot run 69 | confirmed | omnipha/linux-sm7635#204 | Run 69: bootloader start and slot-A rescue
 - [2026-10-30-203515-run-69-second-boot-guard-wlan](records/2026-10-30-203515-run-69-second-boot-guard-wlan.md) | boot run 69 | confirmed | omnipha/linux-sm7635#204 | Run 69: second-boot guard and WLAN
 - [2026-10-30-195754-run-69-persistent-root-first-boot](records/2026-10-30-195754-run-69-persistent-root-first-boot.md) | boot run 69 | confirmed | omnipha/linux-sm7635#204 | Run 69: persistent root and first-boot WLAN
-- [2026-10-30-191204-root-contract-carrier-replay](records/2026-10-30-191204-root-contract-carrier-replay.md) | boot | confirmed | omnipha/linux-sm7635#204 | Root contract carrier replay
 
 ## By subsystem (latest 3, total in brackets)
 
-### boot [60]
+### boot [61]
+- [2026-10-31-044608-coldstart-installed-chain-host-boundary](records/2026-10-31-044608-coldstart-installed-chain-host-boundary.md) | boot | refuted | omnipha/linux-sm7635#223 | Cold-start installed-chain host boundary
 - [2026-10-31-040929-guard-rearm-run73](records/2026-10-31-040929-guard-rearm-run73.md) | boot | confirmed | omnipha/linux-sm7635#220 | Run 73: host-free guard rearm and recovery deadline
 - [2026-10-31-034455-guard-rearm-host-image](records/2026-10-31-034455-guard-rearm-host-image.md) | boot | confirmed | omnipha/linux-sm7635#220 | Guard rearm on persistent root: host fixture and image
-- [2026-10-31-024827-run-72-guest-keep-partial-guard-unarmed](records/2026-10-31-024827-run-72-guest-keep-partial-guard-unarmed.md) | boot run 72 | confirmed | omnipha/linux-sm7635#216 | Run 72: guest-owned keep reached, guard unarmed
 
 ### modem [12]
 - [2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the](records/2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the.md) | modem run 55 | confirmed | omnipha/linux-sm7635#155 | Run-55 measured post-cutover modem hold past the EFS request (#155, 2026-10-29)
@@ -42,4 +42,4 @@
 
 ## By month
 
-- [2026-10](records/index-2026-10.md) [145]
+- [2026-10](records/index-2026-10.md) [146]
