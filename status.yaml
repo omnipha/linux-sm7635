@@ -3,12 +3,12 @@
 device: nothing-asteroids
 updated: 2026-10-31
 next_question: >-
-  Does the acknowledged diagnostic boot commit the post-cutover PID 1 line and then return to fastboot with no ack?
-active_issue: omnipha/linux-sm7635#234
+  How should the per-boot record handle a persistent root that already carries a previous boot's record, so the cutover and no-ack return can be measured?
+active_issue: null
 subsystems:
   boot:
     state: partial
-    record: records/2026-10-31-110810-cutover-record-host-image.md
+    record: records/2026-10-31-115817-run-83-stale-record-open-refusal.md
   ssh:
     state: partial
     record: records/2026-10-30-203515-run-69-second-boot-guard-wlan.md
@@ -25,6 +25,8 @@ subsystems:
     state: untested
     record: null
 attempted_shas:       # cold-start index only; the flash gate is device-op status, not this file
+  - dd6ce74e        # init_boot_a, run 83; flashed once, never-reflash
+  - e7d55580        # vendor_boot_b, run 83; flashed once, never-reflash
   - a4ee7def        # init_boot_a, run 79; flashed once, never-reflash
   - 6e7c5a2e        # vendor_boot_b, run 79; flashed once, never-reflash
   - 3eeddb35        # init_boot_a, run 73; flashed once, never-reflash
@@ -44,9 +46,9 @@ attempted_shas:       # cold-start index only; the flash gate is device-op statu
   - fcb0ed91
   - fef03008        # init_boot, runs 52-57
 notes: >-
-  Host #234 built and verified the post-cutover record pair dd6ce74e / e7d55580.
-  The success line commits on the persistent root after the guard identity
-  checks; the refusal path keeps the reached lines plus a kernel-stamped FAIL
-  line. Run-79 timing shows the guard was ended about 42 s before its deadline,
-  and the delivered init has no re-entered arm tail. The measured outcome is
-  pending on the coordinator; #234 stays open.
+  Run 83 flashed and verified dd6ce74e / e7d55580 exactly, then stopped at
+  4.509 s: the persistent root still held the run-79 record, so the per-boot
+  record open refused before :2222 or cutover. No ack path and no no-ack return
+  were measured; the cutover hypotheses stay unfalsified. Rescue hashes were
+  exact and the measured pair is never-reflash. #234 is closed on this refusal;
+  stale-record handling and the unmeasured cutover boundaries need a successor.
