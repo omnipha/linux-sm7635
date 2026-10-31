@@ -1,14 +1,13 @@
 # Current measured state only. Limit 80 lines. No protocol text: link records.
 # Public claims: omnipha/ports devices/nothing-asteroids/device.yaml (updated separately).
 device: nothing-asteroids
-updated: 2026-10-31
+updated: 2026-11-01
 next_question: >-
-  Run 86 measured the pre-SSH load: same panel boundary as #240 (writes accepted,
-  command engine in suspend, reads empty, brightness zero, glass dark). The
-  bootloader-handoff hypothesis is refuted for the recovery-set msm_drm closure;
-  the next lever is the vendor_dlkm module variant or a supply state it alone
-  cannot reach.
-active_issue: omnipha/linux-sm7635#243
+  The vendor_dlkm msm_drm closure is byte-identical to the recovery-set ramdisk
+  modules run 86 loaded before SSH, so the module-set lever does not exist and
+  no successor pair was built. The remaining display lever is a supply/handoff
+  state the recovery kernel cannot reach; it needs a new single-variable decision.
+active_issue: omnipha/linux-sm7635#246
 subsystems:
   boot:
     state: confirmed
@@ -24,7 +23,7 @@ subsystems:
     record: records/2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the.md
   display:
     state: partial
-    record: records/2026-10-31-223356-run-86-pre-ssh-panel-same-boundary.md
+    record: records/2026-10-31-232439-vendor-dlkm-display-closure-identical.md
   cameras:
     state: untested
     record: null
@@ -54,10 +53,10 @@ attempted_shas:       # cold-start index only; the flash gate is device-op statu
   - fcb0ed91
   - fef03008        # init_boot, runs 52-57
 notes: >-
-  Run 86 (#243, pair fed40c30/1765381c) loaded the stock msm_drm closure in
-  the initramfs before SSH and recorded the panel state at 1.5 s; after one
-  SETCRTC the panel boundary is identical to #240: DCS writes accepted while
-  the command engine reports suspend, reads empty, actual_brightness 0, glass
-  dark. Outcome (d): the bootloader-handoff hypothesis is refuted for the
-  recovery-set closure; never reflash this pair. WLAN stays down on this chain
-  because regulatory.db is missing.
+  #246 measured the vendor_dlkm_a msm_drm closure read-only from the pinned
+  super dump: all 26 modules are byte-identical to the recovery-set ramdisk
+  copies run 86 loaded, same 6.1.78 vermagic, no vendor-only member, dsi-ctrl
+  compiled into msm_drm.ko in both. No second module variant exists, so no
+  image was built and the run-86 pair stays never-reflash. The remaining
+  display lever is a supply/handoff state the recovery kernel cannot reach.
+  WLAN stays down on this chain because regulatory.db is missing.

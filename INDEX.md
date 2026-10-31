@@ -2,6 +2,7 @@
 
 ## Latest 10
 
+- [2026-10-31-232439-vendor-dlkm-display-closure-identical](records/2026-10-31-232439-vendor-dlkm-display-closure-identical.md) | display | refuted | omnipha/linux-sm7635#246 | vendor_dlkm display closure is byte-identical to the recovery-set modules
 - [2026-10-31-223356-run-86-pre-ssh-panel-same-boundary](records/2026-10-31-223356-run-86-pre-ssh-panel-same-boundary.md) | display | refuted | omnipha/linux-sm7635#243 | Run 86: panel probed before SSH, same boundary as #240, glass dark
 - [2026-10-31-210949-pre-ssh-panel-host-image](records/2026-10-31-210949-pre-ssh-panel-host-image.md) | display | confirmed | omnipha/linux-sm7635#243 | Pre-SSH panel: host image for the bootloader-handoff test
 - [2026-10-31-180105-live-display-rails-enabled-dcs-readback-fails](records/2026-10-31-180105-live-display-rails-enabled-dcs-readback-fails.md) | display | inconclusive | omnipha/linux-sm7635#240 | live display: rails enabled, DCS writes accepted, readback fails
@@ -11,7 +12,6 @@
 - [2026-10-31-115817-run-83-stale-record-open-refusal](records/2026-10-31-115817-run-83-stale-record-open-refusal.md) | boot run 83 | refuted | omnipha/linux-sm7635#234 | Run 83: stale boot record refused before the cutover
 - [2026-10-31-110810-cutover-record-host-image](records/2026-10-31-110810-cutover-record-host-image.md) | boot | confirmed | omnipha/linux-sm7635#234 | Post-cutover record: host fixture and successor pair
 - [2026-10-31-095935-run-81-repeated-preflash-refusal](records/2026-10-31-095935-run-81-repeated-preflash-refusal.md) | boot run 81 | refuted | omnipha/agents#77 | Run 81: repeated pre-flash refusal of the stale artifact pair, no write
-- [2026-10-31-094401-run-79-record-readable-guard-deadline-unobserved](records/2026-10-31-094401-run-79-record-readable-guard-deadline-unobserved.md) | boot run 79 | inconclusive | omnipha/linux-sm7635#230 | Run 79: record readable, post-cutover milestones unmeasured
 
 ## By subsystem (latest 3, total in brackets)
 
@@ -20,10 +20,10 @@
 - [2026-10-31-153706-record-rotation-host-image](records/2026-10-31-153706-record-rotation-host-image.md) | boot | confirmed | omnipha/linux-sm7635#237 | Record rotation: host fix, fixtures and successor pair
 - [2026-10-31-115817-run-83-stale-record-open-refusal](records/2026-10-31-115817-run-83-stale-record-open-refusal.md) | boot run 83 | refuted | omnipha/linux-sm7635#234 | Run 83: stale boot record refused before the cutover
 
-### display [4]
+### display [5]
+- [2026-10-31-232439-vendor-dlkm-display-closure-identical](records/2026-10-31-232439-vendor-dlkm-display-closure-identical.md) | display | refuted | omnipha/linux-sm7635#246 | vendor_dlkm display closure is byte-identical to the recovery-set modules
 - [2026-10-31-223356-run-86-pre-ssh-panel-same-boundary](records/2026-10-31-223356-run-86-pre-ssh-panel-same-boundary.md) | display | refuted | omnipha/linux-sm7635#243 | Run 86: panel probed before SSH, same boundary as #240, glass dark
 - [2026-10-31-210949-pre-ssh-panel-host-image](records/2026-10-31-210949-pre-ssh-panel-host-image.md) | display | confirmed | omnipha/linux-sm7635#243 | Pre-SSH panel: host image for the bootloader-handoff test
-- [2026-10-31-180105-live-display-rails-enabled-dcs-readback-fails](records/2026-10-31-180105-live-display-rails-enabled-dcs-readback-fails.md) | display | inconclusive | omnipha/linux-sm7635#240 | live display: rails enabled, DCS writes accepted, readback fails
 
 ### modem [12]
 - [2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the](records/2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the.md) | modem run 55 | confirmed | omnipha/linux-sm7635#155 | Run-55 measured post-cutover modem hold past the EFS request (#155, 2026-10-29)
@@ -47,4 +47,4 @@
 
 ## By month
 
-- [2026-10](records/index-2026-10.md) [161]
+- [2026-10](records/index-2026-10.md) [162]

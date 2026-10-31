@@ -25,9 +25,10 @@ blocked by a measurement.
       stayed dark with the same boundary as the #240 live session:
       DCS writes accepted, command engine in suspend, reads empty,
       actual_brightness zero. The bootloader-handoff hypothesis is
-      refuted for the recovery-set module closure. The next lever is
-      the vendor_dlkm module variant or a supply state the recovery
-      kernel cannot reach.
+      refuted for the recovery-set module closure, and the vendor_dlkm
+      module variant is not a separate lever: its 26-module msm_drm
+      closure is byte-identical to the recovery-set copies. The next
+      lever is a supply state the recovery kernel cannot reach.
 
 ## Then, in order
 
