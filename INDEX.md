@@ -2,6 +2,7 @@
 
 ## Latest 10
 
+- [2026-10-31-024827-run-72-guest-keep-partial-guard-unarmed](records/2026-10-31-024827-run-72-guest-keep-partial-guard-unarmed.md) | boot run 72 | confirmed | omnipha/linux-sm7635#216 | Run 72: guest-owned keep reached, guard unarmed
 - [2026-10-31-015710-guest-owned-keep-host-image](records/2026-10-31-015710-guest-owned-keep-host-image.md) | boot | confirmed | omnipha/linux-sm7635#216 | Guest-owned keep host image
 - [2026-10-30-222652-run-71-device-native-rtc-poweroff-coldstart](records/2026-10-30-222652-run-71-device-native-rtc-poweroff-coldstart.md) | boot run 71 | refuted | omnipha/linux-sm7635#214 | Run 71: device-native RTC alarm does not power off the phone
 - [2026-10-30-212551-run-70-coldstart-host-free-power-boundary](records/2026-10-30-212551-run-70-coldstart-host-free-power-boundary.md) | boot run 70 | confirmed | omnipha/linux-sm7635#197 | Run 70: no host-free cold-start power path exists on VMWARE006
@@ -11,14 +12,13 @@
 - [2026-10-30-191204-root-contract-carrier-replay](records/2026-10-30-191204-root-contract-carrier-replay.md) | boot | confirmed | omnipha/linux-sm7635#204 | Root contract carrier replay
 - [2026-10-30-184802-init-boot-root-contract-envelope-overflow](records/2026-10-30-184802-init-boot-root-contract-envelope-overflow.md) | boot | refuted | omnipha/linux-sm7635#204 | Init_boot root-contract envelope overflow
 - [2026-10-30-183749-root-contract-vendor-boot-carrier](records/2026-10-30-183749-root-contract-vendor-boot-carrier.md) | boot | confirmed | omnipha/linux-sm7635#204 | Root contract on vendor_boot_b
-- [2026-10-30-170925-run-67-persistent-root-self-stage-absent](records/2026-10-30-170925-run-67-persistent-root-self-stage-absent.md) | boot run 67 | refuted | omnipha/linux-sm7635#197 | Run 67: persistent-root self-stage did not start
 
 ## By subsystem (latest 3, total in brackets)
 
-### boot [57]
+### boot [58]
+- [2026-10-31-024827-run-72-guest-keep-partial-guard-unarmed](records/2026-10-31-024827-run-72-guest-keep-partial-guard-unarmed.md) | boot run 72 | confirmed | omnipha/linux-sm7635#216 | Run 72: guest-owned keep reached, guard unarmed
 - [2026-10-31-015710-guest-owned-keep-host-image](records/2026-10-31-015710-guest-owned-keep-host-image.md) | boot | confirmed | omnipha/linux-sm7635#216 | Guest-owned keep host image
 - [2026-10-30-222652-run-71-device-native-rtc-poweroff-coldstart](records/2026-10-30-222652-run-71-device-native-rtc-poweroff-coldstart.md) | boot run 71 | refuted | omnipha/linux-sm7635#214 | Run 71: device-native RTC alarm does not power off the phone
-- [2026-10-30-212551-run-70-coldstart-host-free-power-boundary](records/2026-10-30-212551-run-70-coldstart-host-free-power-boundary.md) | boot run 70 | confirmed | omnipha/linux-sm7635#197 | Run 70: no host-free cold-start power path exists on VMWARE006
 
 ### modem [12]
 - [2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the](records/2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the.md) | modem run 55 | confirmed | omnipha/linux-sm7635#155 | Run-55 measured post-cutover modem hold past the EFS request (#155, 2026-10-29)
@@ -42,4 +42,4 @@
 
 ## By month
 
-- [2026-10](records/index-2026-10.md) [142]
+- [2026-10](records/index-2026-10.md) [143]
