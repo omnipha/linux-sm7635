@@ -3,12 +3,11 @@
 device: nothing-asteroids
 updated: 2026-11-01
 next_question: >-
-  The run-86 cmdline already carried the BOE panel token, but bare insmod never
-  passed it to msm_drm.ko, so the driver took the _vxn default-panel phandle.
-  The successor pair passes the stock BOE token as the msm_drm insmod option;
-  the pre-SSH record names the bound node. Whether that lights the glass is
-  the pending physical phase of #248.
-active_issue: omnipha/linux-sm7635#248
+  Run 88 applied every measured #240 lever on the BOE-bound chain and kept
+  the same dark-glass boundary. The next single variable is pre-SSH panel
+  power-on/reset before the cont-splash handoff, or a supply state this
+  userspace cannot reach; no successor issue is invented here.
+active_issue: null
 subsystems:
   boot:
     state: confirmed
@@ -24,13 +23,13 @@ subsystems:
     record: records/2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the.md
   display:
     state: partial
-    record: records/2026-11-01-004839-boe-panel-node-host-image.md
+    record: records/2026-11-01-021249-boe-bound-live-rails-reset-dcs-glass-dark.md
   cameras:
     state: untested
     record: null
 attempted_shas:       # cold-start index only; the flash gate is device-op status, not this file
-  - f9449ba5        # init_boot_a, #248 host pair; not yet flashed
-  - a71b3f5f        # vendor_boot_b, #248 host pair; not yet flashed
+  - f9449ba5        # init_boot_a, #248 pair; flashed once run 87, never-reflash
+  - a71b3f5f        # vendor_boot_b, #248 pair; flashed once run 87, never-reflash
   - fed40c30        # init_boot_a, run 86; flashed once, never-reflash
   - 1765381c        # vendor_boot_b, run 86; flashed once, never-reflash
   - 27c4d895        # init_boot_a, run 84; flashed once, never-reflash
@@ -56,11 +55,10 @@ attempted_shas:       # cold-start index only; the flash gate is device-op statu
   - fcb0ed91
   - fef03008        # init_boot, runs 52-57
 notes: >-
-  #248 host pair passes the stock BOE token
-  (dsi_display0=qcom,mdss_dsi_rm69220_fhd_plus_120hz_vid_boe:) as the single
-  insmod option of msm_drm.ko in the otherwise unchanged run-86 pre-SSH display
-  phase, and the pre-SSH record names the node actually bound. The pair is
-  init_boot f9449ba5 / vendor_boot_b a71b3f5f, fits both approved carriers, and
-  the verifier refuses the run-84 and run-86 pairs. Not yet flashed; the glass
-  result is the pending physical phase. WLAN stays down on this chain because
-  regulatory.db is missing.
+  Run 88 (boot 5fea620d) measured the BOE-bound chain live: DSI-1 at
+  1080x2392, rails enabled, reset GPIO 12 claimed and power-cycled, extdvdd
+  GPIO 161 held high, DCS 0x11/0x29 accepted (last_cmd_tx_sts 0x1), reads
+  empty, actual_brightness 0, glass dark. The BOE and _vxn DT nodes name the
+  same rails, reset GPIO and sequence, so node selection is refuted. The pair
+  stays never-reflash. WLAN stays down on this chain because regulatory.db is
+  missing.

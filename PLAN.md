@@ -21,17 +21,16 @@ blocked by a measurement.
 - Step: Display works.
       Check: a picture is on the panel, driven by this kernel,
       and it is still there after a reboot.
-      Run 86 loaded the stock msm_drm closure before SSH and the glass
-      stayed dark with the same boundary as the #240 live session:
-      DCS writes accepted, command engine in suspend, reads empty,
-      actual_brightness zero. The bootloader-handoff hypothesis is
-      refuted for the recovery-set module closure, and the vendor_dlkm
-      module variant is not a separate lever: its 26-module msm_drm
-      closure is byte-identical to the recovery-set copies. The one
-      remaining difference is the panel node: stock binds the BOE node
-      while bare insmod left the driver on the _vxn default. #248 passes
-      the stock BOE token as the msm_drm insmod option and records the
-      bound node; the glass result is the pending physical phase.
+      Run 88 exercised the BOE-bound chain live
+      (records/2026-11-01-021249-boe-bound-live-rails-reset-dcs-glass-dark.md):
+      rails enabled, reset GPIO 12 claimed and power-cycled, extdvdd
+      GPIO 161 driven high, DCS 0x11/0x29 accepted. Reads stayed empty
+      and actual_brightness zero; the glass stayed dark. BOE and _vxn
+      DT nodes name the same rails, reset GPIO and sequence, so panel
+      node selection is refuted as the remaining lever. No picture means
+      no reboot check. The next single variable is pre-SSH panel
+      power-on/reset before the cont-splash handoff or a supply state
+      this userspace cannot reach; no successor issue is invented here.
 
 ## Then, in order
 

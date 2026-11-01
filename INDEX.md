@@ -2,6 +2,7 @@
 
 ## Latest 10
 
+- [2026-11-01-021249-boe-bound-live-rails-reset-dcs-glass-dark](records/2026-11-01-021249-boe-bound-live-rails-reset-dcs-glass-dark.md) | display run 88 | refuted | omnipha/linux-sm7635#251 | BOE-bound live session: rails, reset and DCS exercised, glass stays dark
 - [2026-11-01-010622-boe-panel-node-bound-glass-dark](records/2026-11-01-010622-boe-panel-node-bound-glass-dark.md) | display run 87 | refuted | omnipha/linux-sm7635#248 | BOE node selected and bound, glass stays dark: node selection refuted
 - [2026-11-01-004839-boe-panel-node-host-image](records/2026-11-01-004839-boe-panel-node-host-image.md) | display | confirmed | omnipha/linux-sm7635#248 | BOE panel node: host image for the single-variable node-selection test
 - [2026-10-31-232439-vendor-dlkm-display-closure-identical](records/2026-10-31-232439-vendor-dlkm-display-closure-identical.md) | display | refuted | omnipha/linux-sm7635#246 | vendor_dlkm display closure is byte-identical to the recovery-set modules
@@ -11,7 +12,6 @@
 - [2026-10-31-173408-live-display-drm-kms-panel-command-gap](records/2026-10-31-173408-live-display-drm-kms-panel-command-gap.md) | display | inconclusive | omnipha/linux-sm7635#240 | live display: DRM device reached, KMS active, DSI panel commands fail
 - [2026-10-31-162218-run-84-record-rotation-cutover-noack-return](records/2026-10-31-162218-run-84-record-rotation-cutover-noack-return.md) | boot run 84 | confirmed | omnipha/linux-sm7635#237 | run 84: record rotation boots, cutover acks, no-ack return is independent
 - [2026-10-31-153706-record-rotation-host-image](records/2026-10-31-153706-record-rotation-host-image.md) | boot | confirmed | omnipha/linux-sm7635#237 | Record rotation: host fix, fixtures and successor pair
-- [2026-10-31-115817-run-83-stale-record-open-refusal](records/2026-10-31-115817-run-83-stale-record-open-refusal.md) | boot run 83 | refuted | omnipha/linux-sm7635#234 | Run 83: stale boot record refused before the cutover
 
 ## By subsystem (latest 3, total in brackets)
 
@@ -20,10 +20,10 @@
 - [2026-10-31-153706-record-rotation-host-image](records/2026-10-31-153706-record-rotation-host-image.md) | boot | confirmed | omnipha/linux-sm7635#237 | Record rotation: host fix, fixtures and successor pair
 - [2026-10-31-115817-run-83-stale-record-open-refusal](records/2026-10-31-115817-run-83-stale-record-open-refusal.md) | boot run 83 | refuted | omnipha/linux-sm7635#234 | Run 83: stale boot record refused before the cutover
 
-### display [7]
+### display [8]
+- [2026-11-01-021249-boe-bound-live-rails-reset-dcs-glass-dark](records/2026-11-01-021249-boe-bound-live-rails-reset-dcs-glass-dark.md) | display run 88 | refuted | omnipha/linux-sm7635#251 | BOE-bound live session: rails, reset and DCS exercised, glass stays dark
 - [2026-11-01-010622-boe-panel-node-bound-glass-dark](records/2026-11-01-010622-boe-panel-node-bound-glass-dark.md) | display run 87 | refuted | omnipha/linux-sm7635#248 | BOE node selected and bound, glass stays dark: node selection refuted
 - [2026-11-01-004839-boe-panel-node-host-image](records/2026-11-01-004839-boe-panel-node-host-image.md) | display | confirmed | omnipha/linux-sm7635#248 | BOE panel node: host image for the single-variable node-selection test
-- [2026-10-31-232439-vendor-dlkm-display-closure-identical](records/2026-10-31-232439-vendor-dlkm-display-closure-identical.md) | display | refuted | omnipha/linux-sm7635#246 | vendor_dlkm display closure is byte-identical to the recovery-set modules
 
 ### modem [12]
 - [2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the](records/2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the.md) | modem run 55 | confirmed | omnipha/linux-sm7635#155 | Run-55 measured post-cutover modem hold past the EFS request (#155, 2026-10-29)
@@ -47,5 +47,5 @@
 
 ## By month
 
-- [2026-11](records/index-2026-11.md) [2]
+- [2026-11](records/index-2026-11.md) [3]
 - [2026-10](records/index-2026-10.md) [162]
