@@ -17,8 +17,7 @@ blocked by a measurement.
 
 ## Now
 
-- [ ] WLAN works on every boot of the installed chain, without a
-      host-run recipe.
+- Step: WLAN works on every boot of the installed chain, without a host-run recipe.
       Check: a fresh boot brings the radio chain up by itself, wlan0
       appears, associates, gets an address and reaches the internet;
       a second boot repeats all of it.
