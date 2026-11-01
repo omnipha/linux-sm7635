@@ -27,8 +27,11 @@ blocked by a measurement.
       actual_brightness zero. The bootloader-handoff hypothesis is
       refuted for the recovery-set module closure, and the vendor_dlkm
       module variant is not a separate lever: its 26-module msm_drm
-      closure is byte-identical to the recovery-set copies. The next
-      lever is a supply state the recovery kernel cannot reach.
+      closure is byte-identical to the recovery-set copies. The one
+      remaining difference is the panel node: stock binds the BOE node
+      while bare insmod left the driver on the _vxn default. #248 passes
+      the stock BOE token as the msm_drm insmod option and records the
+      bound node; the glass result is the pending physical phase.
 
 ## Then, in order
 

@@ -431,6 +431,26 @@ def self_test(init_image, carrier, stock_init, base_image, stock_carrier, curren
     bad("malformed carrier header", CARRIER_MSG, init_image, bytes(mutated))
     bad("malformed carrier bundle", INIT_MSG, source={
         **current, "pmos-root-contract.sh": current["pmos-root-contract.sh"] + b"\n#\n"})
+    phase = builder.display_phase()
+    require(phase.count(b"dsi_display0=qcom,mdss_dsi_rm69220_fhd_plus_120hz_vid_boe:") == 1 and
+            b"dsi_display0=qcom,mdss_dsi_rm69220_fhd_plus_120hz_vid_vxn:" not in phase and
+            phase.count(b"pre-SSH panel node=$dp_node ") == 1 and
+            phase.count(b"Successfully bind display panel 'qcom,mdss_dsi_rm69220_fhd_plus_120hz_vid_boe ") == 1 and
+            phase.count(b"Successfully bind display panel 'qcom,mdss_dsi_rm69220_fhd_plus_120hz_vid_vxn ") == 1,
+            INIT_MSG)
+    bad("BOE panel option removed", INIT_MSG, with_init(launch.replace(
+        b"dsi_display0=qcom,mdss_dsi_rm69220_fhd_plus_120hz_vid_boe:", b"", 1)))
+    bad("BOE panel option replaced by vxn", INIT_MSG, with_init(launch.replace(
+        b"dsi_display0=qcom,mdss_dsi_rm69220_fhd_plus_120hz_vid_boe:",
+        b"dsi_display0=qcom,mdss_dsi_rm69220_fhd_plus_120hz_vid_vxn:", 1)))
+    bad("bound-node record field removed", INIT_MSG, with_init(launch.replace(
+        b"pre-SSH panel node=$dp_node ", b"pre-SSH panel ", 1)))
+    bad("bound-node record validation removed", INIT_MSG, source={
+        **current, "pmos-root-contract.sh": current["pmos-root-contract.sh"].replace(
+            b"/^usb-init: pre-SSH panel node=(boe|vxn|none) card0=",
+            b"/^usb-init: pre-SSH panel card0=", 1)})
+    bad("BOE option passed to every module", INIT_MSG, with_init(launch.replace(
+        b'\t[ "$module" = msm_drm.ko ] &&\n', b"\t:\n", 1)))
     for value in refused():
         require(value != digest and value != carrier_digest, SHA_MSG)
     print(f"persistent-root negative mutations: OK; {len(refused())} refused image hashes; "
