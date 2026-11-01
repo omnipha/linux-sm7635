@@ -41,14 +41,18 @@ and nothing starts the radio.
 
 ## Next single variable
 
-Run 93 (#261, records/2026-11-01-151916-run93-postack-mountinfo-matches-fixture.md):
-live post-cutover `/proc/1/mountinfo` measured — exactly one `sda13`/`8:13`
-mount at `/`, no second same-partition mount, no `/vendor/firmware_mnt`
-leftover. The unchanged contract accepts the captured table (now a fixture);
-the mount-info divergence hypothesis is refuted. Next single variable: the
-non-mount contract inputs at self-post time — the live `/sys/class/block`
-PARTNAME walk, the guest `/dev/block/sda13` node stat and `blockdev` size —
-captured read-only post-ack, or an instrumented self-post failure exit point.
+Run 94 (#263, records/2026-11-01-165231-run94-nonmount-inputs-all-pass.md):
+the non-mount contract inputs measured live post-ack — the full 146-device
+`/sys/class/block` PARTNAME walk (exactly one `userdata`, `sda13`), the real
+`/dev/block/sda13` block node (0400, 8:13, 471526808 sectors), guest
+`blockdev --getsize64` 241421725696, no `ROOT_CONTRACT_` env (defaults apply)
+— all PASS the unchanged contract on host replay (now fixtures). The acked
+guard shape (armed+accepted, no nonce/ack) also reconciles the run-93 probe
+discrepancy. H1 is eliminated for every post-ack-observable input: the run-90
+append refusal lives in self-post-time state (run 90 was pre-ack with an
+armed unacked guard). Next single variable: dossier step 3 — an instrumented
+self-post failure exit point (guard state at self-post time), not any check
+change.
 
 ## Order (binding)
 
