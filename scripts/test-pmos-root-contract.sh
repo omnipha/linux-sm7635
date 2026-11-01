@@ -538,6 +538,38 @@ $BB mkdir -m 700 /run/switched
 $BB printf '/dev/block/sda13 / ext4 rw,relatime,noload 0 0\n' > /run/switched/mounts
 $BB printf '91 1 %s / / rw,relatime - ext4 /dev/block/sda13 rw,noload\n' "$MAIN_NUMS" > /run/switched/mountinfo
 root_contract_switched_root /run/switched/mounts /run/switched/mountinfo && [ "$ROOT_CONTRACT_KIND" = ext4 ] && [ "$ROOT_CONTRACT_SIZE" = 241421725696 ] || fail 'switched ext4 userdata root rejected'
+
+$BB mkdir -p /run/run90
+$BB cat > /run/run90/mounts <<'EOF'
+/dev/block/sda13 / ext4 rw,relatime,norecovery 0 0
+proc /proc proc rw,nosuid,nodev,noexec,relatime 0 0
+sysfs /sys sysfs rw,nosuid,nodev,noexec,relatime 0 0
+tmpfs /run tmpfs rw,nosuid,nodev,size=8192k,mode=700 0 0
+tmpfs /dev tmpfs rw,relatime,size=1024k 0 0
+devpts /dev/pts devpts rw,relatime,mode=620,ptmxmode=666 0 0
+configfs /sys/kernel/config configfs rw,nosuid,nodev,noexec,relatime 0 0
+EOF
+$BB cat > /run/run90/mountinfo <<EOF
+41 1 $MAIN_NUMS / / rw,relatime - ext4 /dev/block/sda13 rw,norecovery
+42 41 0:5 / /proc rw,nosuid,nodev,noexec,relatime - proc proc rw
+43 41 0:6 / /sys rw,nosuid,nodev,noexec,relatime - sysfs sysfs rw
+44 41 0:7 / /run rw,nosuid,nodev - tmpfs tmpfs rw,size=8192k,mode=700
+45 41 0:8 / /dev rw,relatime - tmpfs tmpfs rw,size=1024k
+46 45 0:9 / /dev/pts rw,relatime - devpts devpts rw,mode=620,ptmxmode=666
+47 43 0:10 / /sys/kernel/config rw,nosuid,nodev,noexec,relatime - configfs configfs rw
+EOF
+root_contract_switched_root /run/run90/mounts /run/run90/mountinfo ||
+	fail 'run-90 post-cutover fixture (single rw,relatime,norecovery sda13 root) rejected'
+[ "$ROOT_CONTRACT_KIND" = ext4 ] && [ "$ROOT_CONTRACT_NODE" = /dev/block/sda13 ] &&
+	[ "$ROOT_CONTRACT_SIZE" = 241421725696 ] && [ "$ROOT_CONTRACT_OPTS" = rw,relatime,norecovery ] ||
+	fail 'run-90 post-cutover fixture identity mismatch'
+$BB printf 'PARTNAME=userdata\n' > /sys/class/block/sda6/uevent
+root_contract_switched_root /run/run90/mounts /run/run90/mountinfo &&
+	fail 'switched root accepted with two userdata PARTNAME blocks'
+$BB printf 'PARTNAME=super\n' > /sys/class/block/sda6/uevent
+$BB printf '48 41 %s /vendor/firmware_mnt /vendor/firmware_mnt rw,relatime - ext4 /dev/block/sda13 rw,norecovery\n' "$MAIN_NUMS" >> /run/run90/mountinfo
+root_contract_switched_root /run/run90/mounts /run/run90/mountinfo &&
+	fail 'switched root with a second same-partition mount accepted'
 $BB rm /dev/block/sda13
 $BB printf '471526809\n' > /sys/class/block/sda13/size
 root_contract_switched_root /run/switched/mounts /run/switched/mountinfo && fail 'switched one-byte-oversize userdata accepted'
