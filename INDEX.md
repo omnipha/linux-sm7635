@@ -2,6 +2,7 @@
 
 ## Latest 10
 
+- [2026-11-01-123812-coordinator-preack-window-missed](records/2026-11-01-123812-coordinator-preack-window-missed.md) | wlan run 91 run 91 | inconclusive | omnipha/linux-sm7635#256 | coordinator preack window missed
 - [2026-11-01-120601-host-run90-switched-root-fixture-passes](records/2026-11-01-120601-host-run90-switched-root-fixture-passes.md) | wlan | confirmed | omnipha/linux-sm7635#256 | Host run-90 switched-root fixture passes; live divergence needs /proc/1/mountinfo
 - [2026-11-01-104332-preack-selfpost-record-append-refused](records/2026-11-01-104332-preack-selfpost-record-append-refused.md) | wlan | inconclusive | omnipha/linux-sm7635#253 | Pre-ack pmos-self-post refuses before any radio stage (boot e64091d8, run 90)
 - [2026-11-01-101915-coordinator-handoff-window-too-short](records/2026-11-01-101915-coordinator-handoff-window-too-short.md) | wlan run 89 | inconclusive | 253 | coordinator handoff window too short
@@ -11,7 +12,6 @@
 - [2026-10-31-232439-vendor-dlkm-display-closure-identical](records/2026-10-31-232439-vendor-dlkm-display-closure-identical.md) | display | refuted | omnipha/linux-sm7635#246 | vendor_dlkm display closure is byte-identical to the recovery-set modules
 - [2026-10-31-223356-run-86-pre-ssh-panel-same-boundary](records/2026-10-31-223356-run-86-pre-ssh-panel-same-boundary.md) | display | refuted | omnipha/linux-sm7635#243 | Run 86: panel probed before SSH, same boundary as #240, glass dark
 - [2026-10-31-210949-pre-ssh-panel-host-image](records/2026-10-31-210949-pre-ssh-panel-host-image.md) | display | confirmed | omnipha/linux-sm7635#243 | Pre-SSH panel: host image for the bootloader-handoff test
-- [2026-10-31-180105-live-display-rails-enabled-dcs-readback-fails](records/2026-10-31-180105-live-display-rails-enabled-dcs-readback-fails.md) | display | inconclusive | omnipha/linux-sm7635#240 | live display: rails enabled, DCS writes accepted, readback fails
 
 ## By subsystem (latest 3, total in brackets)
 
@@ -45,7 +45,10 @@
 - [2026-11-01-104332-preack-selfpost-record-append-refused](records/2026-11-01-104332-preack-selfpost-record-append-refused.md) | wlan | inconclusive | omnipha/linux-sm7635#253 | Pre-ack pmos-self-post refuses before any radio stage (boot e64091d8, run 90)
 - [2026-11-01-101915-coordinator-handoff-window-too-short](records/2026-11-01-101915-coordinator-handoff-window-too-short.md) | wlan run 89 | inconclusive | 253 | coordinator handoff window too short
 
+### wlan run 91 [1]
+- [2026-11-01-123812-coordinator-preack-window-missed](records/2026-11-01-123812-coordinator-preack-window-missed.md) | wlan run 91 run 91 | inconclusive | omnipha/linux-sm7635#256 | coordinator preack window missed
+
 ## By month
 
-- [2026-11](records/index-2026-11.md) [6]
+- [2026-11](records/index-2026-11.md) [7]
 - [2026-10](records/index-2026-10.md) [162]
