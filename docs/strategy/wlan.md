@@ -29,6 +29,9 @@ Updated with each measured run, merged like any record.
 - 2026-11-01: manual modem start outside the pinned scripts crashed the
   kernel to QUSB 05c6:900e (no writes involved). Never repeat; the
   scripted gates exist exactly for this.
+- Runs 89/91/92: dispatch-race losses around the 45–85 s pre-ack window
+  (capture late, or worker never dispatched); zero new WLAN evidence.
+  Never repeat that pattern.
 
 ## Current explanation
 
@@ -38,16 +41,28 @@ and nothing starts the radio.
 
 ## Next single variable
 
-Host-only #256 fixture (records/2026-11-01-120601-host-run90-switched-root-fixture-passes.md):
+Live PID 1 mountinfo. Host-only #256 fixture
+(records/2026-11-01-120601-host-run90-switched-root-fixture-passes.md):
 the pinned contract ACCEPTS the exact run-90 post-cutover state — the live
-refusal is not reproducible host-side, so the next single variable is the live
-PID 1 mountinfo itself. In the live window: capture `cat /proc/1/mountinfo`
-before re-invoking the pinned `pmos-self-post.sh` with
-`PMOS_ROOT_CONTRACT=/run/pid1-guard/root-contract.sh`, diff against the host
-fixture, and fix only the measured divergence (likely a second sda13 mount
-invisible in /proc/1/mounts). Only if the append then completes and the radio
-chain works pre-ack, record the recipe and integrate exactly this into one
-image. One boot per change.
+refusal is not host-reproducible.
+
+## Order (binding)
+
+1. Post-ack session read, no window pressure: on the next open session read
+   `/proc/1/mountinfo`, `/proc/1/mounts` and the staged contract paths
+   (`/run/pmos-root-contract.sh`, `/run/pid1-guard/root-contract.sh`).
+   An ack changes no mount; this read needs no pre-ack window.
+2. Diff against the #256/#257 fixture; name the one diverging check or the
+   missing staging path. Fix it in the repo scripts; verify against the
+   fixture family. Host-only, no boot.
+3. Validate without a dispatch race: stage the fixed chain on the persistent
+   root (if init restages it from the boot image, that fix goes into the one
+   image instead), pre-arm the `:2222` capture, one guest reboot. The
+   pre-armed capture observes the pre-ack state; no worker races the
+   unacknowledged guard.
+4. Exactly one image carries the measured working chain. Acceptance per
+   PLAN.md: two fresh boots, radio chain self-starts, wlan0 associates,
+   address, DNS, internet. No host recipe.
 
 ## Acceptance (from PLAN.md)
 
@@ -57,4 +72,5 @@ internet; a second boot repeats all of it. No host-run recipe.
 ## Not this
 
 - No manual remoteproc or radio writes outside the pinned scripts.
+- No worker-in-window pre-ack probes; a pre-armed capture observes pre-ack state.
 - No image for a question a live session can answer.
