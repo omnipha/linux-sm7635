@@ -3,11 +3,13 @@
 device: nothing-asteroids
 updated: 2026-11-01
 next_question: >-
-  Run 88 applied every measured #240 lever on the BOE-bound chain and kept
-  the same dark-glass boundary. The next single variable is pre-SSH panel
-  power-on/reset before the cont-splash handoff, or a supply state this
-  userspace cannot reach; no successor issue is invented here.
-active_issue: null
+  Pre-ack #253 run 90 (boot e64091d8): the pinned pmos-self-post.sh refuses
+  before any radio stage on the persistent root (boot-record contract path
+  absent; append refused via PMOS_ROOT_CONTRACT override). Why does
+  boot_record_append refuse on the matching sda13 userdata root, and should
+  the contract be staged at the script's default /run path? Ordering
+  hypothesis itself stays untested by the radio.
+active_issue: omnipha/linux-sm7635#253
 subsystems:
   boot:
     state: confirmed
@@ -17,7 +19,7 @@ subsystems:
     record: records/2026-10-30-203515-run-69-second-boot-guard-wlan.md
   wlan:
     state: partial
-    record: records/2026-10-30-203515-run-69-second-boot-guard-wlan.md
+    record: records/2026-11-01-104332-preack-selfpost-record-append-refused.md
   modem:
     state: partial        # stays running past the EFS request after PID-1 cutover (run 55); no voice/SIM/data claim
     record: records/2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the.md
