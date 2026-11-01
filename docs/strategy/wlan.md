@@ -38,12 +38,16 @@ and nothing starts the radio.
 
 ## Next single variable
 
-Resolve the boot-record append refusal first (contract at the script's default
-`/run/pmos-root-contract.sh` path, or fix `boot_record_append`'s refusal on
-the matching `sda13` userdata root), then re-attempt the pre-ack radio chain
-in the measured order (live session, no new image). Expected: wlan0 and
-association as in run 69. Only if confirmed, integrate exactly this into
-one image. One boot per change.
+Host-only #256 fixture (records/2026-11-01-120601-host-run90-switched-root-fixture-passes.md):
+the pinned contract ACCEPTS the exact run-90 post-cutover state — the live
+refusal is not reproducible host-side, so the next single variable is the live
+PID 1 mountinfo itself. In the live window: capture `cat /proc/1/mountinfo`
+before re-invoking the pinned `pmos-self-post.sh` with
+`PMOS_ROOT_CONTRACT=/run/pid1-guard/root-contract.sh`, diff against the host
+fixture, and fix only the measured divergence (likely a second sda13 mount
+invisible in /proc/1/mounts). Only if the append then completes and the radio
+chain works pre-ack, record the recipe and integrate exactly this into one
+image. One boot per change.
 
 ## Acceptance (from PLAN.md)
 
