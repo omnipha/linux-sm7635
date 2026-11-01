@@ -609,6 +609,210 @@ root_contract_switched_root /run/run93/mounts /run/run93/mountinfo ||
 $BB printf '48 28 8:13 /vendor/firmware_mnt /vendor/firmware_mnt rw,relatime - ext4 /dev/block/sda13 rw,norecovery\n' >> /run/run93/mountinfo
 root_contract_switched_root /run/run93/mounts /run/run93/mountinfo &&
 	fail 'run-93 fixture with a hypothetical second 8:13 mount accepted'
+$BB sed -i '$d' /run/run93/mountinfo
+# Run 94 (#263): the full live /sys/class/block walk (146 devices, boot
+# ec970efc, read-only capture) replaces the two-block fake before the
+# switched-root replay; loop/ram devices carry no PARTNAME uevent entry,
+# exactly like the live sysfs. Real node shape: regular root block node
+# 0400, devnum 8:13, sysfs size 471526808 sectors, blockdev --getsize64
+# 241421725696 (exact fit inside the default 33554432..241421725696
+# bounds; the interactive self-post shell measured rc=1, no ROOT_CONTRACT_
+# variable set, so the defaults apply).
+for rc_dev in loop0 loop1 loop10 loop11 loop12 loop13 loop14 loop15 \
+	loop2 loop3 loop4 loop5 loop6 loop7 loop8 loop9 \
+	ram0 ram1 ram10 ram11 ram12 ram13 ram14 ram15 \
+	ram2 ram3 ram4 ram5 ram6 ram7 ram8 ram9 \
+	sda sda1 sda10 sda11 sda12 sda13 sda2 sda3 sda4 sda5 sda6 sda7 sda8 sda9 \
+	sdb sdb1 sdb2 sdb3 sdb4 sdb5 \
+	sdc sdc1 sdc2 sdc3 sdc4 sdc5 \
+	sdd sdd1 sdd2 sdd3 \
+	sde sde1 sde10 sde11 sde12 sde13 sde14 sde15 sde16 sde17 sde18 sde19 \
+	sde2 sde20 sde21 sde22 sde23 sde24 sde25 sde26 sde27 sde28 sde29 \
+	sde3 sde30 sde31 sde32 sde33 sde34 sde35 sde36 sde37 sde38 sde39 \
+	sde4 sde40 sde41 sde42 sde43 sde44 sde45 sde46 sde47 sde48 sde49 \
+	sde5 sde50 sde51 sde52 sde53 sde54 sde55 sde56 sde57 sde58 sde59 \
+	sde6 sde60 sde61 sde62 sde63 sde64 sde65 sde66 sde67 sde68 sde69 \
+	sde7 sde70 sde71 sde72 sde73 sde74 sde75 sde76 sde77 \
+	sde8 sde9 sdf sdf1 sdf2 sdf3 sdf4 sdf5; do
+	case "$rc_dev" in
+		loop0) set_part loop0 - 7:0;;
+		loop1) set_part loop1 - 7:8;;
+		loop10) set_part loop10 - 7:80;;
+		loop11) set_part loop11 - 7:88;;
+		loop12) set_part loop12 - 7:96;;
+		loop13) set_part loop13 - 7:104;;
+		loop14) set_part loop14 - 7:112;;
+		loop15) set_part loop15 - 7:120;;
+		loop2) set_part loop2 - 7:16;;
+		loop3) set_part loop3 - 7:24;;
+		loop4) set_part loop4 - 7:32;;
+		loop5) set_part loop5 - 7:40;;
+		loop6) set_part loop6 - 7:48;;
+		loop7) set_part loop7 - 7:56;;
+		loop8) set_part loop8 - 7:64;;
+		loop9) set_part loop9 - 7:72;;
+		ram0) set_part ram0 - 1:0;;
+		ram1) set_part ram1 - 1:1;;
+		ram10) set_part ram10 - 1:10;;
+		ram11) set_part ram11 - 1:11;;
+		ram12) set_part ram12 - 1:12;;
+		ram13) set_part ram13 - 1:13;;
+		ram14) set_part ram14 - 1:14;;
+		ram15) set_part ram15 - 1:15;;
+		ram2) set_part ram2 - 1:2;;
+		ram3) set_part ram3 - 1:3;;
+		ram4) set_part ram4 - 1:4;;
+		ram5) set_part ram5 - 1:5;;
+		ram6) set_part ram6 - 1:6;;
+		ram7) set_part ram7 - 1:7;;
+		ram8) set_part ram8 - 1:8;;
+		ram9) set_part ram9 - 1:9;;
+		sda) set_part sda - 8:0;;
+		sda1) set_part sda1 ssd 8:1;;
+		sda10) set_part sda10 vbmeta_vendor_b 8:10;;
+		sda11) set_part sda11 metadata 8:11;;
+		sda12) set_part sda12 rawdump 8:12;;
+		sda13) set_part sda13 userdata 8:13;;
+		sda2) set_part sda2 persist 8:2;;
+		sda3) set_part sda3 misc 8:3;;
+		sda4) set_part sda4 keystore 8:4;;
+		sda5) set_part sda5 frp 8:5;;
+		sda6) set_part sda6 super 8:6;;
+		sda7) set_part sda7 vbmeta_system_a 8:7;;
+		sda8) set_part sda8 vbmeta_system_b 8:8;;
+		sda9) set_part sda9 vbmeta_vendor_a 8:9;;
+		sdb) set_part sdb - 8:16;;
+		sdb1) set_part sdb1 xbl_a 8:17;;
+		sdb2) set_part sdb2 xbl_config_a 8:18;;
+		sdb3) set_part sdb3 multiimgqti_a 8:19;;
+		sdb4) set_part sdb4 multiimgoem_a 8:20;;
+		sdb5) set_part sdb5 apdp 8:21;;
+		sdc) set_part sdc - 8:32;;
+		sdc1) set_part sdc1 xbl_b 8:33;;
+		sdc2) set_part sdc2 xbl_config_b 8:34;;
+		sdc3) set_part sdc3 multiimgqti_b 8:35;;
+		sdc4) set_part sdc4 multiimgoem_b 8:36;;
+		sdc5) set_part sdc5 apdpb 8:37;;
+		sdd) set_part sdd - 8:48;;
+		sdd1) set_part sdd1 ALIGN_TO_128K_1 8:49;;
+		sdd2) set_part sdd2 cdt 8:50;;
+		sdd3) set_part sdd3 ddr 8:51;;
+		sde) set_part sde - 8:64;;
+		sde1) set_part sde1 uefi_a 8:65;;
+		sde10) set_part sde10 keymaster_a 8:74;;
+		sde11) set_part sde11 boot_a 8:75;;
+		sde12) set_part sde12 devcfg_a 8:76;;
+		sde13) set_part sde13 qupfw_a 8:77;;
+		sde14) set_part sde14 vbmeta_a 8:78;;
+		sde15) set_part sde15 dtbo_a 8:79;;
+		sde16) set_part sde16 uefisecapp_a 259:0;;
+		sde17) set_part sde17 imagefv_a 259:1;;
+		sde18) set_part sde18 shrm_a 259:2;;
+		sde19) set_part sde19 vm-bootsys_a 259:3;;
+		sde2) set_part sde2 aop_a 8:66;;
+		sde20) set_part sde20 cpucp_a 259:4;;
+		sde21) set_part sde21 featenabler_a 259:5;;
+		sde22) set_part sde22 vendor_boot_a 259:6;;
+		sde23) set_part sde23 qmcs 259:7;;
+		sde24) set_part sde24 qweslicstore_a 259:8;;
+		sde25) set_part sde25 recovery_a 259:9;;
+		sde26) set_part sde26 xbl_ramdump_a 259:10;;
+		sde27) set_part sde27 init_boot_a 259:11;;
+		sde28) set_part sde28 cpucp_dtb_a 259:12;;
+		sde29) set_part sde29 pvmfw_a 259:13;;
+		sde3) set_part sde3 aop_config_a 8:67;;
+		sde30) set_part sde30 uefi_b 259:14;;
+		sde31) set_part sde31 aop_b 259:15;;
+		sde32) set_part sde32 aop_config_b 259:16;;
+		sde33) set_part sde33 tz_b 259:17;;
+		sde34) set_part sde34 hyp_b 259:18;;
+		sde35) set_part sde35 modem_b 259:19;;
+		sde36) set_part sde36 bluetooth_b 259:20;;
+		sde37) set_part sde37 abl_b 259:21;;
+		sde38) set_part sde38 dsp_b 259:22;;
+		sde39) set_part sde39 keymaster_b 259:23;;
+		sde4) set_part sde4 tz_a 8:68;;
+		sde40) set_part sde40 boot_b 259:24;;
+		sde41) set_part sde41 devcfg_b 259:25;;
+		sde42) set_part sde42 qupfw_b 259:26;;
+		sde43) set_part sde43 vbmeta_b 259:27;;
+		sde44) set_part sde44 dtbo_b 259:28;;
+		sde45) set_part sde45 uefisecapp_b 259:29;;
+		sde46) set_part sde46 imagefv_b 259:30;;
+		sde47) set_part sde47 shrm_b 259:31;;
+		sde48) set_part sde48 vm-bootsys_b 259:32;;
+		sde49) set_part sde49 cpucp_b 259:33;;
+		sde5) set_part sde5 hyp_a 8:69;;
+		sde50) set_part sde50 featenabler_b 259:34;;
+		sde51) set_part sde51 vendor_boot_b 259:35;;
+		sde52) set_part sde52 qweslicstore_b 259:36;;
+		sde53) set_part sde53 recovery_b 259:37;;
+		sde54) set_part sde54 xbl_ramdump_b 259:38;;
+		sde55) set_part sde55 init_boot_b 259:39;;
+		sde56) set_part sde56 cpucp_dtb_b 259:40;;
+		sde57) set_part sde57 pvmfw_b 259:41;;
+		sde58) set_part sde58 devinfo 259:42;;
+		sde59) set_part sde59 toolsfv 259:43;;
+		sde6) set_part sde6 modem_a 8:70;;
+		sde60) set_part sde60 logfs 259:44;;
+		sde61) set_part sde61 nt_log 259:45;;
+		sde62) set_part sde62 nt_kmsg 259:46;;
+		sde63) set_part sde63 nt_uefi 259:47;;
+		sde64) set_part sde64 nt_reserve1 259:48;;
+		sde65) set_part sde65 nt_reserve2 259:49;;
+		sde66) set_part sde66 binfo 259:50;;
+		sde67) set_part sde67 storsec 259:51;;
+		sde68) set_part sde68 uefivarstore 259:52;;
+		sde69) set_part sde69 secdata 259:53;;
+		sde7) set_part sde7 bluetooth_a 8:71;;
+		sde70) set_part sde70 vm-persist 259:54;;
+		sde71) set_part sde71 mdcompress 259:55;;
+		sde72) set_part sde72 connsec 259:56;;
+		sde73) set_part sde73 tzsc 259:57;;
+		sde74) set_part sde74 spunvm 259:58;;
+		sde75) set_part sde75 xbl_sc_test_mode 259:59;;
+		sde76) set_part sde76 xbl_sc_logs 259:60;;
+		sde77) set_part sde77 dpm 259:61;;
+		sde8) set_part sde8 abl_a 8:72;;
+		sde9) set_part sde9 dsp_a 8:73;;
+		sdf) set_part sdf - 8:80;;
+		sdf1) set_part sdf1 ALIGN_TO_128K_2 8:81;;
+		sdf2) set_part sdf2 modemst1 8:82;;
+		sdf3) set_part sdf3 modemst2 8:83;;
+		sdf4) set_part sdf4 fsg 8:84;;
+		sdf5) set_part sdf5 fsc 8:85;;
+	esac
+done
+$BB mkdir -p /run/run94
+$BB cp /run/run93/mounts /run/run94/mounts
+$BB sed "s/^28 1 $MAIN_NUMS /28 1 8:13 /" /run/run93/mountinfo > /run/run94/mountinfo
+$BB rm /dev/block/sda13
+$BB mknod -m 0400 /dev/block/sda13 b 8 13
+$BB printf '471526808\n' > /sys/class/block/sda13/size
+$BB cat > /run/run94/bb <<'EOF'
+#!/bin/busybox sh
+if [ "$1" = blockdev ] && [ "$2" = --getsize64 ] && [ "$3" = /dev/block/sda13 ]; then
+	/bin/busybox printf '241421725696\n'
+	exit 0
+fi
+exec /bin/busybox "$@"
+EOF
+$BB chmod 700 /run/run94/bb
+( BB=/run/run94/bb
+	root_contract_switched_root /run/run94/mounts /run/run94/mountinfo ||
+		fail 'run-94 live block walk + live node inputs rejected by the unchanged contract'
+	[ "$ROOT_CONTRACT_KIND" = ext4 ] && [ "$ROOT_CONTRACT_NODE" = /dev/block/sda13 ] &&
+		[ "$ROOT_CONTRACT_SIZE" = 241421725696 ] &&
+		[ "$ROOT_CONTRACT_OPTS" = rw,relatime,norecovery ] ||
+		fail 'run-94 live-input fixture identity mismatch' ) || fail 'run-94 live-input replay failed'
+$BB printf 'PARTNAME=userdata\n' > /sys/class/block/sda6/uevent
+( BB=/run/run94/bb; root_contract_switched_root /run/run94/mounts /run/run94/mountinfo ) &&
+	fail 'run-94 live block walk accepted with a second userdata PARTNAME'
+$BB printf 'PARTNAME=super\n' > /sys/class/block/sda6/uevent
+$BB rm /sys/class/block/sda13/size
+$BB printf '%s\n' "$MAIN_NUMS" > /sys/class/block/sda13/dev
+mk_bnode /dev/block/sda13 "$MAIN_NUMS"
+
 $BB rm /dev/block/sda13
 $BB printf '471526809\n' > /sys/class/block/sda13/size
 root_contract_switched_root /run/switched/mounts /run/switched/mountinfo && fail 'switched one-byte-oversize userdata accepted'
