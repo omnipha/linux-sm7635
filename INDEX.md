@@ -2,6 +2,7 @@
 
 ## Latest 10
 
+- [2026-11-01-104332-preack-selfpost-record-append-refused](records/2026-11-01-104332-preack-selfpost-record-append-refused.md) | wlan | inconclusive | omnipha/linux-sm7635#253 | Pre-ack pmos-self-post refuses before any radio stage (boot e64091d8, run 90)
 - [2026-11-01-101915-coordinator-handoff-window-too-short](records/2026-11-01-101915-coordinator-handoff-window-too-short.md) | wlan run 89 | inconclusive | 253 | coordinator handoff window too short
 - [2026-11-01-021249-boe-bound-live-rails-reset-dcs-glass-dark](records/2026-11-01-021249-boe-bound-live-rails-reset-dcs-glass-dark.md) | display run 88 | refuted | omnipha/linux-sm7635#251 | BOE-bound live session: rails, reset and DCS exercised, glass stays dark
 - [2026-11-01-010622-boe-panel-node-bound-glass-dark](records/2026-11-01-010622-boe-panel-node-bound-glass-dark.md) | display run 87 | refuted | omnipha/linux-sm7635#248 | BOE node selected and bound, glass stays dark: node selection refuted
@@ -11,7 +12,6 @@
 - [2026-10-31-210949-pre-ssh-panel-host-image](records/2026-10-31-210949-pre-ssh-panel-host-image.md) | display | confirmed | omnipha/linux-sm7635#243 | Pre-SSH panel: host image for the bootloader-handoff test
 - [2026-10-31-180105-live-display-rails-enabled-dcs-readback-fails](records/2026-10-31-180105-live-display-rails-enabled-dcs-readback-fails.md) | display | inconclusive | omnipha/linux-sm7635#240 | live display: rails enabled, DCS writes accepted, readback fails
 - [2026-10-31-173408-live-display-drm-kms-panel-command-gap](records/2026-10-31-173408-live-display-drm-kms-panel-command-gap.md) | display | inconclusive | omnipha/linux-sm7635#240 | live display: DRM device reached, KMS active, DSI panel commands fail
-- [2026-10-31-162218-run-84-record-rotation-cutover-noack-return](records/2026-10-31-162218-run-84-record-rotation-cutover-noack-return.md) | boot run 84 | confirmed | omnipha/linux-sm7635#237 | run 84: record rotation boots, cutover acks, no-ack return is independent
 
 ## By subsystem (latest 3, total in brackets)
 
@@ -40,12 +40,12 @@
 - [2026-10-30-150709-root-contract-measured-userdata-maximum](records/2026-10-30-150709-root-contract-measured-userdata-maximum.md) | userspace | confirmed | omnipha/linux-sm7635#199 | Measured userdata size accepted by the fail-closed root contract
 - [2026-10-30-142216-persistent-root-contract-size-gate](records/2026-10-30-142216-persistent-root-contract-size-gate.md) | userspace | refuted | omnipha/linux-sm7635#197 | Persistent root blocked by the closed #194 size gate
 
-### wlan [37]
+### wlan [38]
+- [2026-11-01-104332-preack-selfpost-record-append-refused](records/2026-11-01-104332-preack-selfpost-record-append-refused.md) | wlan | inconclusive | omnipha/linux-sm7635#253 | Pre-ack pmos-self-post refuses before any radio stage (boot e64091d8, run 90)
 - [2026-11-01-101915-coordinator-handoff-window-too-short](records/2026-11-01-101915-coordinator-handoff-window-too-short.md) | wlan run 89 | inconclusive | 253 | coordinator handoff window too short
 - [2026-10-29-2297-run-58-first-boot-self-stage-and-wlan-associatio](records/2026-10-29-2297-run-58-first-boot-self-stage-and-wlan-associatio.md) | wlan run 58 | confirmed | omnipha/linux-sm7635#164 | Run-58 first-boot self-stage and WLAN association blocker (#164, live session, 2026-10-29)
-- [2026-10-29-2292-run-56-measured-post-cutover-wlan-association-an](records/2026-10-29-2292-run-56-measured-post-cutover-wlan-association-an.md) | wlan run 56 | confirmed | omnipha/linux-sm7635#150 | Run-56 measured post-cutover WLAN association and reachability on postmarketOS PID 1 (#150, live-session finding, 2026-10-29)
 
 ## By month
 
-- [2026-11](records/index-2026-11.md) [4]
+- [2026-11](records/index-2026-11.md) [5]
 - [2026-10](records/index-2026-10.md) [162]

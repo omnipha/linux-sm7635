@@ -18,6 +18,14 @@ Updated with each measured run, merged like any record.
 
 - Run 84 and later boots: remoteproc2/3 stay offline, no wlan0,
   wpa_supplicant fails, self-post.log empty.
+- Run 90, #253 (records/2026-11-01-104332-preack-selfpost-record-append-refused.md):
+  worker-invoked pre-ack pmos-self-post.sh refuses BEFORE any radio stage —
+  the post-cutover boot-record contract path `/run/pmos-root-contract.sh` is
+  absent on the persistent root, and the guard's copy
+  (`/run/pid1-guard/root-contract.sh`) makes the append refuse inside
+  `root_contract_switched_root` although `sda13` PARTNAME=userdata matches.
+  No modem/wpss/driver/scan/services stage ran; ordering hypothesis untested
+  by the radio itself.
 - 2026-11-01: manual modem start outside the pinned scripts crashed the
   kernel to QUSB 05c6:900e (no writes involved). Never repeat; the
   scripted gates exist exactly for this.
@@ -30,8 +38,10 @@ and nothing starts the radio.
 
 ## Next single variable
 
-Boot the installed pair, run the pinned radio chain in the measured order
-before the ack (live session, no new image). Expected: wlan0 and
+Resolve the boot-record append refusal first (contract at the script's default
+`/run/pmos-root-contract.sh` path, or fix `boot_record_append`'s refusal on
+the matching `sda13` userdata root), then re-attempt the pre-ack radio chain
+in the measured order (live session, no new image). Expected: wlan0 and
 association as in run 69. Only if confirmed, integrate exactly this into
 one image. One boot per change.
 
