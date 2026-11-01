@@ -22,16 +22,7 @@ blocked by a measurement.
       Check: a fresh boot brings the radio chain up by itself, wlan0
       appears, associates, gets an address and reaches the internet;
       a second boot repeats all of it.
-      Honest state: association, DHCP, DNS and internet were measured
-      once with the host-run recipe on a held session
-      (records/2026-10-29-2294-run-57-measured-openrc-wpa-supplicant-and-networ.md).
-      On the installed persistent-root chain the radio chain stays
-      offline in recent boots: no wlan0, wpa_supplicant fails. The
-      WLAN-reboot box was checked on the older RAM-staged chain and is
-      reopened here.
-      Next single variable: run the radio chain in the measured order
-      inside the boot itself (self-post before the guard ack, or the
-      equivalent integration). One boot per change.
+      How and what was tried: docs/strategy/wlan.md.
 
 ## Then, in order
 
