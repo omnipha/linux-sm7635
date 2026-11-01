@@ -13,32 +13,41 @@ blocked by a measurement.
 
 - [x] Linux boots and answers over USB SSH.
 - [x] The root filesystem survives a reboot (userdata, not RAM).
-- [x] WLAN comes back after a reboot: association, address, DNS, internet.
 - [x] postmarketOS becomes PID 1 without the laptop holding the boot.
 
 ## Now
 
-- Step: Display works.
-      Check: a picture is on the panel, driven by this kernel,
-      and it is still there after a reboot.
-      Run 88 exercised the BOE-bound chain live
-      (records/2026-11-01-021249-boe-bound-live-rails-reset-dcs-glass-dark.md):
-      rails enabled, reset GPIO 12 claimed and power-cycled, extdvdd
-      GPIO 161 driven high, DCS 0x11/0x29 accepted. Reads stayed empty
-      and actual_brightness zero; the glass stayed dark. BOE and _vxn
-      DT nodes name the same rails, reset GPIO and sequence, so panel
-      node selection is refuted as the remaining lever. No picture means
-      no reboot check. The next single variable is pre-SSH panel
-      power-on/reset before the cont-splash handoff or a supply state
-      this userspace cannot reach; no successor issue is invented here.
+- [ ] WLAN works on every boot of the installed chain, without a
+      host-run recipe.
+      Check: a fresh boot brings the radio chain up by itself, wlan0
+      appears, associates, gets an address and reaches the internet;
+      a second boot repeats all of it.
+      Honest state: association, DHCP, DNS and internet were measured
+      once with the host-run recipe on a held session
+      (records/2026-10-29-2294-run-57-measured-openrc-wpa-supplicant-and-networ.md).
+      On the installed persistent-root chain the radio chain stays
+      offline in recent boots: no wlan0, wpa_supplicant fails. The
+      WLAN-reboot box was checked on the older RAM-staged chain and is
+      reopened here.
+      Next single variable: run the radio chain in the measured order
+      inside the boot itself (self-post before the guard ack, or the
+      equivalent integration). One boot per change.
 
 ## Then, in order
 
+- [ ] Display works.
+      Check: a picture is on the panel, driven by this kernel,
+      and it is still there after a reboot.
+      Boundary so far: BOE-bound and vendor closures enable the same
+      rails, reset and DCS writes, and the glass stays dark
+      (records/2026-11-01-021249-boe-bound-live-rails-reset-dcs-glass-dark.md).
+      Next single variable: pre-SSH panel power-on/reset before the
+      splash handoff, or a supply state this userspace cannot reach.
 - [ ] Cold start works.
       Check: power off, USB unplugged, one power press, and the phone
       reaches Linux, persistent root, radio and WLAN with no laptop.
       The phone returns itself to fastboot when nobody acknowledges it.
-      One observed attempt, then stop. It does not block the display.
+      One observed attempt, then stop. It does not block the steps above.
 - [ ] Touch works. Check: input events from the panel.
 - [ ] Audio works. Check: sound out of the speaker.
 - [ ] Cameras work. Check: a frame from each sensor.
@@ -49,3 +58,5 @@ blocked by a measurement.
 - No image built to answer a question the running SSH session can answer.
 - No new issue for bookkeeping, a verifier quirk, or a repeated hash.
 - No step started while the one above it is still open.
+- No manual remoteproc or radio writes outside the measured scripts;
+  the 2026-11-01 manual modem start crashed the whole kernel.
