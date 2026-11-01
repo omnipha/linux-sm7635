@@ -3,12 +3,13 @@
 device: nothing-asteroids
 updated: 2026-11-01
 next_question: >-
-  Host fixture of #256 accepts the exact run-90 post-cutover state (single
-  rw,relatime,norecovery sda13 ext4 root, private proc/sys/run/dev children):
-  no root_contract_switched_root check fails there. Live window must capture
-  /proc/1/mountinfo before re-invoking self-post with the PMOS_ROOT_CONTRACT
-  guard-copy override; likely a second sda13 mount invisible in /proc/1/mounts.
-active_issue: omnipha/linux-sm7635#256
+  Run 93 (#261) captured live post-cutover /proc/1/mountinfo: exactly one
+  sda13/8:13 mount at /, no second same-partition mount — the mount-info
+  hypothesis is refuted and the unchanged contract accepts the captured table
+  as a new fixture. The run-90 boot_record_append refusal is not in the mount
+  checks; unmeasured inputs remain the live /sys/class/block walk, the guest
+  block node stat/size, and blockdev output at self-post time.
+active_issue: omnipha/linux-sm7635#261
 subsystems:
   boot:
     state: confirmed
@@ -18,7 +19,7 @@ subsystems:
     record: records/2026-10-30-203515-run-69-second-boot-guard-wlan.md
   wlan:
     state: partial
-    record: records/2026-11-01-120601-host-run90-switched-root-fixture-passes.md
+    record: records/2026-11-01-151916-run93-postack-mountinfo-matches-fixture.md
   modem:
     state: partial        # stays running past the EFS request after PID-1 cutover (run 55); no voice/SIM/data claim
     record: records/2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the.md

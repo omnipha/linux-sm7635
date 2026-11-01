@@ -570,6 +570,45 @@ $BB printf 'PARTNAME=super\n' > /sys/class/block/sda6/uevent
 $BB printf '48 41 %s /vendor/firmware_mnt /vendor/firmware_mnt rw,relatime - ext4 /dev/block/sda13 rw,norecovery\n' "$MAIN_NUMS" >> /run/run90/mountinfo
 root_contract_switched_root /run/run90/mounts /run/run90/mountinfo &&
 	fail 'switched root with a second same-partition mount accepted'
+$BB mkdir -p /run/run93
+$BB cat > /run/run93/mounts <<'EOF'
+/dev/block/sda13 / ext4 rw,relatime,norecovery 0 0
+tmpfs /run tmpfs rw,nosuid,nodev,relatime,size=8192k,mode=700 0 0
+proc /proc proc rw,nosuid,nodev,noexec,relatime 0 0
+sysfs /sys sysfs rw,nosuid,nodev,noexec,relatime 0 0
+configfs /sys/kernel/config configfs rw,nosuid,nodev,noexec,relatime 0 0
+tmpfs /dev tmpfs rw,nosuid,noexec,relatime,size=10240k,mode=755 0 0
+devpts /dev/pts devpts rw,relatime,mode=620,ptmxmode=666 0 0
+securityfs /sys/kernel/security securityfs rw,nosuid,nodev,noexec,relatime 0 0
+debugfs /sys/kernel/debug debugfs rw,nosuid,nodev,noexec,relatime 0 0
+fusectl /sys/fs/fuse/connections fusectl rw,nosuid,nodev,noexec,relatime 0 0
+selinuxfs /sys/fs/selinux selinuxfs rw,nosuid,nodev,noexec,relatime 0 0
+pstore /sys/fs/pstore pstore rw,nosuid,nodev,noexec,relatime 0 0
+shm /dev/shm tmpfs rw,nosuid,nodev,noexec,relatime 0 0
+EOF
+$BB cat > /run/run93/mountinfo <<EOF
+28 1 $MAIN_NUMS / / rw,relatime - ext4 /dev/block/sda13 rw,norecovery
+29 28 0:21 / /run rw,nosuid,nodev,relatime - tmpfs tmpfs rw,size=8192k,mode=700
+30 28 0:22 / /proc rw,nosuid,nodev,noexec,relatime - proc proc rw
+31 28 0:18 / /sys rw,nosuid,nodev,noexec,relatime - sysfs sysfs rw
+32 31 0:16 / /sys/kernel/config rw,nosuid,nodev,noexec,relatime - configfs configfs rw
+33 28 0:23 / /dev rw,nosuid,noexec,relatime - tmpfs tmpfs rw,size=10240k,mode=755
+34 33 0:24 / /dev/pts rw,relatime - devpts devpts rw,mode=620,ptmxmode=666
+35 31 0:5 / /sys/kernel/security rw,nosuid,nodev,noexec,relatime - securityfs securityfs rw
+36 31 0:6 / /sys/kernel/debug rw,nosuid,nodev,noexec,relatime - debugfs debugfs rw
+37 31 0:25 / /sys/fs/fuse/connections rw,nosuid,nodev,noexec,relatime - fusectl fusectl rw
+38 31 0:15 / /sys/fs/selinux rw,nosuid,nodev,noexec,relatime - selinuxfs selinuxfs rw
+39 31 0:26 / /sys/fs/pstore rw,nosuid,nodev,noexec,relatime - pstore pstore rw
+40 33 0:27 / /dev/shm rw,nosuid,noexec,relatime - tmpfs shm rw
+EOF
+root_contract_switched_root /run/run93/mounts /run/run93/mountinfo ||
+	fail 'run-93 live post-cutover fixture (measured /proc/1/mountinfo, single sda13 root) rejected'
+[ "$ROOT_CONTRACT_KIND" = ext4 ] && [ "$ROOT_CONTRACT_NODE" = /dev/block/sda13 ] &&
+	[ "$ROOT_CONTRACT_SIZE" = 241421725696 ] && [ "$ROOT_CONTRACT_OPTS" = rw,relatime,norecovery ] ||
+	fail 'run-93 live post-cutover fixture identity mismatch'
+$BB printf '48 28 8:13 /vendor/firmware_mnt /vendor/firmware_mnt rw,relatime - ext4 /dev/block/sda13 rw,norecovery\n' >> /run/run93/mountinfo
+root_contract_switched_root /run/run93/mounts /run/run93/mountinfo &&
+	fail 'run-93 fixture with a hypothetical second 8:13 mount accepted'
 $BB rm /dev/block/sda13
 $BB printf '471526809\n' > /sys/class/block/sda13/size
 root_contract_switched_root /run/switched/mounts /run/switched/mountinfo && fail 'switched one-byte-oversize userdata accepted'

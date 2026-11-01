@@ -41,10 +41,14 @@ and nothing starts the radio.
 
 ## Next single variable
 
-Live PID 1 mountinfo. Host-only #256 fixture
-(records/2026-11-01-120601-host-run90-switched-root-fixture-passes.md):
-the pinned contract ACCEPTS the exact run-90 post-cutover state — the live
-refusal is not host-reproducible.
+Run 93 (#261, records/2026-11-01-151916-run93-postack-mountinfo-matches-fixture.md):
+live post-cutover `/proc/1/mountinfo` measured — exactly one `sda13`/`8:13`
+mount at `/`, no second same-partition mount, no `/vendor/firmware_mnt`
+leftover. The unchanged contract accepts the captured table (now a fixture);
+the mount-info divergence hypothesis is refuted. Next single variable: the
+non-mount contract inputs at self-post time — the live `/sys/class/block`
+PARTNAME walk, the guest `/dev/block/sda13` node stat and `blockdev` size —
+captured read-only post-ack, or an instrumented self-post failure exit point.
 
 ## Order (binding)
 
