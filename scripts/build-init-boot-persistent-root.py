@@ -63,8 +63,12 @@ REFUSED = frozenset((*builder.REFUSED, RUN66,
                       "762566b758494c53b0265ce7eee13155c6d06b9cca44f8c5eb75ce7cb8fc4e5d",
                       "a4ee7def41e645301f59bdc4dc043c97253a4002d8774016ee3557633b0cb6e3",
                       "6e7c5a2e26981fc19c9eba97356d1a52f80e768cb6b9536bc9cb4fd906a8c59e",
-                      "dd6ce74e47827814c3c0010d6c71f0b9d0874a370cb147bb455e05f018ed6f41",
-                      "e7d5558037b903de3ab817619ce527319f6b54fb4ec97782e729078c666268fc"))
+                       "dd6ce74e47827814c3c0010d6c71f0b9d0874a370cb147bb455e05f018ed6f41",
+                       "e7d5558037b903de3ab817619ce527319f6b54fb4ec97782e729078c666268fc",
+                       "27c4d8959ffdb5154aaa11bdf508ec7a1d81fe3cffbaaeb66bfe52b31365b21c",
+                       "da4651d827cad181e55baf1bd9ddb9876fcc271b791c5046362ef056ea69c9c6",
+                       "fed40c3073663b9bc5ff29e35e09ae1afdb8568cadf27e09c7e956f284c33c2d",
+                       "1765381ce0f2753aea208896342424ab5db7489c426d457a259f3398827cb587"))
 
 
 def regular(path):
@@ -95,7 +99,7 @@ def replace_once(data, old, new):
 def current_scripts():
     original = {name: script_bytes(name) for name in ROOT_NAMES}
     expected = {
-        "pmos-root-contract.sh": "732dadc125b4be6f05ed92deb6fbde4728c88e09cdc9998f556d9b95408e1021",
+        "pmos-root-contract.sh": "c76c31ff148ab19ff5b2de6f1e40a036ee6ec275d54b0b5d1eaab0bbf0f06cc6",
         "pmos-session-stage.sh": "be70a27305145cabc15b70469ae7a0434fab352fb9c3d681943f73d22b92938a",
         "pmos-pid1-transition.sh": "e1dba7135e2335c22aee0a5c0f4edb247fad5acd8100377cba3771abe5044e36",
         "pmos-pid1-guard.sh": "f72a68a4c3a0e9bb7e72aa88883dcc9087a684985f5af688e34ea13c0226d3ad",
@@ -543,7 +547,10 @@ msm_drm.ko
 '
 log 'display module load begin'
 for module in $DISPLAY_MODULES; do
-	if err=$(insmod "/lib/modules/$module" 2>&1); then
+	panel_opt=
+	[ "$module" = msm_drm.ko ] &&
+		panel_opt='dsi_display0=qcom,mdss_dsi_rm69220_fhd_plus_120hz_vid_boe:'
+	if err=$(insmod "/lib/modules/$module" $panel_opt 2>&1); then
 		log "display module $module loaded"
 	else
 		log "display module $module failed: $err"
@@ -556,6 +563,7 @@ dp_bl=none
 dp_suspend=clear
 dp_dcs=none
 dp_reset=none
+dp_node=none
 [ -d /sys/class/drm/card0 ] && dp_card0=1
 [ -d /sys/class/drm/card0-DSI-1 ] && dp_dsi1=1
 for bl in /sys/class/backlight/*; do
@@ -575,7 +583,12 @@ fi
 if /bin/busybox grep -qE 'dsi_panel.*reset|reset_gpio' /run/display-init.dmesg 2>/dev/null; then
 	dp_reset=seen
 fi
-panel_line="usb-init: pre-SSH panel card0=$dp_card0 dsi1=$dp_dsi1 dcs=$dp_dcs reset=$dp_reset suspend=$dp_suspend brightness=$dp_bl boot $(cat /proc/sys/kernel/random/boot_id 2>/dev/null)"
+if /bin/busybox grep -q "Successfully bind display panel 'qcom,mdss_dsi_rm69220_fhd_plus_120hz_vid_boe " /run/display-init.dmesg 2>/dev/null; then
+	dp_node=boe
+elif /bin/busybox grep -q "Successfully bind display panel 'qcom,mdss_dsi_rm69220_fhd_plus_120hz_vid_vxn " /run/display-init.dmesg 2>/dev/null; then
+	dp_node=vxn
+fi
+panel_line="usb-init: pre-SSH panel node=$dp_node card0=$dp_card0 dsi1=$dp_dsi1 dcs=$dp_dcs reset=$dp_reset suspend=$dp_suspend brightness=$dp_bl boot $(cat /proc/sys/kernel/random/boot_id 2>/dev/null)"
 log "$panel_line"
 (umask 077; printf '%s\\n' "$panel_line" >/run/pre-ssh-panel.record)
 chmod 600 /run/pre-ssh-panel.record

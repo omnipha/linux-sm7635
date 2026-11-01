@@ -3,11 +3,12 @@
 device: nothing-asteroids
 updated: 2026-11-01
 next_question: >-
-  The vendor_dlkm msm_drm closure is byte-identical to the recovery-set ramdisk
-  modules run 86 loaded before SSH, so the module-set lever does not exist and
-  no successor pair was built. The remaining display lever is a supply/handoff
-  state the recovery kernel cannot reach; it needs a new single-variable decision.
-active_issue: omnipha/linux-sm7635#246
+  The run-86 cmdline already carried the BOE panel token, but bare insmod never
+  passed it to msm_drm.ko, so the driver took the _vxn default-panel phandle.
+  The successor pair passes the stock BOE token as the msm_drm insmod option;
+  the pre-SSH record names the bound node. Whether that lights the glass is
+  the pending physical phase of #248.
+active_issue: omnipha/linux-sm7635#248
 subsystems:
   boot:
     state: confirmed
@@ -23,11 +24,13 @@ subsystems:
     record: records/2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the.md
   display:
     state: partial
-    record: records/2026-10-31-232439-vendor-dlkm-display-closure-identical.md
+    record: records/2026-11-01-004839-boe-panel-node-host-image.md
   cameras:
     state: untested
     record: null
 attempted_shas:       # cold-start index only; the flash gate is device-op status, not this file
+  - f9449ba5        # init_boot_a, #248 host pair; not yet flashed
+  - a71b3f5f        # vendor_boot_b, #248 host pair; not yet flashed
   - fed40c30        # init_boot_a, run 86; flashed once, never-reflash
   - 1765381c        # vendor_boot_b, run 86; flashed once, never-reflash
   - 27c4d895        # init_boot_a, run 84; flashed once, never-reflash
@@ -53,10 +56,11 @@ attempted_shas:       # cold-start index only; the flash gate is device-op statu
   - fcb0ed91
   - fef03008        # init_boot, runs 52-57
 notes: >-
-  #246 measured the vendor_dlkm_a msm_drm closure read-only from the pinned
-  super dump: all 26 modules are byte-identical to the recovery-set ramdisk
-  copies run 86 loaded, same 6.1.78 vermagic, no vendor-only member, dsi-ctrl
-  compiled into msm_drm.ko in both. No second module variant exists, so no
-  image was built and the run-86 pair stays never-reflash. The remaining
-  display lever is a supply/handoff state the recovery kernel cannot reach.
-  WLAN stays down on this chain because regulatory.db is missing.
+  #248 host pair passes the stock BOE token
+  (dsi_display0=qcom,mdss_dsi_rm69220_fhd_plus_120hz_vid_boe:) as the single
+  insmod option of msm_drm.ko in the otherwise unchanged run-86 pre-SSH display
+  phase, and the pre-SSH record names the node actually bound. The pair is
+  init_boot f9449ba5 / vendor_boot_b a71b3f5f, fits both approved carriers, and
+  the verifier refuses the run-84 and run-86 pairs. Not yet flashed; the glass
+  result is the pending physical phase. WLAN stays down on this chain because
+  regulatory.db is missing.

@@ -241,7 +241,7 @@ boot_record_lines() {
 		br_panel=$($BB cat "$br_panel_file") || return 1
 		[ "${#br_panel}" -le 400 ] || return 1
 		$BB printf '%s\n' "$br_panel" | $BB awk '
-			NR == 1 && /^usb-init: pre-SSH panel card0=[ -~]*$/ {ok=1}
+			NR == 1 && /^usb-init: pre-SSH panel node=(boe|vxn|none) card0=[ -~]*$/ {ok=1}
 			END {exit(ok && NR == 1 ? 0 : 1)}' || return 1
 	fi
 	set -- \
