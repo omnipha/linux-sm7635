@@ -70,6 +70,17 @@ passes ≈1–2 s after cutover, post-cutover record appends, radio stages run.
 If the full 20 s actually elapses without a nonce, that kmsg decides the
 guard-design question; an earlier guard return is not an elapsed 20 s wait.
 
+Run 96 (#271, records/2026-11-02-130607-run96-correction.md): the nonce wait
+passed (nonce minted within ~1 s), the contract fallback passed, then
+`boot_record_append` refused. Dossier step 4 (#275): the refusal is the
+ordered-sequence check, because the pre-SSH panel file stays on the outer
+initramfs `/run` and `boot_record_lines` omits the persisted panel line
+(records/2026-11-02-142315-host-append-refusal-reproduction.md). Fix in the
+trace member only: restore the panel file from this boot's kernel log (must
+equal record line 3), name any refusing check in kmsg. Image 2ebdf1db, carrier
+a71b3f5f unchanged: records/2026-11-02-142315-host-append-refusal-panel-record-initboot.md.
+One boot next; not WLAN acceptance.
+
 ## Order (binding)
 
 1. Done: post-ack reads (runs 93/94) and pre-ack trace (run 95). Mount

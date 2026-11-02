@@ -37,7 +37,7 @@ SELF_POST_BUNDLE_SHA = "5e118ffc4073752afc06eb6f0f2e603f28c2a50f44356ec842039321
 TRACE_MEMBER = "run/omnipha-self-post-trace.sh"
 TRACE_PATH = "/" + TRACE_MEMBER
 TRACE_BLOCK = re.compile(rb"# trace-begin\n.*?# trace-end\n", re.DOTALL)
-TRACE_LINE = re.compile(rb"^[ \t]*trace(?:_state)? ")
+TRACE_LINE = re.compile(rb"^[ \t]*trace(?:_state|_refusal)? ")
 ROOT_NAMES = (
     "pmos-root-contract.sh",
     "pmos-session-stage.sh",
@@ -79,7 +79,8 @@ REFUSED = frozenset((*builder.REFUSED, RUN66,
                        "fed40c3073663b9bc5ff29e35e09ae1afdb8568cadf27e09c7e956f284c33c2d",
                        "1765381ce0f2753aea208896342424ab5db7489c426d457a259f3398827cb587",
                        INSTALLED_INIT,
-                       "27a78a225a840040f5e88b36f0ff75367caef3412ea26ac17ac83e24b4c23ce0"))
+                       "27a78a225a840040f5e88b36f0ff75367caef3412ea26ac17ac83e24b4c23ce0",
+                       "17531039e2c1bb36eac7c5fb2d4c343d53977950cbd2ade0d9dea6f3dd794bdd"))
 
 
 def deinstrument(data):
@@ -89,7 +90,8 @@ def deinstrument(data):
     kept = [line for line in plain.splitlines(keepends=True) if not TRACE_LINE.match(line)]
     plain = b"".join(kept)
     require(plain != data and plain.endswith(b"\n") and b"\0" not in plain, TRACE_MSG)
-    require(not any(TRACE_LINE.match(line) for line in plain.splitlines()), TRACE_MSG)
+    require(not any(TRACE_LINE.match(line) for line in plain.splitlines()) and
+            b"trace_refusal" not in plain, TRACE_MSG)
     return plain
 
 
@@ -118,6 +120,27 @@ def replace_once(data, old, new):
     return data.replace(old, new, 1)
 
 
+PANEL_RECORD_RESTORE = b'''trace 'pre check panel record'
+panel=/run/pmos-pre-ssh-panel.record
+if [ ! -e "$panel" ] && [ ! -L "$panel" ] && [ -f /.omnipha-boot-record ] && [ ! -L /.omnipha-boot-record ]; then
+\tpanel_hits=$($BB dmesg 2>/dev/null | $BB grep -E "^(\\[[ 0-9.]*\\] )?usb-init: usb-init: pre-SSH panel node=(boe|vxn|none) card0=[ -~]* boot $boot\\$" | $BB sed 's/^\\(\\[[ 0-9.]*\\] \\)\\{0,1\\}usb-init: //')
+\tpanel_line=
+\tif [ -n "$panel_hits" ] && [ "$($BB printf '%s\\n' "$panel_hits" | $BB sort -u | $BB wc -l)" = 1 ]; then
+\t\tpanel_line=$($BB printf '%s\\n' "$panel_hits" | $BB sed -n 1p)
+\tfi
+\tif [ -n "$panel_line" ] && [ "${#panel_line}" -le 400 ] &&
+\t\t[ "${panel_line% boot $boot}" != "$panel_line" ] &&
+\t\t[ "$($BB sed -n 3p /.omnipha-boot-record 2>/dev/null)" = "$panel_line" ]; then
+\t\t( umask 077; set -C; $BB printf '%s\\n' "$panel_line" > "$panel" ) || die 'cannot restore the pre-SSH panel record'
+\t\t[ -f "$panel" ] && [ ! -L "$panel" ] && [ "$($BB stat -c '%u:%a:%h' "$panel")" = 0:600:1 ] ||
+\t\t\tdie 'restored pre-SSH panel record is unsafe'
+\t\ttrace 'panel record restored from the boot kernel log'
+\tfi
+fi
+trace 'post check panel record'
+'''
+
+
 def without_nonce_wait(data):
     wait = b'''i=0
 while [ ! -f "$GUARD/nonce" ] || [ -L "$GUARD/nonce" ]; do
@@ -131,7 +154,9 @@ while [ ! -f "$GUARD/nonce" ] || [ -L "$GUARD/nonce" ]; do
 done
 '''
     fallback = b'[ -f "$contract" ] && [ ! -L "$contract" ] || contract="$GUARD/root-contract.sh"\n'
-    return replace_once(replace_once(data, wait, b""), fallback, b"")
+    restore_plain = b"".join(line for line in PANEL_RECORD_RESTORE.splitlines(keepends=True)
+                             if not TRACE_LINE.match(line))
+    return replace_once(replace_once(replace_once(data, wait, b""), fallback, b""), restore_plain, b"")
 
 
 def current_scripts():
@@ -145,7 +170,7 @@ def current_scripts():
         "pmos-session-stage.sh": "be70a27305145cabc15b70469ae7a0434fab352fb9c3d681943f73d22b92938a",
         "pmos-pid1-transition.sh": "e1dba7135e2335c22aee0a5c0f4edb247fad5acd8100377cba3771abe5044e36",
         "pmos-pid1-guard.sh": "f72a68a4c3a0e9bb7e72aa88883dcc9087a684985f5af688e34ea13c0226d3ad",
-        "pmos-self-post.sh": "6199649f1271c851ec72dbc3f36d55d7223a06c2ffe237689f0d41bbccc1041d",
+        "pmos-self-post.sh": "eb3c2cb6509246c14142bebe4bf4318b159057faff43b03be7588557fcf7323f",
         "pmos-radio-bringup.sh": "7ef6382644c2e07705d2a8df77840031318c298478c8f93e9bbfd05c00b61812",
         "pmos-self-stage.sh": "92e9045894df3da3db2b093aebc03840a63d8e2b4b89c6cffc835b62d10614c6",
     }
@@ -315,8 +340,8 @@ fi''')
             hashlib.sha256(traced_post).hexdigest() != SELF_POST_BUNDLE_SHA and
             sum(1 for line in traced_post.splitlines() if TRACE_LINE.match(line)) >= 25 and
             traced_post.count(b"self-post-trace") >= 5 and
-            traced_post.count(b"boot_record_append") == 2 and
-            traced_post.count(b"boot_record_verify") == 1, DELTA_MSG)
+            traced_post.count(b"boot_record_append /") == 2 and
+            traced_post.count(b"boot_record_verify /") == 1, DELTA_MSG)
     found["pmos-self-post-trace"] = traced_post
     self_stage = replace_once(found["pmos-self-stage.sh"],
         b'die() { log "FAIL: $*"; exit 1; }\n',

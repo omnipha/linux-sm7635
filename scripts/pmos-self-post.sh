@@ -44,10 +44,52 @@ trace_state() {
 	t_up=$($BB cat /proc/uptime 2>/dev/null) || t_up=unknown
 	log "self-post-trace: state $1 uptime $t_up" || true
 }
+trace_refusal() {
+	case "$1" in *'boot record append refused'*) :;; *) return 0;; esac
+	command -v boot_record_lines >/dev/null 2>&1 || { log 'self-post-trace: append refusal check: contract functions not loaded' || true; return 0; }
+	t_rec=/.omnipha-boot-record
+	t_line="pmos-self-post: post-cutover PID 1 on boot $boot; guard identity check passed; pid1 identity check passed"
+	t_why=
+	{ [ -d / ] && [ ! -L / ] && [ "$($BB stat -c %u / 2>/dev/null)" = 0 ]; } || t_why='boot_record_root: root directory'
+	[ -n "$t_why" ] || root_contract_switched_root /proc/1/mounts /proc/1/mountinfo || t_why='boot_record_root: root_contract_switched_root'
+	[ -n "$t_why" ] || case ",$ROOT_CONTRACT_OPTS," in *,rw,*) :;; *) t_why='boot_record_root: root not rw';; esac
+	[ -n "$t_why" ] || boot_record_id || t_why='boot_record_id'
+	[ -n "$t_why" ] || { [ -f "$t_rec" ] && [ ! -L "$t_rec" ]; } || t_why='boot_record_append: record file missing or not regular'
+	if [ -z "$t_why" ]; then
+		t_old=$($BB cat "$t_rec" 2>/dev/null) || t_old=
+		t_size=$($BB stat -c %s "$t_rec" 2>/dev/null) || t_size=0
+		{ [ "$t_size" -ge 42 ] && [ "$t_size" -le "$boot_record_bound" ] && [ "$t_size" = "$((${#t_old} + 1))" ] &&
+			[ "$($BB stat -c '%u:%a:%h:%s' "$t_rec")" = "0:600:1:$t_size" ]; } || t_why='boot_record_append: record size, bound or mode'
+	fi
+	if [ -z "$t_why" ]; then
+		t_all=$(boot_record_lines) || t_all=
+		t_next="$t_old
+$t_line"
+		if [ -z "$t_all" ]; then
+			t_why='boot_record_lines: expected lines refused (panel record file unsafe)'
+		else
+			case "$t_all" in
+				"$t_next"|"$t_next
+"*) :;;
+				*)
+					if [ -e /run/pmos-pre-ssh-panel.record ] || [ -L /run/pmos-pre-ssh-panel.record ]; then t_panel=present; else t_panel=absent; fi
+					case "$($BB sed -n 3p "$t_rec" 2>/dev/null)" in
+						'usb-init: pre-SSH panel '*) t_l3=yes;;
+						*) t_l3=no;;
+					esac
+					t_why="boot_record_append: ordered sequence check, record plus new line is not a prefix of the expected lines; panel record file $t_panel; record line 3 is a panel line $t_l3";;
+			esac
+		fi
+	fi
+	[ -n "$t_why" ] || [ "$((t_size + ${#t_line} + 1))" -le "$boot_record_bound" ] || t_why='boot_record_append: size bound after the new line'
+	[ -n "$t_why" ] || t_why='none of the mirrored checks refuse; the write or readback refused'
+	log "self-post-trace: append refusal check: $t_why" || true
+}
 # trace-end
 record_fail() {
 	trace "record_fail entry: $*"
 	trace_state "record_fail"
+	trace_refusal "$*"
 	[ "${POST_RECORD_FAIL:-0}" = 0 ] || return 0
 	POST_RECORD_FAIL=1
 	contract=${PMOS_ROOT_CONTRACT:-/run/pmos-root-contract.sh}
@@ -132,6 +174,24 @@ contract=${PMOS_ROOT_CONTRACT:-/run/pmos-root-contract.sh}
 [ -f "$contract" ] && [ ! -L "$contract" ] || contract="$GUARD/root-contract.sh"
 [ -f "$contract" ] && [ ! -L "$contract" ] && . "$contract" || die 'post-cutover boot record contract unavailable'
 trace 'post check post-cutover contract'
+trace 'pre check panel record'
+panel=/run/pmos-pre-ssh-panel.record
+if [ ! -e "$panel" ] && [ ! -L "$panel" ] && [ -f /.omnipha-boot-record ] && [ ! -L /.omnipha-boot-record ]; then
+	panel_hits=$($BB dmesg 2>/dev/null | $BB grep -E "^(\[[ 0-9.]*\] )?usb-init: usb-init: pre-SSH panel node=(boe|vxn|none) card0=[ -~]* boot $boot\$" | $BB sed 's/^\(\[[ 0-9.]*\] \)\{0,1\}usb-init: //')
+	panel_line=
+	if [ -n "$panel_hits" ] && [ "$($BB printf '%s\n' "$panel_hits" | $BB sort -u | $BB wc -l)" = 1 ]; then
+		panel_line=$($BB printf '%s\n' "$panel_hits" | $BB sed -n 1p)
+	fi
+	if [ -n "$panel_line" ] && [ "${#panel_line}" -le 400 ] &&
+		[ "${panel_line% boot $boot}" != "$panel_line" ] &&
+		[ "$($BB sed -n 3p /.omnipha-boot-record 2>/dev/null)" = "$panel_line" ]; then
+		( umask 077; set -C; $BB printf '%s\n' "$panel_line" > "$panel" ) || die 'cannot restore the pre-SSH panel record'
+		[ -f "$panel" ] && [ ! -L "$panel" ] && [ "$($BB stat -c '%u:%a:%h' "$panel")" = 0:600:1 ] ||
+			die 'restored pre-SSH panel record is unsafe'
+		trace 'panel record restored from the boot kernel log'
+	fi
+fi
+trace 'post check panel record'
 trace 'record append entry'
 trace_state 'append-entry'
 boot_record_append / "pmos-self-post: post-cutover PID 1 on boot $boot; guard identity check passed; pid1 identity check passed" ||
