@@ -29,6 +29,17 @@ if [ "${1:-}" != --inner ] && [ "${1:-}" != --pid1-ext4 ] && [ "${1:-}" != --ext
 		rm -rf -- "$WORK"
 	}
 	trap cleanup EXIT
+	PLAIN_POST="$WORK/pmos-self-post.plain.sh"
+	HERE="$HERE" PLAIN_POST="$PLAIN_POST" python3 -B - <<'PYEOF' || fail 'cannot derive the trace-free self-post script'
+import hashlib, importlib.util, os, pathlib
+here = pathlib.Path(os.environ["HERE"])
+spec = importlib.util.spec_from_file_location("persistent_root_builder", here / "build-init-boot-persistent-root.py")
+builder = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(builder)
+plain = builder.deinstrument((here / "pmos-self-post.sh").read_bytes())
+assert hashlib.sha256(plain).hexdigest() == "fe98c0d284906cd2e4fa843153f15a844a8ca8b9f3d301f772bab6233e410bab"
+pathlib.Path(os.environ["PLAIN_POST"]).write_bytes(plain)
+PYEOF
 	truncate -s 268435456 "$WORK/userdata.img"
 	/sbin/mke2fs -q -F -t ext4 -b 4096 "$WORK/userdata.img"
 	truncate -s 33554432 "$WORK/other.img"
@@ -54,7 +65,7 @@ if [ "${1:-}" != --inner ] && [ "${1:-}" != --pid1-ext4 ] && [ "${1:-}" != --ext
 		printf '%s\n' "$inner" >> "$WORK/inners"
 		sudo -n timeout -k 2 90 unshare --mount --pid --net --fork --kill-child --mount-proc \
 			env HOST_ARCHIVE="$ARCHIVE" SOURCE="$HERE" MAIN_NUMS="$main_nums" OTHER_NUMS="$other_nums" \
-			HOST_RUN="/mnt/pmos-root-fixture-$case" INNER="$inner" CASE="$case" HOST_TEST="$0" \
+			PLAIN_POST="$PLAIN_POST" HOST_RUN="/mnt/pmos-root-fixture-$case" INNER="$inner" CASE="$case" HOST_TEST="$0" \
 			/bin/busybox sh "$0" --pid1-ext4
 	done
 	exit 0
@@ -114,11 +125,49 @@ RCS
 	$BB chmod 755 /proc/1/root/sbin/rc-service
 	$BB cp /proc/1/root/sys/class/block/sda13/uevent "$HOST_RUN/uevent.saved"
 	$BB printf 'PARTNAME=super\n' > /proc/1/root/sys/class/block/sda13/uevent
+	$BB cp "$PLAIN_POST" /proc/1/root/run/pmos-self-post-plain.sh
+	$BB chmod 700 /proc/1/root/run/pmos-self-post-plain.sh
+	$BB chroot /proc/1/root /bin/busybox sh /run/pmos-self-post-plain.sh >"$HOST_RUN/post-bad-plain.out" 2>&1 && fail 'plain self-post accepted ext4 switched root with wrong PARTNAME'
 	$BB chroot /proc/1/root /bin/busybox sh /run/pmos-self-post.sh >"$HOST_RUN/post-bad.out" 2>&1 && fail 'self-post accepted ext4 switched root with wrong PARTNAME'
 	$BB grep -q 'switched-root or guard identity check failed' "$HOST_RUN/post-bad.out" || fail 'self-post wrong PARTNAME failure reason'
+	trace_has() { $BB grep -qF "pmos-self-post: self-post-trace: $2" "$1" || { $BB cat "$1" >&2; fail "trace point missing: $2"; }; }
+	trace_lacks() { ! $BB grep -qF "pmos-self-post: self-post-trace: $2" "$1" || { $BB cat "$1" >&2; fail "unexpected trace point: $2"; }; }
+	trace_strip() { $BB grep -vF 'pmos-self-post: self-post-trace: ' "$1"; }
+	trace_has "$HOST_RUN/post-bad.out" 'start rc=0'
+	trace_has "$HOST_RUN/post-bad.out" 'pre check root required rc=0'
+	trace_has "$HOST_RUN/post-bad.out" 'post check root required rc=0'
+	trace_has "$HOST_RUN/post-bad.out" 'post check boot id rc=0'
+	trace_has "$HOST_RUN/post-bad.out" 'openrc wait enter rc=0'
+	trace_has "$HOST_RUN/post-bad.out" 'openrc wait exit rc=0'
+	trace_has "$HOST_RUN/post-bad.out" 'pre check switched-root and guard identity rc=0'
+	trace_has "$HOST_RUN/post-bad.out" 'pid1 exe identity passed rc=0'
+	trace_has "$HOST_RUN/post-bad.out" 'guard contract sourced rc=0'
+	trace_has "$HOST_RUN/post-bad.out" 'record_fail entry: switched-root or guard identity check failed rc=0'
+	trace_lacks "$HOST_RUN/post-bad.out" 'root mount table or guard contract passed'
+	trace_lacks "$HOST_RUN/post-bad.out" 'post check switched-root and guard identity'
+	trace_lacks "$HOST_RUN/post-bad.out" 'pre check run keep'
+	trace_lacks "$HOST_RUN/post-bad.out" 'record append entry'
+	trace_strip "$HOST_RUN/post-bad.out" > "$HOST_RUN/post-bad.stripped"
+	[ "$($BB cat "$HOST_RUN/post-bad-plain.out")" = "$($BB cat "$HOST_RUN/post-bad.stripped")" ] ||
+		{ $BB cat "$HOST_RUN/post-bad-plain.out" "$HOST_RUN/post-bad.stripped" >&2; fail 'wrong-PARTNAME output differs from the trace-free script beyond trace lines'; }
+	$BB grep -q 'self-post-trace' "$HOST_RUN/post-bad-plain.out" && fail 'trace-free script emitted trace lines'
 	$BB chroot /proc/1/root /bin/busybox sh /run/pmos-radio-bringup.sh "$boot" modem capture-ok >"$HOST_RUN/radio-bad.out" 2>&1 && fail 'radio bring-up accepted ext4 switched root with wrong PARTNAME'
 	$BB grep -q 'post-cutover PID 1 or default/local absent' "$HOST_RUN/radio-bad.out" || fail 'radio wrong PARTNAME failure reason'
 	$BB cp "$HOST_RUN/uevent.saved" /proc/1/root/sys/class/block/sda13/uevent
+	$BB chroot /proc/1/root /bin/busybox sh /run/pmos-self-post-plain.sh >"$HOST_RUN/post-acked-plain.out" 2>&1 && fail 'plain self-post accepted an acknowledged guard'
+	$BB chroot /proc/1/root /bin/busybox sh /run/pmos-self-post.sh >"$HOST_RUN/post-acked.out" 2>&1 && fail 'self-post accepted an acknowledged guard'
+	$BB grep -q 'independent recovery guard is not armed and unacknowledged' "$HOST_RUN/post-acked.out" || { $BB cat "$HOST_RUN/post-acked.out" >&2; fail 'acked guard failure reason'; }
+	trace_has "$HOST_RUN/post-acked.out" 'post check switched-root and guard identity rc=0'
+	trace_has "$HOST_RUN/post-acked.out" 'post check run keep rc=0'
+	trace_has "$HOST_RUN/post-acked.out" 'pre check guard armed and unacknowledged rc=0'
+	trace_has "$HOST_RUN/post-acked.out" 'state start guard/accepted present'
+	trace_has "$HOST_RUN/post-acked.out" 'state start guard/nonce absent'
+	trace_has "$HOST_RUN/post-acked.out" 'record_fail entry: independent recovery guard is not armed and unacknowledged rc=0'
+	trace_lacks "$HOST_RUN/post-acked.out" 'post check guard armed and unacknowledged'
+	trace_lacks "$HOST_RUN/post-acked.out" 'record append entry'
+	trace_strip "$HOST_RUN/post-acked.out" > "$HOST_RUN/post-acked.stripped"
+	[ "$($BB cat "$HOST_RUN/post-acked-plain.out")" = "$($BB cat "$HOST_RUN/post-acked.stripped")" ] ||
+		{ $BB cat "$HOST_RUN/post-acked-plain.out" "$HOST_RUN/post-acked.stripped" >&2; fail 'acked-guard output differs from the trace-free script beyond trace lines'; }
 	$BB rm -f /proc/1/root/run/pid1-guard/accepted /proc/1/root/run/pid1-guard/ack
 	$BB printf '%s\n' fixture-nonce > /proc/1/root/run/pid1-guard/nonce
 	$BB chroot /proc/1/root /bin/busybox sh -c '
@@ -140,7 +189,30 @@ for line in \
 	"usb-init: pid1 transition guard armed; exec switch_root to postmarketOS init"; do
 	boot_record_append / "$line" || exit 1
 done' || fail 'self-post fixture pre-cutover record refused on the persistent root'
+	$BB cp /proc/1/root/.omnipha-boot-record "$HOST_RUN/record.before"
+	$BB chroot /proc/1/root /bin/busybox sh /run/pmos-self-post-plain.sh >"$HOST_RUN/post-ok-plain.out" 2>&1 && fail 'plain self-post succeeded without radio script at /run/radio-bringup'
+	$BB cp /proc/1/root/.omnipha-boot-record "$HOST_RUN/record.plain"
+	$BB cat "$HOST_RUN/record.before" > /proc/1/root/.omnipha-boot-record
+	[ "$($BB stat -c '%u:%a:%h' /proc/1/root/.omnipha-boot-record)" = 0:600:1 ] || fail 'record restore changed its mode'
 	$BB chroot /proc/1/root /bin/busybox sh /run/pmos-self-post.sh >"$HOST_RUN/post-ok.out" 2>&1 && fail 'self-post succeeded without radio script at /run/radio-bringup'
+	$BB cp /proc/1/root/.omnipha-boot-record "$HOST_RUN/record.traced"
+	[ "$($BB cat "$HOST_RUN/record.plain")" = "$($BB cat "$HOST_RUN/record.traced")" ] || fail 'boot record differs between the trace-free and traced self-post'
+	for point in 'start rc=0' 'post check root required rc=0' 'post check boot id rc=0' 'openrc wait exit rc=0' \
+		'root mount table or guard contract passed rc=0' 'pid1 root identity passed rc=0' \
+		'guard armed boot id passed rc=0' 'guard root identity passed rc=0' \
+		'post check switched-root and guard identity rc=0' 'post check run keep rc=0' \
+		'post check guard armed and unacknowledged rc=0' 'pre check post-cutover contract rc=0' \
+		'post check post-cutover contract rc=0' 'record append entry rc=0' 'state append-entry guard/nonce present' \
+		'state append-entry guard/accepted absent' 'state append-entry guard/ack absent' \
+		'record append exit rc=0' 'record verify entry rc=0' 'record verify exit rc=0' \
+		'pre check pinned radio script rc=0'; do
+		trace_has "$HOST_RUN/post-ok.out" "$point"
+	done
+	trace_has "$HOST_RUN/post-ok.out" 'record_fail entry: pinned radio bring-up script missing rc=0'
+	trace_lacks "$HOST_RUN/post-ok.out" 'post check pinned radio script'
+	trace_strip "$HOST_RUN/post-ok.out" > "$HOST_RUN/post-ok.stripped"
+	[ "$($BB cat "$HOST_RUN/post-ok-plain.out")" = "$($BB cat "$HOST_RUN/post-ok.stripped")" ] ||
+		{ $BB cat "$HOST_RUN/post-ok-plain.out" "$HOST_RUN/post-ok.stripped" >&2; fail 'pre-ack output differs from the trace-free script beyond trace lines'; }
 	$BB grep -q 'cold-start post-cutover PID 1.*independent recovery guard remains unacknowledged' "$HOST_RUN/post-ok.out" || { $BB cat "$HOST_RUN/post-ok.out" >&2; fail 'self-post rejected valid ext4 switched root'; }
 	$BB grep -q "pmos-self-post: post-cutover PID 1 on boot $boot; guard identity check passed; pid1 identity check passed" /proc/1/root/.omnipha-boot-record ||
 		{ $BB cat /proc/1/root/.omnipha-boot-record >&2; fail 'post-cutover record line missing on the persistent root'; }

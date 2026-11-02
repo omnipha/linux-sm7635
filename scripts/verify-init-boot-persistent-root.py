@@ -4,6 +4,7 @@ import importlib.util
 import io
 import lzma
 import pathlib
+import re
 import struct
 import sys
 import tarfile
@@ -139,10 +140,12 @@ def check_pair(init_image, carrier, stock_init, base_image, stock_carrier, curre
     decoded, changed, new_trailer, frame, size = changed_cpio(init_image, library, decode_frame)
     require(not any(init_image[base.PAGE + size:base.TAIL_OFFSET]), GAP_MSG)
     preserved = [item for item in entries if item["name"] != builder.builder.BUNDLE]
-    require(len(changed) == len(preserved) and new_trailer == trailer and
-            [item["name"] for item in changed] == [item["name"] for item in preserved] and
+    require(len(changed) == len(preserved) + 1 and new_trailer == trailer and
+            [item["name"] for item in changed[:-1]] == [item["name"] for item in preserved] and
+            changed[-1]["name"] == builder.TRACE_MEMBER and
+            changed[-1]["mode"] == 0o100700 and
             len({item["name"] for item in changed}) == len(changed), CPIO_MSG)
-    for old, new in zip(preserved, changed):
+    for old, new in zip(preserved, changed[:-1]):
         require(old["name"] == new["name"] and old["mode"] == new["mode"] and
                 old["fields"][:6] == new["fields"][:6] and old["fields"][7:] == new["fields"][7:] and
                 (old["data"] == new["data"] or old["name"] == "init"), CPIO_MSG)
@@ -161,6 +164,14 @@ def check_pair(init_image, carrier, stock_init, base_image, stock_carrier, curre
             all(members[name] == found[name] for name in builder.builder.PUBLIC), BUNDLE_MSG)
     public = {name: found[name] for name in names if name != builder.builder.PRIVATE}
     require(builder.builder.checked_bundle(blob, public, private, tuple(public)) == blob, BUNDLE_MSG)
+    trace = changed[-1]["data"]
+    require(trace == found["pmos-self-post-trace"] and
+            builder.deinstrument(trace) == found["pmos-self-post.sh"] and
+            members["pmos-self-post.sh"] == found["pmos-self-post.sh"] and
+            hashlib.sha256(members["pmos-self-post.sh"]).hexdigest() == builder.SELF_POST_BUNDLE_SHA and
+            hashlib.sha256(trace).hexdigest() != builder.SELF_POST_BUNDLE_SHA and
+            trace.count(b"self-post-trace") >= 5 and
+            sum(1 for line in trace.splitlines() if builder.TRACE_LINE.match(line)) >= 25, DELTA_MSG)
     require(init == builder.expected_init(original, found, blob) and
             builder.carrier_reader(blob) in init and
             init.count(b"/run/pmos-root-contract.sh") >= 1 and
@@ -321,6 +332,36 @@ def self_test(init_image, carrier, stock_init, base_image, stock_carrier, curren
     bad("carrier tail", CARRIER_MSG, init_image, flipped(carrier, builder.CARRIER_SIZE - 1))
     bad("carrier header", CARRIER_MSG, init_image, flipped(carrier, builder.CARRIER_HEADER))
     bad("carrier payload", CARRIER_MSG, init_image, flipped(carrier, builder.CARRIER_OFFSET))
+    traced = (builder.HERE / "pmos-self-post.sh").read_bytes()
+    plain_sha = builder.hashlib.sha256(builder.deinstrument(traced)).hexdigest()
+    require(plain_sha == "fe98c0d284906cd2e4fa843153f15a844a8ca8b9f3d301f772bab6233e410bab", DELTA_MSG)
+
+    def trace_only(data):
+        try:
+            return builder.hashlib.sha256(builder.deinstrument(data)).hexdigest() == plain_sha
+        except ValueError:
+            return False
+
+    require(trace_only(traced), DELTA_MSG)
+    require(not trace_only(traced + b"\n: appended\n"), DELTA_MSG)
+    require(not trace_only(traced.replace(
+        b"trace 'record verify exit'", b"trace 'record verify exit'\n[ -f /run/keep ] || die x", 1)), DELTA_MSG)
+    require(not trace_only(traced.replace(
+        b"die 'independent recovery guard is not armed and unacknowledged'", b":", 1)), DELTA_MSG)
+    require(not trace_only(traced.replace(b"umask 077", b"umask 022", 1)), DELTA_MSG)
+    require(not trace_only(traced.replace(b"[ \"$i\" -lt 60 ]", b"[ \"$i\" -lt 61 ]", 1)), DELTA_MSG)
+    require(not trace_only(traced.replace(b"# trace-end\n", b"", 1)), DELTA_MSG)
+    require(not trace_only(re.sub(rb"# trace-begin\n.*?# trace-end\n", b"", traced, flags=re.S)), DELTA_MSG)
+    for point in (b"'start'", b"'openrc wait enter'", b"'openrc wait exit'", b"'record append entry'",
+                  b"'record append exit'", b"'record verify entry'", b"'record verify exit'",
+                  b"'pre check run keep'", b"'post check run keep'",
+                  b"'pre check guard armed and unacknowledged'",
+                  b"'post check guard armed and unacknowledged'",
+                  b"'pre check post-cutover contract'", b"'post check post-cutover contract'",
+                  b"'pre check switched-root and guard identity'",
+                  b"'post check switched-root and guard identity'",
+                  b'"record_fail entry: $*"'):
+        require(traced.count(b"trace " + point) == 1, DELTA_MSG)
     changed = dict(current)
     changed["pmos-self-stage.sh"] += b"\n"
     bad("bundle mismatch", INIT_MSG, source=changed)

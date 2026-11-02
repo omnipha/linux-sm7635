@@ -54,6 +54,16 @@ armed unacked guard). Next single variable: dossier step 3 — an instrumented
 self-post failure exit point (guard state at self-post time), not any check
 change.
 
+## Dossier step 3 in flight (#265)
+
+Host-only phase done (records/2026-11-02-075546-host-preack-trace-image.md):
+`pmos-self-post.sh` carries trace-only `self-post-trace:` lines (start, OpenRC
+wait, before/after every guard/identity/keep/contract check, `record_fail`
+entry with the guard-directory shape, append/verify entry and exit). The
+successor `init_boot` `27a78a22` carries the traced script as an extra
+root-only cpio member; `vendor_boot_b a71b3f5f` stays installed. One boot
+with the pre-armed capture and no ack names the exit point or non-invocation.
+
 ## Order (binding)
 
 1. Post-ack session read, no window pressure: on the next open session read
