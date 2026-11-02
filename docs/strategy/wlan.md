@@ -41,46 +41,44 @@ and nothing starts the radio.
 
 ## Next single variable
 
-Run 94 (#263, records/2026-11-01-165231-run94-nonmount-inputs-all-pass.md):
-the non-mount contract inputs measured live post-ack — the full 146-device
-`/sys/class/block` PARTNAME walk (exactly one `userdata`, `sda13`), the real
-`/dev/block/sda13` block node (0400, 8:13, 471526808 sectors), guest
-`blockdev --getsize64` 241421725696, no `ROOT_CONTRACT_` env (defaults apply)
-— all PASS the unchanged contract on host replay (now fixtures). The acked
-guard shape (armed+accepted, no nonce/ack) also reconciles the run-93 probe
-discrepancy. H1 is eliminated for every post-ack-observable input: the run-90
-append refusal lives in self-post-time state (run 90 was pre-ack with an
-armed unacked guard). Next single variable: dossier step 3 — an instrumented
-self-post failure exit point (guard state at self-post time), not any check
-change.
+Run 95 (#265, shift testbootLog 2026-11-02T08:32Z; evidence
+phone-second-life-data/mb003/pstore/attempt-20261102-0925-preack-trace-run95/kmsg-r95-final.log)
+named the exit point. The contract is NOT the cause (the contract fallback,
+pid1/root identity, guard boot id, root identity, `/run/keep` all passed).
+Self-post exits at 156.55 s on the `armed and unacknowledged` check, because
+`guard/nonce` is ABSENT (armed present, accepted/ack absent). Only the guard
+watcher mints the nonce, and only once its own `post_root` is true. So before
+the deadline return (~170 s) the guard never minted a nonce while self-post's
+own copy of the same switched-root checks passed. Also: `/run/pmos-root-contract.sh`
+is absent at that time (the guard copy exists), which is irrelevant until the
+nonce check passes.
 
-## Dossier step 3 in flight (#265)
-
-Host-only phase done (records/2026-11-02-075546-host-preack-trace-image.md):
-`pmos-self-post.sh` carries trace-only `self-post-trace:` lines (start, OpenRC
-wait, before/after every guard/identity/keep/contract check, `record_fail`
-entry with the guard-directory shape, append/verify entry and exit). The
-successor `init_boot` `27a78a22` carries the traced script as an extra
-root-only cpio member; `vendor_boot_b a71b3f5f` stays installed. One boot
-with the pre-armed capture and no ack names the exit point or non-invocation.
+Next single variable (host first, no boot): why the guard watcher has no
+nonce at ~156 s — (a) timing: when did the nonce appear relative to cutover in
+the acked runs 93/94 captures (guard loop interval, chroot start), versus
+self-post start; (b) `post_root` inside the guard's chroot differs from
+self-post's checks (`/proc/1/exe` vs `/bin/busybox` hash, `$STATE/root-identity`
+compared against `stat /` inside the chroot). Replay (b) on the host fixture
+family. Only if host data cannot separate (a) from (b): one boot with trace-only
+guard-loop lines. Do not change the nonce check in self-post to make it pass:
+that check is the safety interlock with the guard.
 
 ## Order (binding)
 
-1. Post-ack session read, no window pressure: on the next open session read
-   `/proc/1/mountinfo`, `/proc/1/mounts` and the staged contract paths
-   (`/run/pmos-root-contract.sh`, `/run/pid1-guard/root-contract.sh`).
-   An ack changes no mount; this read needs no pre-ack window.
-2. Diff against the #256/#257 fixture; name the one diverging check or the
-   missing staging path. Fix it in the repo scripts; verify against the
-   fixture family. Host-only, no boot.
-3. Validate without a dispatch race: stage the fixed chain on the persistent
-   root (if init restages it from the boot image, that fix goes into the one
-   image instead), pre-arm the `:2222` capture, one guest reboot. The
-   pre-armed capture observes the pre-ack state; no worker races the
-   unacknowledged guard.
+1. Done: post-ack reads (runs 93/94) and pre-ack trace (run 95). Mount
+   contract and non-mount inputs are eliminated.
+2. Host: separate (a) and (b) above from the existing 93/94/95 captures and
+   fixtures. Fix in the repo scripts; verify against the fixture family.
+3. Validate once with a pre-armed `:2222` capture, one guest reboot, no
+   worker racing the unacknowledged guard.
 4. Exactly one image carries the measured working chain. Acceptance per
    PLAN.md: two fresh boots, radio chain self-starts, wlan0 associates,
    address, DNS, internet. No host recipe.
+5. Budget: this step has taken the runs 84-95 (more than a week) without one
+   radio stage executing. If step 2 does not separate (a)/(b) on the host, the
+   cheaper path is to drop the pre-ack self-post and start the radio chain
+   after the ack from the live session (run 69 recipe), then ask whether the
+   guard design itself should change.
 
 ## Acceptance (from PLAN.md)
 
