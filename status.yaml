@@ -3,13 +3,12 @@
 device: nothing-asteroids
 updated: 2026-11-02
 next_question: >-
-  Run 98 (#280): the pinned radio script refuses an acked guard, the post-ack
-  variant ran modem, wpss, wlan0, scan (33 BSS), association, address, DNS and
-  internet from one acked live session on 2ebdf1db/a71b3f5f. How does the
-  self-starting chain (no host recipe, two fresh boots) reach the same
-  chain, given the pre-ack append refusal and the services-stage hash checks
-  on a configured persistent root?
-active_issue: omnipha/linux-sm7635#280
+  Host-only #284: the persistent-root-aware services variant accepts
+  the stage's own persisted output and still refuses foreign config; the
+  installed pinned script and image pins are unchanged. Next variable: prove
+  the derived variant in one acked live session, then who recreates the /run
+  helpers and starts OpenRC on a fresh boot (self-post before networking).
+active_issue: omnipha/linux-sm7635#284
 subsystems:
   boot:
     state: confirmed

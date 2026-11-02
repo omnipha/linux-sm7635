@@ -1,10 +1,12 @@
 #!/bin/sh
 set -eu
 HERE=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
-SCRIPT="$HERE/pmos-radio-bringup.sh"
+SCRIPT=${SCRIPT:-"$HERE/pmos-radio-bringup.sh"}
 if [ "${1:-}" != --inner ]; then
 	[ -f "$SCRIPT" ] || exit 1
-	sudo -n unshare --mount --pid --fork --mount-proc env HERE="$HERE" SCRIPT="$SCRIPT" /bin/busybox sh "$0" --inner
+	for variant in "$HERE/pmos-radio-bringup.sh" "$HERE/pmos-radio-bringup-persistent.sh"; do
+		sudo -n unshare --mount --pid --fork --mount-proc env HERE="$HERE" SCRIPT="$variant" /bin/busybox sh "$0" --inner
+	done
 	exit 0
 fi
 
@@ -458,4 +460,105 @@ $BB grep -q '^IP_CMD=/sbin/ip$' "$R/run/radio-bringup/lease-wrapper.sh" &&
 $R/etc/runlevels/default/networking
 $R/etc/runlevels/default/wpa_supplicant" ] || fail 'unexpected enabled OpenRC runlevel entries'
 reject_stage services "$BOOT" services "$services_token"
-$BB printf 'pass: host-only radio bring-up stages, one-shot guards, fail-closed /dev/wlan derivation, helper exit 10, single reload, root-only scan, pinned lease-helper staging and OpenRC wpa_supplicant/networking stage verified\n'
+
+if [ "${SCRIPT##*/}" = pmos-radio-bringup-persistent.sh ]; then
+persistent_reboot() {
+	$BB rm -f "$R/run/radio-bringup/services.attempted" "$R/run/radio-bringup/services-stdin" \
+		"$R/run/radio-bringup/order" "$R/run/radio-bringup/wpa_supplicant.started" \
+		"$R/run/radio-bringup/networking.started" "$R/run/radio-bringup/ifquery-wlan" \
+		"$R/run/radio-bringup/lease-wrapper.sh"
+}
+run_persistent_services() {
+	$BB printf 'ctrl_interface=/run/wpa_supplicant\nnetwork={\nssid="synthetic"\npsk="synthetic-only"\n}\n' |
+		$BB chroot "$R" /bin/busybox sh /radio.sh "$BOOT" services "$services_token" > "$R/tmp/$1.out" 2>&1
+}
+$BB cp "$R/etc/network/interfaces" "$R/tmp/interfaces.own"
+$BB cp "$R/etc/wpa_supplicant/wpa_supplicant.conf" "$R/tmp/profile.own"
+
+persistent_reboot
+run_persistent_services services-persistent-ok || { $BB cat "$R/tmp/services-persistent-ok.out" >&2; fail 'persistent own-output services refused'; }
+expect "$R/tmp/services-persistent-ok.out" 'OpenRC wpa_supplicant then networking started' 'persistent services summary missing'
+[ "$($BB cat "$R/run/radio-bringup/order")" = 'wpa
+net' ] || fail 'persistent services did not start wpa_supplicant then networking'
+[ "$($BB cat "$R/run/radio-bringup/services.attempted")" = "$BOOT" ] || fail 'persistent services attempt not recorded'
+$BB grep -q '^wpa_supplicant_if="wlan0"$' "$R/etc/conf.d/wpa_supplicant" || fail 'persistent own supplicant config changed'
+$BB cmp -s "$R/etc/network/interfaces" "$R/tmp/interfaces.own" || fail 'persistent interfaces not idempotent'
+$BB cmp -s "$R/etc/wpa_supplicant/wpa_supplicant.conf" "$R/tmp/profile.own" || fail 'persistent profile not idempotent'
+
+persistent_reboot
+$BB touch "$R/run/radio-bringup/wpa_supplicant.started" "$R/run/radio-bringup/networking.started"
+run_persistent_services services-persistent-started || { $BB cat "$R/tmp/services-persistent-started.out" >&2; fail 'already-started own services refused'; }
+
+persistent_reboot
+$BB printf 'wpa_supplicant_args=""\nwpa_supplicant_if="wlan1"\n' > "$R/etc/conf.d/wpa_supplicant"
+run_persistent_services services-foreign-conf && fail 'foreign supplicant interface accepted'
+expect "$R/tmp/services-foreign-conf.out" 'unexpected supplicant arguments; no -f supported' 'foreign supplicant conf.d reason'
+$BB printf 'wpa_supplicant_args=""\nwpa_supplicant_if="wlan0"\n' > "$R/etc/conf.d/wpa_supplicant"
+
+persistent_reboot
+$BB chmod 666 "$R/etc/conf.d/wpa_supplicant"
+run_persistent_services services-conf-mode && fail 'world-writable own supplicant conf.d accepted'
+expect "$R/tmp/services-conf-mode.out" 'service input already exists' 'supplicant conf.d mode reason'
+$BB chmod 600 "$R/etc/conf.d/wpa_supplicant"
+
+persistent_reboot
+$BB ln -s /etc/init.d/sshd "$R/etc/runlevels/default/sshd"
+run_persistent_services services-foreign-runlevel && fail 'foreign enabled service accepted on persistent root'
+expect "$R/tmp/services-foreign-runlevel.out" 'another OpenRC service enabled' 'foreign runlevel reason'
+$BB rm "$R/etc/runlevels/default/sshd"
+
+persistent_reboot
+$BB rm "$R/etc/runlevels/default/wpa_supplicant"
+$BB ln -s /etc/init.d/sshd "$R/etc/runlevels/default/wpa_supplicant"
+run_persistent_services services-runlevel-target && fail 'modified own runlevel target accepted'
+expect "$R/tmp/services-runlevel-target.out" 'another OpenRC service enabled' 'modified runlevel target reason'
+$BB rm "$R/etc/runlevels/default/wpa_supplicant"
+$BB ln -s /etc/init.d/wpa_supplicant "$R/etc/runlevels/default/wpa_supplicant"
+
+persistent_reboot
+$BB rm "$R/etc/runlevels/default/wpa_supplicant"
+$BB touch "$R/run/radio-bringup/wpa_supplicant.started"
+run_persistent_services services-started-foreign && fail 'started but not enabled service accepted'
+expect "$R/tmp/services-started-foreign.out" 'unexpected OpenRC service state' 'started foreign service reason'
+$BB ln -s /etc/init.d/wpa_supplicant "$R/etc/runlevels/default/wpa_supplicant"
+
+persistent_reboot
+$BB printf '# foreign lease change\n' >> "$R/run/radio-bringup/wlan-udhcpc-lease.sh"
+run_persistent_services services-lease-modified && fail 'modified lease helper accepted'
+expect "$R/tmp/services-lease-modified.out" 'pinned lease helper absent' 'modified lease helper reason'
+$BB cp "$HERE/wlan-udhcpc-lease.sh" "$R/run/radio-bringup/wlan-udhcpc-lease.sh"
+$BB chmod 700 "$R/run/radio-bringup/wlan-udhcpc-lease.sh"
+
+persistent_reboot
+$BB printf 'auto wlan1\n' > "$R/etc/network/interfaces"
+run_persistent_services services-interfaces-modified && fail 'modified interfaces accepted'
+expect "$R/tmp/services-interfaces-modified.out" 'service input already exists' 'modified interfaces reason'
+$BB cp "$R/tmp/interfaces.own" "$R/etc/network/interfaces"
+$BB chmod 600 "$R/etc/network/interfaces"
+
+persistent_reboot
+$BB rm "$R/bin/run-parts"
+$BB ln -s /sbin/ip "$R/bin/run-parts"
+run_persistent_services services-run-parts-foreign && fail 'foreign run-parts link accepted'
+expect "$R/tmp/services-run-parts-foreign.out" 'service input already exists' 'foreign run-parts reason'
+$BB rm "$R/bin/run-parts"
+$BB ln -s busybox "$R/bin/run-parts"
+
+persistent_reboot
+$BB printf 'ctrl_interface=/run/wpa_supplicant\nnetwork={\nssid="other"\npsk="other-only"\n}\n' > "$R/etc/wpa_supplicant/wpa_supplicant.conf"
+$BB chmod 600 "$R/etc/wpa_supplicant/wpa_supplicant.conf"
+run_persistent_services services-profile-foreign && fail 'different persisted profile silently overwritten'
+expect "$R/tmp/services-profile-foreign.out" 'persisted WLAN profile differs' 'foreign profile reason'
+$BB cmp -s "$R/etc/wpa_supplicant/wpa_supplicant.conf" "$R/tmp/profile.own" && fail 'foreign profile was overwritten'
+$BB cp "$R/tmp/profile.own" "$R/etc/wpa_supplicant/wpa_supplicant.conf"
+$BB chmod 600 "$R/etc/wpa_supplicant/wpa_supplicant.conf"
+
+persistent_reboot
+run_persistent_services services-persistent-final || { $BB cat "$R/tmp/services-persistent-final.out" >&2; fail 'restored own-output state refused'; }
+reject_stage services "$BOOT" services "$services_token"
+expect "$R/tmp/services.out" 'services already attempted this boot; no retry' 'same-boot services retry reason'
+else
+	$BB printf 'pass (pinned installed variant, pristine archive only): host-only radio bring-up stages verified\n'
+	exit 0
+fi
+$BB printf 'pass: host-only radio bring-up stages, one-shot guards, fail-closed /dev/wlan derivation, helper exit 10, single reload, root-only scan, pinned lease-helper staging, OpenRC wpa_supplicant/networking stage, pristine archive, persistent-root own-output replay (including already-started services) and foreign conf.d, runlevel, lease-helper, interfaces, run-parts and profile refusals verified\n'

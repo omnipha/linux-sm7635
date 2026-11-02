@@ -2,6 +2,7 @@
 
 ## Latest 10
 
+- [2026-11-02-180959-services-stage-persistent-root-aware](records/2026-11-02-180959-services-stage-persistent-root-aware.md) | wlan | confirmed | omnipha/linux-sm7635#284 | Host-only #284: the services stage becomes persistent-root-aware as a separate pinned variant; the installed script and image pins stay byte-identical
 - [2026-11-02-170048-run98-acked-session-radio-chain-wlan-up](records/2026-11-02-170048-run98-acked-session-radio-chain-wlan-up.md) | wlan run 98 | confirmed | omnipha/linux-sm7635#280 | Run 98: acked live session brings the full radio chain up and reaches the internet; the pinned script refuses as derived, the post-ack variant runs
 - [2026-11-02-162351-host-radio-postack-derivation](records/2026-11-02-162351-host-radio-postack-derivation.md) | wlan | confirmed | omnipha/linux-sm7635#280 | Host: post-ack variant of the radio script, derived from the staged copy
 - [2026-11-02-154929-host-radio-live-session-handoff](records/2026-11-02-154929-host-radio-live-session-handoff.md) | wlan | confirmed | omnipha/linux-sm7635#280 | Host handoff: the installed radio script refuses an acked guard before the modem stage; one live probe must confirm outcome C
@@ -11,7 +12,6 @@
 - [2026-11-02-142315-host-append-refusal-reproduction](records/2026-11-02-142315-host-append-refusal-reproduction.md) | wlan | confirmed | omnipha/linux-sm7635#275 | Host: the absent-contract run-96 refusal is the ordered-sequence check, caused by the panel record lost at switch_root
 - [2026-11-02-142315-host-append-refusal-panel-record-initboot](records/2026-11-02-142315-host-append-refusal-panel-record-initboot.md) | wlan | confirmed | omnipha/linux-sm7635#275 | Host: successor init_boot 2ebdf1db restores the kmsg-attested panel record so the post-cutover append passes
 - [2026-11-02-130607-run96-correction](records/2026-11-02-130607-run96-correction.md) | wlan run 96 | confirmed | omnipha/linux-sm7635#271 | Run 96 correction: the nonce was absent at the check and appeared within the first 1 s wait; the post-cutover append is the refusing check
-- [2026-11-02-130241-run96-nonce-wait-passes-then-record-append-refused](records/2026-11-02-130241-run96-nonce-wait-passes-then-record-append-refused.md) | wlan run 96 | inconclusive | omnipha/linux-sm7635#271 | Run 96: the nonce wait works, the nonce is minted, then self-post refuses at the post-cutover boot record append
 
 ## By subsystem (latest 3, total in brackets)
 
@@ -40,15 +40,15 @@
 - [2026-10-30-150709-root-contract-measured-userdata-maximum](records/2026-10-30-150709-root-contract-measured-userdata-maximum.md) | userspace | confirmed | omnipha/linux-sm7635#199 | Measured userdata size accepted by the fail-closed root contract
 - [2026-10-30-142216-persistent-root-contract-size-gate](records/2026-10-30-142216-persistent-root-contract-size-gate.md) | userspace | refuted | omnipha/linux-sm7635#197 | Persistent root blocked by the closed #194 size gate
 
-### wlan [55]
+### wlan [56]
+- [2026-11-02-180959-services-stage-persistent-root-aware](records/2026-11-02-180959-services-stage-persistent-root-aware.md) | wlan | confirmed | omnipha/linux-sm7635#284 | Host-only #284: the services stage becomes persistent-root-aware as a separate pinned variant; the installed script and image pins stay byte-identical
 - [2026-11-02-170048-run98-acked-session-radio-chain-wlan-up](records/2026-11-02-170048-run98-acked-session-radio-chain-wlan-up.md) | wlan run 98 | confirmed | omnipha/linux-sm7635#280 | Run 98: acked live session brings the full radio chain up and reaches the internet; the pinned script refuses as derived, the post-ack variant runs
 - [2026-11-02-162351-host-radio-postack-derivation](records/2026-11-02-162351-host-radio-postack-derivation.md) | wlan | confirmed | omnipha/linux-sm7635#280 | Host: post-ack variant of the radio script, derived from the staged copy
-- [2026-11-02-154929-host-radio-live-session-handoff](records/2026-11-02-154929-host-radio-live-session-handoff.md) | wlan | confirmed | omnipha/linux-sm7635#280 | Host handoff: the installed radio script refuses an acked guard before the modem stage; one live probe must confirm outcome C
 
 ### wlan run 91 [1]
 - [2026-11-01-123812-coordinator-preack-window-missed](records/2026-11-01-123812-coordinator-preack-window-missed.md) | wlan run 91 run 91 | inconclusive | omnipha/linux-sm7635#256 | coordinator preack window missed
 
 ## By month
 
-- [2026-11](records/index-2026-11.md) [23]
+- [2026-11](records/index-2026-11.md) [24]
 - [2026-10](records/index-2026-10.md) [162]

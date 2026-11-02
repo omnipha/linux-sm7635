@@ -91,6 +91,16 @@ instrumentation, no manual remoteproc writes (run 69 recipe). Measure the first
 radio stage and name its result; only then revisit the guard design. Do not
 build another pre-radio self-post image. (Plan owner, 2026-11-02 16:40.)
 
+Host-only #284 (records/2026-11-02-180959-services-stage-persistent-root-aware.md):
+the persistent-root-aware `services` variant accepts its own earlier output and
+still refuses foreign conf.d/runlevel/lease/profile state; fixtures replay both
+variants. The installed pinned radio script and image pins are byte-identical;
+derivations reproduce the variant for the repo script and the run-98 staged copy.
+The lease helper's WLAN `:22` listener is an unowned run-66 bundle leftover, not
+an established deliberate design. Next single variable: validate the derived
+variant in one acked live session, then the self-post/OpenRC ordering that
+recreates the `/run` helpers on a fresh boot. No image built.
+
 ## Order (binding)
 
 1. Done: post-ack reads (runs 93/94) and pre-ack trace (run 95). Mount

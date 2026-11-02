@@ -3,6 +3,8 @@ import importlib.util, pathlib, subprocess, sys, tempfile
 here = pathlib.Path(__file__).resolve().parent
 spec = importlib.util.spec_from_file_location('d', here / 'derive-radio-postack.py')
 d = importlib.util.module_from_spec(spec); spec.loader.exec_module(d)
+for name in ('pmos-radio-bringup.sh', 'pmos-radio-bringup-persistent.sh'):
+    d.derive((here / name).read_text())
 src = (here / 'pmos-radio-bringup.sh').read_text()
 out = d.derive(src)
 assert out != src
@@ -21,4 +23,7 @@ for bad in (src.replace("armed and unacknowledged on this boot", "x"), src.repla
 with tempfile.NamedTemporaryFile('w', suffix='.sh') as f:
     f.write(out); f.flush()
     subprocess.run(['sh', '-n', f.name], check=True)
+persistent = d.derive((here / 'pmos-radio-bringup-persistent.sh').read_text())
+assert 'armed and acknowledged on this boot' in persistent
+assert 'own_digest()' in persistent
 print('pass: post-ack radio derivation replaces exactly the guard and capture gate, fails closed otherwise')
