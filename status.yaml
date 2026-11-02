@@ -1,15 +1,15 @@
 # Current measured state only. Limit 80 lines. No protocol text: link records.
 # Public claims: omnipha/ports devices/nothing-asteroids/device.yaml (updated separately).
 device: nothing-asteroids
-updated: 2026-11-01
+updated: 2026-11-02
 next_question: >-
-  Run 93 (#261) captured live post-cutover /proc/1/mountinfo: exactly one
-  sda13/8:13 mount at /, no second same-partition mount — the mount-info
-  hypothesis is refuted and the unchanged contract accepts the captured table
-  as a new fixture. The run-90 boot_record_append refusal is not in the mount
-  checks; unmeasured inputs remain the live /sys/class/block walk, the guest
-  block node stat/size, and blockdev output at self-post time.
-active_issue: omnipha/linux-sm7635#261
+  Runs 93/94 eliminated every post-ack-observable contract input, so the
+  run-90 boot_record_append refusal lives in self-post-time state. #265 ships
+  trace-only instrumentation of the automatic pre-ack self-post: init_boot
+  27a78a22 (host-built only, pending its one flash; vendor_boot_b a71b3f5f
+  stays installed) names the exit point or non-invocation from the pre-armed
+  capture, no ack until the pre-ack window is observed.
+active_issue: omnipha/linux-sm7635#265
 subsystems:
   boot:
     state: confirmed
@@ -30,6 +30,7 @@ subsystems:
     state: untested
     record: null
 attempted_shas:       # cold-start index only; the flash gate is device-op status, not this file
+  - 27a78a22        # init_boot_a, #265 trace-only pre-ack self-post; HOST-BUILT ONLY, pending its one flash
   - f9449ba5        # init_boot_a, #248 pair; flashed once run 87, never-reflash
   - a71b3f5f        # vendor_boot_b, #248 pair; flashed once run 87, never-reflash
   - fed40c30        # init_boot_a, run 86; flashed once, never-reflash

@@ -479,11 +479,13 @@ marker_model() {
 		GUARD=/run/pid1-guard
 		boot=11111111-2222-3333-4444-555555555555
 		log() { :; }
+		trace() { :; }
 		die() { printf 'FAIL: %s\n' "$*"; exit 1; }
 		marker_source=$(/run/busybox.real sed -n '/^guest_marker() {$/,/^}$/p' "$POST")
-		[ "$($BB printf '%s\n' "$marker_source" | $BB wc -l)" = 24 ] || die 'marker function extraction changed'
+		[ "$($BB printf '%s\n' "$marker_source" | $BB grep -cvE '^[[:space:]]*trace(_state)? ')" = 24 ] || die 'marker function extraction changed'
 		eval "$marker_source"
 		eval "$setup"
+		[ "$($BB printf '%s\n' "$marker_source" | $BB grep -cF 'trace "guest marker $stage entry"')" = 1 ] || die 'guest marker trace entry missing'
 		guest_marker model
 	) && rc=0 || rc=$?
 	case "$want" in

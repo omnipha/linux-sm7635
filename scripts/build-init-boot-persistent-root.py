@@ -5,6 +5,7 @@ import io
 import lzma
 import os
 import pathlib
+import re
 import stat
 import struct
 import sys
@@ -29,6 +30,14 @@ FRAME_MSG = "ramdisk is not one reproducible LZ4 HC-12 block inside the stock en
 CPIO_MSG = "cpio must change only /init and one root-only self-stage bundle"
 INIT_MSG = "init must keep the measured run-66 handoff and change only the root-contract pin"
 SHA_MSG = "candidate repeats a stock, measured or refused image SHA-256"
+TRACE_MSG = "self-post instrumentation is not trace-line-only"
+INSTALLED_INIT = "f9449ba5590fd5955a85a6b97a0e21775aa34534197981b213bc380fe8378b0f"
+INSTALLED_CARRIER = "a71b3f5f5e73ed7d8855abdd06c0379aa8084dfa9aa8068e347347d36254f9b3"
+SELF_POST_BUNDLE_SHA = "5e118ffc4073752afc06eb6f0f2e603f28c2a50f44356ec842039321db5bd81f"
+TRACE_MEMBER = "run/omnipha-self-post-trace.sh"
+TRACE_PATH = "/" + TRACE_MEMBER
+TRACE_BLOCK = re.compile(rb"# trace-begin\n.*?# trace-end\n", re.DOTALL)
+TRACE_LINE = re.compile(rb"^[ \t]*trace(?:_state)? ")
 ROOT_NAMES = (
     "pmos-root-contract.sh",
     "pmos-session-stage.sh",
@@ -68,7 +77,19 @@ REFUSED = frozenset((*builder.REFUSED, RUN66,
                        "27c4d8959ffdb5154aaa11bdf508ec7a1d81fe3cffbaaeb66bfe52b31365b21c",
                        "da4651d827cad181e55baf1bd9ddb9876fcc271b791c5046362ef056ea69c9c6",
                        "fed40c3073663b9bc5ff29e35e09ae1afdb8568cadf27e09c7e956f284c33c2d",
-                       "1765381ce0f2753aea208896342424ab5db7489c426d457a259f3398827cb587"))
+                       "1765381ce0f2753aea208896342424ab5db7489c426d457a259f3398827cb587",
+                       INSTALLED_INIT))
+
+
+def deinstrument(data):
+    require(len(TRACE_BLOCK.findall(data)) == 1, TRACE_MSG)
+    plain = TRACE_BLOCK.sub(b"", data, count=1)
+    require(b"# trace-begin\n" not in plain and b"self-post-trace" not in plain, TRACE_MSG)
+    kept = [line for line in plain.splitlines(keepends=True) if not TRACE_LINE.match(line)]
+    plain = b"".join(kept)
+    require(plain != data and plain.endswith(b"\n") and b"\0" not in plain, TRACE_MSG)
+    require(not any(TRACE_LINE.match(line) for line in plain.splitlines()), TRACE_MSG)
+    return plain
 
 
 def regular(path):
@@ -98,6 +119,7 @@ def replace_once(data, old, new):
 
 def current_scripts():
     original = {name: script_bytes(name) for name in ROOT_NAMES}
+    plain_post = deinstrument(original["pmos-self-post.sh"])
     expected = {
         "pmos-root-contract.sh": "c76c31ff148ab19ff5b2de6f1e40a036ee6ec275d54b0b5d1eaab0bbf0f06cc6",
         "pmos-session-stage.sh": "be70a27305145cabc15b70469ae7a0434fab352fb9c3d681943f73d22b92938a",
@@ -107,7 +129,10 @@ def current_scripts():
         "pmos-radio-bringup.sh": "7ef6382644c2e07705d2a8df77840031318c298478c8f93e9bbfd05c00b61812",
         "pmos-self-stage.sh": "92e9045894df3da3db2b093aebc03840a63d8e2b4b89c6cffc835b62d10614c6",
     }
-    require({name: hashlib.sha256(data).hexdigest() for name, data in original.items()} == expected, DELTA_MSG)
+    require(hashlib.sha256(plain_post).hexdigest() == expected["pmos-self-post.sh"] and
+            {name: hashlib.sha256(data).hexdigest() for name, data in original.items()
+             if name != "pmos-self-post.sh"} ==
+            {name: digest for name, digest in expected.items() if name != "pmos-self-post.sh"}, DELTA_MSG)
     found = dict(original)
     transition = replace_once(found["pmos-pid1-transition.sh"],
         b"log 'pid1 transition guard armed; exec switch_root to postmarketOS init'\n",
@@ -260,9 +285,19 @@ fi''')
 	exit 0''')
     require(radio.count(b"boot_record_append") == 1, DELTA_MSG)
     found["pmos-radio-bringup.sh"] = radio
-    found["pmos-self-post.sh"] = replace_once(found["pmos-self-post.sh"],
-        b"RADIO_SHA=7ef6382644c2e07705d2a8df77840031318c298478c8f93e9bbfd05c00b61812",
-        b"RADIO_SHA=" + hashlib.sha256(radio).hexdigest().encode())
+    radio_pin = b"RADIO_SHA=" + hashlib.sha256(radio).hexdigest().encode()
+    traced_post = replace_once(original["pmos-self-post.sh"],
+        b"RADIO_SHA=7ef6382644c2e07705d2a8df77840031318c298478c8f93e9bbfd05c00b61812", radio_pin)
+    found["pmos-self-post.sh"] = replace_once(plain_post,
+        b"RADIO_SHA=7ef6382644c2e07705d2a8df77840031318c298478c8f93e9bbfd05c00b61812", radio_pin)
+    require(deinstrument(traced_post) == found["pmos-self-post.sh"] and
+            hashlib.sha256(found["pmos-self-post.sh"]).hexdigest() == SELF_POST_BUNDLE_SHA and
+            hashlib.sha256(traced_post).hexdigest() != SELF_POST_BUNDLE_SHA and
+            sum(1 for line in traced_post.splitlines() if TRACE_LINE.match(line)) >= 25 and
+            traced_post.count(b"self-post-trace") >= 5 and
+            traced_post.count(b"boot_record_append") == 2 and
+            traced_post.count(b"boot_record_verify") == 1, DELTA_MSG)
+    found["pmos-self-post-trace"] = traced_post
     self_stage = replace_once(found["pmos-self-stage.sh"],
         b'die() { log "FAIL: $*"; exit 1; }\n',
         b'''die() { log "FAIL: $*"; exit 1; }
@@ -438,6 +473,11 @@ def hook(found, blob):
         b'$BB mv "$D/pmos-session-stage.sh" /run/pmos-session-stage.sh || exit 0\n', 1)
     body = body.replace(
         b'setsid /bin/busybox sh /run/pmos-self-stage.sh >/dev/null 2>&1 &\n',
+        b'T=' + TRACE_PATH.encode() + b'\n'
+        b'got=$($BB sha256sum "$T" 2>/dev/null | $BB cut -d " " -f 1)\n'
+        b'[ "$got" = ' + hashlib.sha256(found["pmos-self-post-trace"]).hexdigest().encode() + b' ] || exit 0\n'
+        b'$BB chmod 700 "$T" || exit 0\n'
+        b'$BB mv "$T" /run/pmos-self-post.sh || exit 0\n'
         b'[ ! -e /run/keep ] && [ ! -L /run/keep ] || exit 0\n'
         b'$BB touch /run/keep || exit 0\n'
         b'$BB chmod 600 /run/keep || exit 0\n'
@@ -447,7 +487,9 @@ def hook(found, blob):
     require(body.count(b"@PINS@") == 0 and body.count(b"pmos-root-contract.sh") == 3 and
             body.count(b"/run/keep") == 7 and body.count(b"sleep 150") == 0 and
             body.count(b"151.01") == 0 and body.count(carrier_reader(blob)) == 1 and
-            body.index(b'touch /run/keep') < body.index(b'setsid /bin/busybox sh /run/pmos-self-stage.sh'),
+            body.index(b'touch /run/keep') < body.index(b'setsid /bin/busybox sh /run/pmos-self-stage.sh') and
+            body.count(b'mv "$T" /run/pmos-self-post.sh') == 1 and
+            body.index(b'mv "$T" /run/pmos-self-post.sh') < body.index(b'touch /run/keep'),
             INIT_MSG)
     return body
 
@@ -620,10 +662,17 @@ def candidate_cpio(entries, trailer, found, private):
     init = expected_init(original, found, blob)
     changed = [{**entry, "data": init} if entry["name"] == "init" else entry
                for entry in entries if entry["name"] != builder.BUNDLE]
+    template = next(entry for entry in entries if entry["name"] == builder.BUNDLE)
+    fields = list(template["fields"])
+    fields[1] = 0o100700
+    changed.append({"name": TRACE_MEMBER, "mode": 0o100700, "fields": fields,
+                    "data": found["pmos-self-post-trace"]})
     cpio = modules.encode_newc(changed, trailer)
     decoded, new_trailer = modules.parse_newc(cpio, "persistent-root generic cpio")
     require(new_trailer == trailer and [item["name"] for item in decoded] ==
-            [item["name"] for item in changed], CPIO_MSG)
+            [item["name"] for item in changed] and
+            decoded[-1]["name"] == TRACE_MEMBER and
+            decoded[-1]["data"] == found["pmos-self-post-trace"], CPIO_MSG)
     return cpio
 
 
