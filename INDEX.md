@@ -2,6 +2,7 @@
 
 ## Latest 10
 
+- [2026-11-02-203443-fresh-boot-candidate](records/2026-11-02-203443-fresh-boot-candidate.md) | wlan | inconclusive | omnipha/linux-sm7635#291 | Host-only fresh-boot candidate: persistent local hook, pre-ack nonce gate
 - [2026-11-02-192316-run99-persistent-services-acked-session](records/2026-11-02-192316-run99-persistent-services-acked-session.md) | wlan run 99 | confirmed | omnipha/linux-sm7635#286 | Run 99: acked live session runs the persistent-root services stage successfully — outcome (A)
 - [2026-11-02-184635-host-persistent-postack-composition](records/2026-11-02-184635-host-persistent-postack-composition.md) | wlan | confirmed | omnipha/linux-sm7635#286 | Host-only #286: post-ack persistent radio variant composed, hashes pinned, fixtures replayed; live run deferred
 - [2026-11-02-180959-services-stage-persistent-root-aware](records/2026-11-02-180959-services-stage-persistent-root-aware.md) | wlan | confirmed | omnipha/linux-sm7635#284 | Host-only #284: the services stage becomes persistent-root-aware as a separate pinned variant; the installed script and image pins stay byte-identical
@@ -11,7 +12,6 @@
 - [2026-11-02-150805-append-refusal-run97-correction](records/2026-11-02-150805-append-refusal-run97-correction.md) | wlan run 97 | confirmed | omnipha/linux-sm7635#275 | Run 97 correction: outcome B stands; the panel restore never fired, the nonce wait ran once, and the append failed 0.1 s before the diagnostic
 - [2026-11-02-145742-append-refusal-ordered-sequence-check](records/2026-11-02-145742-append-refusal-ordered-sequence-check.md) | wlan run 97 | confirmed | omnipha/linux-sm7635#275 | Run 97 (#275) outcome B: the append is refused by the ordered-sequence check; the refusing check is now named in kmsg
 - [2026-11-02-142752-panel-line-uptime-correction](records/2026-11-02-142752-panel-line-uptime-correction.md) | wlan | confirmed | omnipha/linux-sm7635#275 | Host correction: run-96 panel line was logged at uptime 1.475 s, not 14.74 s
-- [2026-11-02-142315-host-append-refusal-reproduction](records/2026-11-02-142315-host-append-refusal-reproduction.md) | wlan | confirmed | omnipha/linux-sm7635#275 | Host: the absent-contract run-96 refusal is the ordered-sequence check, caused by the panel record lost at switch_root
 
 ## By subsystem (latest 3, total in brackets)
 
@@ -40,15 +40,15 @@
 - [2026-10-30-150709-root-contract-measured-userdata-maximum](records/2026-10-30-150709-root-contract-measured-userdata-maximum.md) | userspace | confirmed | omnipha/linux-sm7635#199 | Measured userdata size accepted by the fail-closed root contract
 - [2026-10-30-142216-persistent-root-contract-size-gate](records/2026-10-30-142216-persistent-root-contract-size-gate.md) | userspace | refuted | omnipha/linux-sm7635#197 | Persistent root blocked by the closed #194 size gate
 
-### wlan [58]
+### wlan [59]
+- [2026-11-02-203443-fresh-boot-candidate](records/2026-11-02-203443-fresh-boot-candidate.md) | wlan | inconclusive | omnipha/linux-sm7635#291 | Host-only fresh-boot candidate: persistent local hook, pre-ack nonce gate
 - [2026-11-02-192316-run99-persistent-services-acked-session](records/2026-11-02-192316-run99-persistent-services-acked-session.md) | wlan run 99 | confirmed | omnipha/linux-sm7635#286 | Run 99: acked live session runs the persistent-root services stage successfully — outcome (A)
 - [2026-11-02-184635-host-persistent-postack-composition](records/2026-11-02-184635-host-persistent-postack-composition.md) | wlan | confirmed | omnipha/linux-sm7635#286 | Host-only #286: post-ack persistent radio variant composed, hashes pinned, fixtures replayed; live run deferred
-- [2026-11-02-180959-services-stage-persistent-root-aware](records/2026-11-02-180959-services-stage-persistent-root-aware.md) | wlan | confirmed | omnipha/linux-sm7635#284 | Host-only #284: the services stage becomes persistent-root-aware as a separate pinned variant; the installed script and image pins stay byte-identical
 
 ### wlan run 91 [1]
 - [2026-11-01-123812-coordinator-preack-window-missed](records/2026-11-01-123812-coordinator-preack-window-missed.md) | wlan run 91 run 91 | inconclusive | omnipha/linux-sm7635#256 | coordinator preack window missed
 
 ## By month
 
-- [2026-11](records/index-2026-11.md) [26]
+- [2026-11](records/index-2026-11.md) [27]
 - [2026-10](records/index-2026-10.md) [162]
