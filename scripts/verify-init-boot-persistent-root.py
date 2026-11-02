@@ -171,7 +171,10 @@ def check_pair(init_image, carrier, stock_init, base_image, stock_carrier, curre
             hashlib.sha256(members["pmos-self-post.sh"]).hexdigest() == builder.SELF_POST_BUNDLE_SHA and
             hashlib.sha256(trace).hexdigest() != builder.SELF_POST_BUNDLE_SHA and
             trace.count(b"self-post-trace") >= 5 and
-            sum(1 for line in trace.splitlines() if builder.TRACE_LINE.match(line)) >= 25, DELTA_MSG)
+            sum(1 for line in trace.splitlines() if builder.TRACE_LINE.match(line)) >= 25 and
+            b"/run/pmos-pre-ssh-panel.record" in trace and
+            b"pmos-pre-ssh-panel.record" not in members["pmos-self-post.sh"] and
+            b"trace_refusal" not in members["pmos-self-post.sh"], DELTA_MSG)
     require(init == builder.expected_init(original, found, blob) and
             builder.carrier_reader(blob) in init and
             init.count(b"/run/pmos-root-contract.sh") >= 1 and
@@ -333,7 +336,7 @@ def self_test(init_image, carrier, stock_init, base_image, stock_carrier, curren
     bad("carrier payload", CARRIER_MSG, init_image, flipped(carrier, builder.CARRIER_OFFSET))
     traced = (builder.HERE / "pmos-self-post.sh").read_bytes()
     plain_sha = builder.hashlib.sha256(builder.deinstrument(traced)).hexdigest()
-    require(plain_sha == "6199649f1271c851ec72dbc3f36d55d7223a06c2ffe237689f0d41bbccc1041d", DELTA_MSG)
+    require(plain_sha == "eb3c2cb6509246c14142bebe4bf4318b159057faff43b03be7588557fcf7323f", DELTA_MSG)
 
     def trace_only(data):
         try:

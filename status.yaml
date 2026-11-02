@@ -3,12 +3,12 @@
 device: nothing-asteroids
 updated: 2026-11-02
 next_question: >-
-  #271 host image 17531039 (nonce wait + guard-contract fallback in the
-  trace member, installed carrier a71b3f5f unchanged) is verified. Does the
-  pre-ack self-post now pass the nonce check and start a radio stage on one
-  pre-armed boot of init_boot_a 17531039, no pre-ack worker? An early guard
-  return is not an elapsed 20 s wait.
-active_issue: omnipha/linux-sm7635#271
+  #275 host image 2ebdf1db (kmsg-attested panel record restore + named
+  append-refusal kmsg line in the trace member, installed carrier a71b3f5f
+  unchanged) is verified. Does one pre-armed boot of init_boot_a 2ebdf1db
+  pass the post-cutover append and start a radio stage, no pre-ack worker?
+  Run 96 passed the nonce wait and then refused the append.
+active_issue: omnipha/linux-sm7635#275
 subsystems:
   boot:
     state: confirmed
@@ -18,7 +18,7 @@ subsystems:
     record: records/2026-10-30-203515-run-69-second-boot-guard-wlan.md
   wlan:
     state: partial
-    record: records/2026-11-02-114833-host-nonce-wait-initboot.md
+    record: records/2026-11-02-142315-host-append-refusal-panel-record-initboot.md
   modem:
     state: partial        # stays running past the EFS request after PID-1 cutover (run 55); no voice/SIM/data claim
     record: records/2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the.md
@@ -29,6 +29,7 @@ subsystems:
     state: untested
     record: null
 attempted_shas:       # cold-start index only; the flash gate is device-op status, not this file
+  - 17531039        # init_boot_a, run 96 (#271); flashed once, never-reflash
   - 27a78a22        # init_boot_a, run 95 (#265); flashed once, never-reflash
   - f9449ba5        # init_boot_a, #248 pair; flashed once run 87, never-reflash
   - a71b3f5f        # vendor_boot_b, #248 pair; flashed once run 87, never-reflash

@@ -30,14 +30,14 @@ if [ "${1:-}" != --inner ] && [ "${1:-}" != --pid1-ext4 ] && [ "${1:-}" != --ext
 	}
 	trap cleanup EXIT
 	PLAIN_POST="$WORK/pmos-self-post.plain.sh"
-	HERE="$HERE" PLAIN_POST="$PLAIN_POST" NOWAIT_POST="$WORK/pmos-self-post.nowait.sh" python3 -B - <<'PYEOF' || fail 'cannot derive the trace-free self-post script'
+	HERE="$HERE" PLAIN_POST="$PLAIN_POST" NOWAIT_POST="$WORK/pmos-self-post.nowait.sh" NORESTORE_POST="$WORK/pmos-self-post.norestore.sh" python3 -B - <<'PYEOF' || fail 'cannot derive the self-post script variants'
 import hashlib, importlib.util, os, pathlib
 here = pathlib.Path(os.environ["HERE"])
 spec = importlib.util.spec_from_file_location("persistent_root_builder", here / "build-init-boot-persistent-root.py")
 builder = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(builder)
 plain = builder.deinstrument((here / "pmos-self-post.sh").read_bytes())
-assert hashlib.sha256(plain).hexdigest() == "6199649f1271c851ec72dbc3f36d55d7223a06c2ffe237689f0d41bbccc1041d"
+assert hashlib.sha256(plain).hexdigest() == "eb3c2cb6509246c14142bebe4bf4318b159057faff43b03be7588557fcf7323f"
 pathlib.Path(os.environ["PLAIN_POST"]).write_bytes(plain)
 traced = (here / "pmos-self-post.sh").read_bytes()
 block = b'''i=0
@@ -57,8 +57,12 @@ nowait = traced.replace(block, b"", 1)
 fallback = b'[ -f "$contract" ] && [ ! -L "$contract" ] || contract="$GUARD/root-contract.sh"\n'
 assert nowait.count(fallback) == 1
 nowait = nowait.replace(fallback, b"", 1)
-assert hashlib.sha256(nowait).hexdigest() == "3195dee92cf1156386391cf64a10f9f65e1b6d874683955914ba12fb1524bc6b"
+assert hashlib.sha256(nowait).hexdigest() == "f29d203bf185135092d444deb61c0d0adf71ee14e5a9cfa0dcec153667934b6c"
 pathlib.Path(os.environ["NOWAIT_POST"]).write_bytes(nowait)
+restore = builder.PANEL_RECORD_RESTORE
+assert traced.count(restore) == 1
+norestore = traced.replace(restore, b"", 1)
+pathlib.Path(os.environ["NORESTORE_POST"]).write_bytes(norestore)
 PYEOF
 	truncate -s 268435456 "$WORK/userdata.img"
 	/sbin/mke2fs -q -F -t ext4 -b 4096 "$WORK/userdata.img"
@@ -85,7 +89,7 @@ PYEOF
 		printf '%s\n' "$inner" >> "$WORK/inners"
 		sudo -n timeout -k 2 150 unshare --mount --pid --net --fork --kill-child --mount-proc \
 			env HOST_ARCHIVE="$ARCHIVE" SOURCE="$HERE" MAIN_NUMS="$main_nums" OTHER_NUMS="$other_nums" \
-			PLAIN_POST="$PLAIN_POST" NOWAIT_POST="$WORK/pmos-self-post.nowait.sh" HOST_RUN="/mnt/pmos-root-fixture-$case" INNER="$inner" CASE="$case" HOST_TEST="$0" \
+			PLAIN_POST="$PLAIN_POST" NOWAIT_POST="$WORK/pmos-self-post.nowait.sh" NORESTORE_POST="$WORK/pmos-self-post.norestore.sh" HOST_RUN="/mnt/pmos-root-fixture-$case" INNER="$inner" CASE="$case" HOST_TEST="$0" \
 			/bin/busybox sh "$0" --pid1-ext4
 	done
 	exit 0
@@ -275,6 +279,61 @@ done' || fail 'self-post fixture pre-cutover record refused on the persistent ro
 	trace_has "$HOST_RUN/post-late.out" 'record verify exit rc=0'
 	trace_lacks "$HOST_RUN/post-late.out" 'guard nonce wait 19 rc=0'
 	$BB rm /proc/1/root/run/pmos-root-contract.sh
+	$BB rm -f /proc/1/root/.omnipha-boot-record /proc/1/root/run/pmos-pre-ssh-panel.record
+	PANEL3="usb-init: pre-SSH panel node=none card0=1 dsi1=1 dcs=none reset=none suspend=clear brightness=0 boot $boot"
+	PANEL_FOREIGN='usb-init: pre-SSH panel node=boe card0=0 dsi1=0 dcs=none reset=none suspend=clear brightness=0 boot 00000000-0000-4000-8000-000000000000'
+	$BB printf '%s\n' "$PANEL3" > /proc/1/root/run/pmos-pre-ssh-panel.record
+	$BB chmod 600 /proc/1/root/run/pmos-pre-ssh-panel.record
+	$BB chroot /proc/1/root /bin/busybox sh -c '
+BB=/bin/busybox
+. /run/pid1-guard/root-contract.sh
+boot=$($BB cat /proc/sys/kernel/random/boot_id)
+root_contract_switched_root /proc/1/mounts /proc/1/mountinfo || exit 1
+boot_record_open / || exit 1
+boot_record_append / "pmos-self-stage: diagnostic hold and :22 verified on boot $boot" || exit 1
+boot_record_append / "$1" || exit 1
+for line in \
+	"pmos-stage: using unpacked persistent postmarketOS root" \
+	"pmos-stage: mounted private proc/sys/configfs and guest-only dev, verified nodes and private devpts" \
+	"pmos-stage: second key-only SSH listening on 172.16.42.2:2222 (diagnostic :22 untouched)" \
+	"pmos-stage: STAGED ok; enter with: ssh -p 2222 root@172.16.42.2 (accept the printed key)" \
+	"pmos-self-stage: mounted pinned persistent root from read-only /dev/block/sda13 (sda13) and verified its root contract" \
+	"pmos-self-stage: guest :2222 public key matches the diagnostic host key; pin [172.16.42.2]:2222 before the PID 1 request" \
+	"radio-bringup: stock INI, one-shot helper and service markers verified and staged in guest RAM before cutover" \
+	"pmos-self-stage: staged postmarketOS root and armed PID 1 request for boot $boot" \
+	"usb-init: pid1 transition guard armed; exec switch_root to postmarketOS init"; do
+	boot_record_append / "$line" || exit 1
+done' panel-record "$PANEL3" || fail 'panel fixture pre-cutover record refused on the persistent root'
+	$BB rm /proc/1/root/run/pmos-pre-ssh-panel.record
+	$BB cat /proc/1/root/.omnipha-boot-record > "$HOST_RUN/record.panel-before"
+	$BB printf 'usb-init: %s\n' "$PANEL3" > /proc/1/root/dev/kmsg ||
+		fail 'cannot publish the fixture panel line to this boot kernel log'
+	$BB cp "$NORESTORE_POST" /proc/1/root/run/pmos-self-post-norestore.sh
+	$BB chmod 700 /proc/1/root/run/pmos-self-post-norestore.sh
+	$BB chroot /proc/1/root /bin/busybox sh /run/pmos-self-post-norestore.sh >"$HOST_RUN/post-panel-norestore.out" 2>&1 && fail 'pre-fix self-post appended the post-cutover line although the panel record was absent (run-96 shape)'
+	$BB grep -q 'FAIL: post-cutover boot record append refused' "$HOST_RUN/post-panel-norestore.out" || { $BB cat "$HOST_RUN/post-panel-norestore.out" >&2; fail 'pre-fix run-96 shape refusal reason'; }
+	trace_has "$HOST_RUN/post-panel-norestore.out" 'append refusal check: boot_record_append: ordered sequence check'
+	$BB grep -qF 'panel record file absent' "$HOST_RUN/post-panel-norestore.out" || fail 'pre-fix diagnostic does not name the absent panel record file'
+	[ "$($BB sed -n 3p /proc/1/root/.omnipha-boot-record)" = "$PANEL3" ] || { $BB cat /proc/1/root/.omnipha-boot-record >&2; fail 'pre-fix run-96 shape changed the persistent record'; }
+	$BB cat "$HOST_RUN/record.panel-before" > /proc/1/root/.omnipha-boot-record
+	$BB chroot /proc/1/root /bin/busybox sh /run/pmos-self-post.sh >"$HOST_RUN/post-panel.out" 2>&1 && fail 'panel-restore self-post succeeded without radio script at /run/radio-bringup'
+	$BB grep -q 'pinned radio bring-up script missing' "$HOST_RUN/post-panel.out" || { $BB cat "$HOST_RUN/post-panel.out" >&2; fail 'fixed self-post refused after restoring the panel record (run-96 shape)'; }
+	trace_has "$HOST_RUN/post-panel.out" 'panel record restored from the boot kernel log rc=0'
+	trace_has "$HOST_RUN/post-panel.out" 'record append exit rc=0'
+	trace_has "$HOST_RUN/post-panel.out" 'record verify exit rc=0'
+	$BB grep -q "pmos-self-post: post-cutover PID 1 on boot $boot; guard identity check passed; pid1 identity check passed" /proc/1/root/.omnipha-boot-record ||
+		{ $BB cat /proc/1/root/.omnipha-boot-record >&2; fail 'post-cutover record line missing after the panel restore'; }
+	[ "$($BB sed -n 3p /proc/1/root/.omnipha-boot-record)" = "$PANEL3" ] ||
+		{ $BB cat /proc/1/root/.omnipha-boot-record >&2; fail 'panel line not at position 3 after the fixed append'; }
+	[ "$($BB cat /proc/1/root/run/pmos-pre-ssh-panel.record)" = "$PANEL3" ] || fail 'restored panel record content differs from the kmsg-attested line'
+	$BB rm -f /proc/1/root/run/pmos-pre-ssh-panel.record
+	$BB awk -v line="$PANEL_FOREIGN" 'NR == 3 {print line; next} {print}' "$HOST_RUN/record.panel-before" > /proc/1/root/.omnipha-boot-record
+	$BB chroot /proc/1/root /bin/busybox sh /run/pmos-self-post.sh >"$HOST_RUN/post-panel-foreign.out" 2>&1 && fail 'self-post succeeded with a panel line that differs from this boot kernel log'
+	$BB grep -q 'FAIL: post-cutover boot record append refused' "$HOST_RUN/post-panel-foreign.out" || { $BB cat "$HOST_RUN/post-panel-foreign.out" >&2; fail 'foreign panel line refusal reason'; }
+	trace_has "$HOST_RUN/post-panel-foreign.out" 'append refusal check: boot_record_append: ordered sequence check'
+	trace_lacks "$HOST_RUN/post-panel-foreign.out" 'panel record restored from the boot kernel log'
+	[ ! -e /proc/1/root/run/pmos-pre-ssh-panel.record ] && [ ! -L /proc/1/root/run/pmos-pre-ssh-panel.record ] || fail 'foreign panel line was restored despite the kmsg mismatch'
+	[ "$($BB sed -n 3p /proc/1/root/.omnipha-boot-record)" = "$PANEL_FOREIGN" ] || fail 'foreign panel line changed the persistent record'
 	$BB cat "$HOST_RUN/record.before" > /proc/1/root/.omnipha-boot-record
 	$BB chroot /proc/1/root /bin/busybox sh /run/pmos-self-post.sh >"$HOST_RUN/post-guardcontract.out" 2>&1 && fail 'guard-contract self-post succeeded without radio script at /run/radio-bringup'
 	$BB grep -q 'pinned radio bring-up script missing' "$HOST_RUN/post-guardcontract.out" || { $BB cat "$HOST_RUN/post-guardcontract.out" >&2; fail 'self-post refused the guard-staged contract with the default path absent (run-95 shape)'; }
