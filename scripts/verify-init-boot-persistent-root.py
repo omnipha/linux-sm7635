@@ -116,7 +116,7 @@ def check_carrier(carrier, stock_carrier, blob):
             carrier[builder.CARRIER_OFFSET:end] == blob and
             not any(carrier[end:-64]), CARRIER_MSG)
     digest = hashlib.sha256(carrier).hexdigest()
-    require(digest != builder.CARRIER_SHA and digest not in refused(), SHA_MSG)
+    require(digest == builder.INSTALLED_CARRIER, SHA_MSG)
     return digest
 
 
@@ -166,7 +166,7 @@ def check_pair(init_image, carrier, stock_init, base_image, stock_carrier, curre
     require(builder.builder.checked_bundle(blob, public, private, tuple(public)) == blob, BUNDLE_MSG)
     trace = changed[-1]["data"]
     require(trace == found["pmos-self-post-trace"] and
-            builder.deinstrument(trace) == found["pmos-self-post.sh"] and
+            builder.without_nonce_wait(builder.deinstrument(trace)) == found["pmos-self-post.sh"] and
             members["pmos-self-post.sh"] == found["pmos-self-post.sh"] and
             hashlib.sha256(members["pmos-self-post.sh"]).hexdigest() == builder.SELF_POST_BUNDLE_SHA and
             hashlib.sha256(trace).hexdigest() != builder.SELF_POST_BUNDLE_SHA and
@@ -240,9 +240,8 @@ def self_test(init_image, carrier, stock_init, base_image, stock_carrier, curren
         init_image, carrier, stock_init, base_image, stock_carrier, current, library, decode_frame)
     require(digest not in (RUN69_INIT, RUN72_INIT, RUN73_INIT, RUN78_INIT, RUN76_INIT,
                            RUN79_INIT, RUN83_INIT) and
-            carrier_digest not in (RUN69_CARRIER, RUN73_CARRIER, RUN78_CARRIER,
-                                   RUN76_CARRIER, RUN79_CARRIER, RUN83_CARRIER),
-            "delta must change both carriers and repeat neither measured image")
+            carrier_digest == builder.INSTALLED_CARRIER,
+            "init must be new and carrier must match the installed image")
     git_clean()
     old_image, old_blob, old_members, replayed = omission_fixture(
         base_image, library, decode_frame)

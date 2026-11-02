@@ -61,12 +61,14 @@ is absent (the measured run-90/95 shape, otherwise the very next check would
 die). Fixtures replay the exact run-95 script failing on a late nonce and the
 fixed script passing; never-minted nonce still refuses after 20 s.
 
-Next single variable (dossier step 3, successor issue): ONE boot of a new
-init_boot carrying this self-post (new hash; 27a78a22 stays never-reflash),
-pre-armed `:2222` capture, no worker racing the pre-ack guard. Prediction:
-nonce check passes ≈1–2 s after cutover, post-cutover record appends, radio
-stages run. If no nonce within 20 s, that kmsg decides the guard-design
-question (post-ack radio start from the live session — owner decision).
+Next single variable (dossier step 3, #271): ONE boot of the host-verified
+init_boot 17531039 carrying this self-post (27a78a22 stays never-reflash;
+installed vendor_boot_b a71b3f5f stays), pre-armed `:2222` capture, no
+worker racing the pre-ack guard. Builder/carrier mismatch found and fixed:
+records/2026-11-02-114833-host-nonce-wait-initboot.md. Prediction: nonce check
+passes ≈1–2 s after cutover, post-cutover record appends, radio stages run.
+If the full 20 s actually elapses without a nonce, that kmsg decides the
+guard-design question; an earlier guard return is not an elapsed 20 s wait.
 
 ## Order (binding)
 
