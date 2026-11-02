@@ -81,6 +81,16 @@ equal record line 3), name any refusing check in kmsg. Image 2ebdf1db, carrier
 a71b3f5f unchanged: records/2026-11-02-142315-host-append-refusal-panel-record-initboot.md.
 One boot next; not WLAN acceptance.
 
+Run 97 (#275) landed in (B) again: the ordered-sequence check still refused the
+append and no radio stage ran (records/2026-11-02-145742, correction
+records/2026-11-02-150805). Step 5 below therefore binds: the self-post image
+budget is spent. Next single variable (#280, open agent-ready): start the pinned
+radio chain from ONE pid1-acked live session on the installed init_boot_a
+2ebdf1db + vendor_boot_b a71b3f5f chain — no new image, no self-post
+instrumentation, no manual remoteproc writes (run 69 recipe). Measure the first
+radio stage and name its result; only then revisit the guard design. Do not
+build another pre-radio self-post image. (Plan owner, 2026-11-02 16:40.)
+
 ## Order (binding)
 
 1. Done: post-ack reads (runs 93/94) and pre-ack trace (run 95). Mount
