@@ -3,13 +3,11 @@
 device: nothing-asteroids
 updated: 2026-11-02
 next_question: >-
-  Run 97 (#275) named the refusing check: boot_record_append ordered
-  sequence check (record plus new line not a prefix of the expected
-  lines; panel record file absent; record line 3 is a panel line). Why does
-  the record carry a panel line 3 when the panel record file is absent, and
-  what append shape lets the pre-ack radio stages run? Radio chain still
-  unmeasured; 2ebdf1db is never-reflash.
-active_issue: omnipha/linux-sm7635#275
+  Does one pinned modem invocation from the acked live session on installed
+  2ebdf1db/a71b3f5f refuse at the armed-and-unacknowledged guard gate as
+  derived on the host? If so, outcome C is the measured guard-design input;
+  radio stages remain unmeasured and no image or interlock change is allowed.
+active_issue: omnipha/linux-sm7635#280
 subsystems:
   boot:
     state: confirmed
@@ -19,7 +17,7 @@ subsystems:
     record: records/2026-10-30-203515-run-69-second-boot-guard-wlan.md
   wlan:
     state: partial
-    record: records/2026-11-02-145742-append-refusal-ordered-sequence-check.md
+    record: records/2026-11-02-154929-host-radio-live-session-handoff.md
   modem:
     state: partial        # stays running past the EFS request after PID-1 cutover (run 55); no voice/SIM/data claim
     record: records/2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the.md
