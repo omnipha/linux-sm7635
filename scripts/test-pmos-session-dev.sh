@@ -24,7 +24,7 @@ STAGE="$SOURCE/pmos-session-stage.sh"
 TEARDOWN="$SOURCE/pmos-session-teardown.sh"
 TRANSITION="$SOURCE/pmos-pid1-transition.sh"
 GUARD="$SOURCE/pmos-pid1-guard.sh"
-RADIO="$SOURCE/pmos-radio-bringup.sh"
+RADIO="$SOURCE/pmos-radio-bringup-persistent.sh"
 LEASE="$SOURCE/wlan-udhcpc-lease.sh"
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 mounts_clear() {
@@ -575,7 +575,7 @@ $BB mkdir -p -m 700 /run/pmos/run/radio-bringup
 $BB cp "$LEASE" /run/pmos/run/radio-bringup/wlan-udhcpc-lease.sh
 $BB chmod 700 /run/pmos/run/radio-bringup/wlan-udhcpc-lease.sh
 ip link add wlan0 type dummy
-$BB sed -n '/^install_service_config()/,/^}/p' "$RADIO" > /run/pmos/run/radio-bringup/install.sh
+$BB awk '/^emit_lease_wrapper\(\)/{p=1} /^services\(\) \{/{p=0} p' "$RADIO" > /run/pmos/run/radio-bringup/install.sh
 $BB printf 'STATE=/run/radio-bringup\nBB=/bin/busybox\nfail() { /bin/busybox printf "FAIL: %%s\\n" "$*" >&2; exit 1; }\ninstall_service_config\n' >> /run/pmos/run/radio-bringup/install.sh
 $BB printf 'ctrl_interface=/run/wpa_supplicant\nnetwork={\n\tssid="synthetic"\n\tpsk="12345678"\n}\n' |
 	ssh -q -T -p 2222 -i /run/client_key -o BatchMode=yes -o IdentitiesOnly=yes -o IdentityAgent=none -o PasswordAuthentication=no -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/run/known_hosts root@172.16.42.2 \
