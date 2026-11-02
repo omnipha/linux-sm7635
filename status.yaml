@@ -3,12 +3,10 @@
 device: nothing-asteroids
 updated: 2026-11-02
 next_question: >-
-  Host-only #284: the persistent-root-aware services variant accepts
-  the stage's own persisted output and still refuses foreign config; the
-  installed pinned script and image pins are unchanged. Next variable: prove
-  the derived variant in one acked live session, then who recreates the /run
-  helpers and starts OpenRC on a fresh boot (self-post before networking).
-active_issue: omnipha/linux-sm7635#284
+  Owner review: how to preserve independently bounded pre-guard and watcher
+  recovery and exact post-success failure evidence for the host-designed
+  success-gated ACK without weakening the installed interlocks?
+active_issue: omnipha/linux-sm7635#294
 subsystems:
   boot:
     state: confirmed
@@ -18,7 +16,7 @@ subsystems:
     record: records/2026-10-30-203515-run-69-second-boot-guard-wlan.md
   wlan:
     state: partial
-    record: records/2026-11-02-170048-run98-acked-session-radio-chain-wlan-up.md
+    record: records/2026-11-02-225455-success-gated-ack-owner-review-blockers.md
   modem:
     state: partial        # stays running past the EFS request after PID-1 cutover (run 55); no voice/SIM/data claim
     record: records/2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the.md

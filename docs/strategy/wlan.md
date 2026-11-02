@@ -48,17 +48,15 @@ host-tested only. OpenRC ordering on a fresh boot is unmeasured.
 
 ## Next single variable
 
-Host-side design and fail-closed fixtures for a **device-owned success-gated
-transition** from #291's pre-ack radio path to a lasting acknowledged boot.
-The single hypothesis is that, after independently verified same-boot radio
-and connectivity success, the device can request guard acceptance without a
-host while retaining an independent, bounded recovery path for failures before
-acceptance. Specify exactly who issues the acknowledgement, what evidence it checks,
-how it is protected from premature or replayed success, how the existing
-nonce is consumed only after all radio stages finish, and how no-success,
-invalid-evidence, late and interrupted paths still return to fastboot. State
-what changes to pinned images or interlocks are unavoidable and why; do not
-weaken a guard or implement an automatic acknowledgement as a shortcut.
+Owner review of the #294 design and its measured recovery/evidence limits
+(records/2026-11-02-225455-success-gated-ack-owner-review-blockers.md). The
+host-only derived gate publishes a real same-boot ACK only after all radio and
+connectivity checks, but its generated hook deliberately refuses launch. The
+installed chain has an unbounded pre-guard interval after its guest hold, no
+independent supervision of the single watcher, and no durable post-success
+failure-record channel. No fresh-boot measurement is authorized until the
+owner chooses the minimal recovery/evidence redesign or explicitly narrows
+those guarantees; do not weaken the nonce interlock, capture gate or guard.
 
 Why this direction: run 84 measured an unacknowledged boot returning to
 fastboot (records/2026-10-31-162218-run-84-record-rotation-cutover-noack-return.md).
@@ -89,8 +87,9 @@ live fact is indispensable to the host design, not as acceptance.
    association, address, DNS and internet in host-acked sessions.
 3. Done on host only: #291 derived the persistent fresh-boot hook and radio
    candidate; it cannot maintain a no-host boot because it never acknowledges.
-4. Next: design and fixture-test the device-owned success-gated transition
-   described above; independently preserve deadline recovery on failure.
+4. Done on host only: #294 derived and fixture-tested the gate, but refuted
+   full intact-chain recovery/evidence acceptance; its hook refuses launch.
+   Next: owner review of the named recovery/evidence redesign decisions.
 5. Only then measure one reviewed candidate on a fresh device boot under the
    coordinator's existing safety gate, followed by a second boot only when
    the first passes. A merged device record is required for the PLAN check.
