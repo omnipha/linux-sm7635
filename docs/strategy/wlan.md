@@ -41,34 +41,39 @@ and nothing starts the radio.
 
 ## Next single variable
 
-Run 95 (#265, shift testbootLog 2026-11-02T08:32Z; evidence
-phone-second-life-data/mb003/pstore/attempt-20261102-0925-preack-trace-run95/kmsg-r95-final.log)
-named the exit point. The contract is NOT the cause (the contract fallback,
-pid1/root identity, guard boot id, root identity, `/run/keep` all passed).
-Self-post exits at 156.55 s on the `armed and unacknowledged` check, because
-`guard/nonce` is ABSENT (armed present, accepted/ack absent). Only the guard
-watcher mints the nonce, and only once its own `post_root` is true. So before
-the deadline return (~170 s) the guard never minted a nonce while self-post's
-own copy of the same switched-root checks passed. Also: `/run/pmos-root-contract.sh`
-is absent at that time (the guard copy exists), which is irrelevant until the
-nonce check passes.
+Run 95 (#265) named the exit point: self-post exits at 156.55 s on the
+`armed and unacknowledged` check because `guard/nonce` is absent.
 
-Next single variable (host first, no boot): why the guard watcher has no
-nonce at ~156 s — (a) timing: when did the nonce appear relative to cutover in
-the acked runs 93/94 captures (guard loop interval, chroot start), versus
-self-post start; (b) `post_root` inside the guard's chroot differs from
-self-post's checks (`/proc/1/exe` vs `/bin/busybox` hash, `$STATE/root-identity`
-compared against `stat /` inside the chroot). Replay (b) on the host fixture
-family. Only if host data cannot separate (a) from (b): one boot with trace-only
-guard-loop lines. Do not change the nonce check in self-post to make it pass:
-that check is the safety interlock with the guard.
+Step 2 done on the host (#268,
+records/2026-11-02-094850-host-guard-nonce-timing-vs-chroot.md): (a) timing
+confirmed, (b) chroot divergence refuted. All three captures (93/94/95) show
+self-post dying 0.4–0.6 s after the transition line; the acked runs 93/94
+prove the same guard minted the nonce at uptime ≈157 s, ≈1–2.5 s after
+cutover (the ack's strict probe requires the nonce). Self-post asked too
+early, once. Run 95 itself has no post-cutover nonce read (its guard-state
+capture predates cutover), so the 2 s mint on that boot is inferred, not
+measured.
+
+Fix merged with #268: self-post waits up to 20 s for the nonce (re-asserting
+armed/accepted/ack each second; the check itself is unchanged), and sources
+the post-cutover contract from the guard copy when `/run/pmos-root-contract.sh`
+is absent (the measured run-90/95 shape, otherwise the very next check would
+die). Fixtures replay the exact run-95 script failing on a late nonce and the
+fixed script passing; never-minted nonce still refuses after 20 s.
+
+Next single variable (dossier step 3, successor issue): ONE boot of a new
+init_boot carrying this self-post (new hash; 27a78a22 stays never-reflash),
+pre-armed `:2222` capture, no worker racing the pre-ack guard. Prediction:
+nonce check passes ≈1–2 s after cutover, post-cutover record appends, radio
+stages run. If no nonce within 20 s, that kmsg decides the guard-design
+question (post-ack radio start from the live session — owner decision).
 
 ## Order (binding)
 
 1. Done: post-ack reads (runs 93/94) and pre-ack trace (run 95). Mount
    contract and non-mount inputs are eliminated.
-2. Host: separate (a) and (b) above from the existing 93/94/95 captures and
-   fixtures. Fix in the repo scripts; verify against the fixture family.
+2. Done: #268 separated (a)/(b) on the host (timing) and fixed self-post
+   (bounded nonce wait + guard-contract fallback) with fixtures.
 3. Validate once with a pre-armed `:2222` capture, one guest reboot, no
    worker racing the unacknowledged guard.
 4. Exactly one image carries the measured working chain. Acceptance per

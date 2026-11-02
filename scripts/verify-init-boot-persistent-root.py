@@ -334,7 +334,7 @@ def self_test(init_image, carrier, stock_init, base_image, stock_carrier, curren
     bad("carrier payload", CARRIER_MSG, init_image, flipped(carrier, builder.CARRIER_OFFSET))
     traced = (builder.HERE / "pmos-self-post.sh").read_bytes()
     plain_sha = builder.hashlib.sha256(builder.deinstrument(traced)).hexdigest()
-    require(plain_sha == "fe98c0d284906cd2e4fa843153f15a844a8ca8b9f3d301f772bab6233e410bab", DELTA_MSG)
+    require(plain_sha == "6199649f1271c851ec72dbc3f36d55d7223a06c2ffe237689f0d41bbccc1041d", DELTA_MSG)
 
     def trace_only(data):
         try:
