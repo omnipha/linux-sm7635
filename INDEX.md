@@ -2,6 +2,7 @@
 
 ## Latest 10
 
+- [2026-11-02-154929-host-radio-live-session-handoff](records/2026-11-02-154929-host-radio-live-session-handoff.md) | wlan | confirmed | omnipha/linux-sm7635#280 | Host handoff: the installed radio script refuses an acked guard before the modem stage; one live probe must confirm outcome C
 - [2026-11-02-150805-append-refusal-run97-correction](records/2026-11-02-150805-append-refusal-run97-correction.md) | wlan run 97 | confirmed | omnipha/linux-sm7635#275 | Run 97 correction: outcome B stands; the panel restore never fired, the nonce wait ran once, and the append failed 0.1 s before the diagnostic
 - [2026-11-02-145742-append-refusal-ordered-sequence-check](records/2026-11-02-145742-append-refusal-ordered-sequence-check.md) | wlan run 97 | confirmed | omnipha/linux-sm7635#275 | Run 97 (#275) outcome B: the append is refused by the ordered-sequence check; the refusing check is now named in kmsg
 - [2026-11-02-142752-panel-line-uptime-correction](records/2026-11-02-142752-panel-line-uptime-correction.md) | wlan | confirmed | omnipha/linux-sm7635#275 | Host correction: run-96 panel line was logged at uptime 1.475 s, not 14.74 s
@@ -11,7 +12,6 @@
 - [2026-11-02-130241-run96-nonce-wait-passes-then-record-append-refused](records/2026-11-02-130241-run96-nonce-wait-passes-then-record-append-refused.md) | wlan run 96 | inconclusive | omnipha/linux-sm7635#271 | Run 96: the nonce wait works, the nonce is minted, then self-post refuses at the post-cutover boot record append
 - [2026-11-02-114833-host-nonce-wait-initboot](records/2026-11-02-114833-host-nonce-wait-initboot.md) | wlan | confirmed | omnipha/linux-sm7635#271 | Host: successor init_boot 17531039 carries the #270 nonce wait on the installed a71b3f5f carrier (one init_boot_a write, awaiting the one live boot)
 - [2026-11-02-094850-host-guard-nonce-timing-vs-chroot](records/2026-11-02-094850-host-guard-nonce-timing-vs-chroot.md) | wlan | confirmed | omnipha/linux-sm7635#268 | Host separation of guard nonce timing vs post_root-in-chroot: timing (a) is supported, chroot divergence (b) is refuted; self-post now waits a bounded time for the nonce and falls back to the guard-staged contract
-- [2026-11-02-085828-run95-preack-selfpost-guard-nonce-check](records/2026-11-02-085828-run95-preack-selfpost-guard-nonce-check.md) | wlan run 95 | confirmed | omnipha/linux-sm7635#265 | Run 95: the automatic pre-ack self-post exits at the armed-and-unacknowledged check because `guard/nonce` is absent
 
 ## By subsystem (latest 3, total in brackets)
 
@@ -40,15 +40,15 @@
 - [2026-10-30-150709-root-contract-measured-userdata-maximum](records/2026-10-30-150709-root-contract-measured-userdata-maximum.md) | userspace | confirmed | omnipha/linux-sm7635#199 | Measured userdata size accepted by the fail-closed root contract
 - [2026-10-30-142216-persistent-root-contract-size-gate](records/2026-10-30-142216-persistent-root-contract-size-gate.md) | userspace | refuted | omnipha/linux-sm7635#197 | Persistent root blocked by the closed #194 size gate
 
-### wlan [52]
+### wlan [53]
+- [2026-11-02-154929-host-radio-live-session-handoff](records/2026-11-02-154929-host-radio-live-session-handoff.md) | wlan | confirmed | omnipha/linux-sm7635#280 | Host handoff: the installed radio script refuses an acked guard before the modem stage; one live probe must confirm outcome C
 - [2026-11-02-150805-append-refusal-run97-correction](records/2026-11-02-150805-append-refusal-run97-correction.md) | wlan run 97 | confirmed | omnipha/linux-sm7635#275 | Run 97 correction: outcome B stands; the panel restore never fired, the nonce wait ran once, and the append failed 0.1 s before the diagnostic
 - [2026-11-02-145742-append-refusal-ordered-sequence-check](records/2026-11-02-145742-append-refusal-ordered-sequence-check.md) | wlan run 97 | confirmed | omnipha/linux-sm7635#275 | Run 97 (#275) outcome B: the append is refused by the ordered-sequence check; the refusing check is now named in kmsg
-- [2026-11-02-142752-panel-line-uptime-correction](records/2026-11-02-142752-panel-line-uptime-correction.md) | wlan | confirmed | omnipha/linux-sm7635#275 | Host correction: run-96 panel line was logged at uptime 1.475 s, not 14.74 s
 
 ### wlan run 91 [1]
 - [2026-11-01-123812-coordinator-preack-window-missed](records/2026-11-01-123812-coordinator-preack-window-missed.md) | wlan run 91 run 91 | inconclusive | omnipha/linux-sm7635#256 | coordinator preack window missed
 
 ## By month
 
-- [2026-11](records/index-2026-11.md) [20]
+- [2026-11](records/index-2026-11.md) [21]
 - [2026-10](records/index-2026-10.md) [162]

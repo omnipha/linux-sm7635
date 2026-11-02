@@ -239,6 +239,11 @@ reject_stage modem "$BOOT" modem "$modem_token"
 expect "$R/tmp/modem.out" 'guest radio marker does not match this guard nonce' 'nonce substitution accepted'
 $BB printf '%s\n' 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef > "$R/run/pid1-guard/nonce"
 $BB printf '%s\n' "$BOOT" > "$R/run/pid1-guard/accepted"
+$BB rm "$R/run/pid1-guard/nonce"
+reject_stage modem "$BOOT" modem
+expect "$R/tmp/modem.out" 'guard is not armed and unacknowledged' 'consumed-nonce acknowledged guard accepted'
+[ ! -e "$R/run/radio-bringup/modem.attempted" ] || fail 'modem start armed after guard acknowledgement'
+$BB printf '%s\n' 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef > "$R/run/pid1-guard/nonce"
 reject_stage modem "$BOOT" modem "$modem_token"
 expect "$R/tmp/modem.out" 'guard is not armed and unacknowledged' 'already-acknowledged guard accepted'
 $BB rm "$R/run/pid1-guard/accepted"
