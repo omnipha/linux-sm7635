@@ -3,12 +3,12 @@
 device: nothing-asteroids
 updated: 2026-11-02
 next_question: >-
-  #268 separated the run-95 nonce absence on the host: timing, not a chroot
-  divergence. Self-post checked 0.4-0.6 s after cutover; runs 93/94 prove the
-  same guard mints the nonce ~1-2.5 s after cutover. Fixed self-post (bounded
-  20 s nonce wait, guard-contract fallback) with fixtures. Next: one boot of
-  the successor init_boot carrying it, pre-armed capture, no pre-ack worker.
-active_issue: null
+  #271 host image 17531039 (nonce wait + guard-contract fallback in the
+  trace member, installed carrier a71b3f5f unchanged) is verified. Does the
+  pre-ack self-post now pass the nonce check and start a radio stage on one
+  pre-armed boot of init_boot_a 17531039, no pre-ack worker? An early guard
+  return is not an elapsed 20 s wait.
+active_issue: omnipha/linux-sm7635#271
 subsystems:
   boot:
     state: confirmed
@@ -18,7 +18,7 @@ subsystems:
     record: records/2026-10-30-203515-run-69-second-boot-guard-wlan.md
   wlan:
     state: partial
-    record: records/2026-11-02-094850-host-guard-nonce-timing-vs-chroot.md
+    record: records/2026-11-02-114833-host-nonce-wait-initboot.md
   modem:
     state: partial        # stays running past the EFS request after PID-1 cutover (run 55); no voice/SIM/data claim
     record: records/2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the.md

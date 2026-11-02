@@ -33,7 +33,7 @@ SHA_MSG = "candidate repeats a stock, measured or refused image SHA-256"
 TRACE_MSG = "self-post instrumentation is not trace-line-only"
 INSTALLED_INIT = "f9449ba5590fd5955a85a6b97a0e21775aa34534197981b213bc380fe8378b0f"
 INSTALLED_CARRIER = "a71b3f5f5e73ed7d8855abdd06c0379aa8084dfa9aa8068e347347d36254f9b3"
-SELF_POST_BUNDLE_SHA = "dcfe1cf53902f51bb071de7da12fa5cbb25f3e7bed5910f9042c9e716bce3150"
+SELF_POST_BUNDLE_SHA = "5e118ffc4073752afc06eb6f0f2e603f28c2a50f44356ec842039321db5bd81f"
 TRACE_MEMBER = "run/omnipha-self-post-trace.sh"
 TRACE_PATH = "/" + TRACE_MEMBER
 TRACE_BLOCK = re.compile(rb"# trace-begin\n.*?# trace-end\n", re.DOTALL)
@@ -78,7 +78,8 @@ REFUSED = frozenset((*builder.REFUSED, RUN66,
                        "da4651d827cad181e55baf1bd9ddb9876fcc271b791c5046362ef056ea69c9c6",
                        "fed40c3073663b9bc5ff29e35e09ae1afdb8568cadf27e09c7e956f284c33c2d",
                        "1765381ce0f2753aea208896342424ab5db7489c426d457a259f3398827cb587",
-                       INSTALLED_INIT))
+                       INSTALLED_INIT,
+                       "27a78a225a840040f5e88b36f0ff75367caef3412ea26ac17ac83e24b4c23ce0"))
 
 
 def deinstrument(data):
@@ -117,9 +118,28 @@ def replace_once(data, old, new):
     return data.replace(old, new, 1)
 
 
+def without_nonce_wait(data):
+    wait = b'''i=0
+while [ ! -f "$GUARD/nonce" ] || [ -L "$GUARD/nonce" ]; do
+\t[ "$($BB cat "$GUARD/armed" 2>/dev/null)" = "$boot" ] &&
+\t\t[ ! -e "$GUARD/accepted" ] && [ ! -L "$GUARD/accepted" ] &&
+\t\t[ ! -e "$GUARD/ack" ] && [ ! -L "$GUARD/ack" ] ||
+\t\tdie 'independent recovery guard is not armed and unacknowledged'
+\t[ "$i" -lt 20 ] || die 'independent recovery guard is not armed and unacknowledged'
+\t$BB sleep 1
+\ti=$((i + 1))
+done
+'''
+    fallback = b'[ -f "$contract" ] && [ ! -L "$contract" ] || contract="$GUARD/root-contract.sh"\n'
+    return replace_once(replace_once(data, wait, b""), fallback, b"")
+
+
 def current_scripts():
     original = {name: script_bytes(name) for name in ROOT_NAMES}
     plain_post = deinstrument(original["pmos-self-post.sh"])
+    carrier_post = without_nonce_wait(plain_post)
+    require(hashlib.sha256(carrier_post).hexdigest() ==
+            "fe98c0d284906cd2e4fa843153f15a844a8ca8b9f3d301f772bab6233e410bab", DELTA_MSG)
     expected = {
         "pmos-root-contract.sh": "c76c31ff148ab19ff5b2de6f1e40a036ee6ec275d54b0b5d1eaab0bbf0f06cc6",
         "pmos-session-stage.sh": "be70a27305145cabc15b70469ae7a0434fab352fb9c3d681943f73d22b92938a",
@@ -288,9 +308,9 @@ fi''')
     radio_pin = b"RADIO_SHA=" + hashlib.sha256(radio).hexdigest().encode()
     traced_post = replace_once(original["pmos-self-post.sh"],
         b"RADIO_SHA=7ef6382644c2e07705d2a8df77840031318c298478c8f93e9bbfd05c00b61812", radio_pin)
-    found["pmos-self-post.sh"] = replace_once(plain_post,
+    found["pmos-self-post.sh"] = replace_once(carrier_post,
         b"RADIO_SHA=7ef6382644c2e07705d2a8df77840031318c298478c8f93e9bbfd05c00b61812", radio_pin)
-    require(deinstrument(traced_post) == found["pmos-self-post.sh"] and
+    require(without_nonce_wait(deinstrument(traced_post)) == found["pmos-self-post.sh"] and
             hashlib.sha256(found["pmos-self-post.sh"]).hexdigest() == SELF_POST_BUNDLE_SHA and
             hashlib.sha256(traced_post).hexdigest() != SELF_POST_BUNDLE_SHA and
             sum(1 for line in traced_post.splitlines() if TRACE_LINE.match(line)) >= 25 and
@@ -697,8 +717,8 @@ def build(stock, base_image, current, library, decode_frame, stock_carrier):
     frame = frame_for(cpio, library)
     image, digest = vendor.assemble(stock, frame)
     carrier_digest = hashlib.sha256(carrier).hexdigest()
-    require(digest not in REFUSED and carrier_digest not in REFUSED and
-            digest != carrier_digest and carrier_digest != CARRIER_SHA, SHA_MSG)
+    require(digest not in REFUSED and digest != carrier_digest and
+            carrier_digest == INSTALLED_CARRIER, SHA_MSG)
     return image, carrier, digest, carrier_digest, len(cpio), len(frame), entries, trailer, found, private
 
 
