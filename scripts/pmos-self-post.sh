@@ -109,6 +109,17 @@ trace 'pre check run keep'
 	die 'guest hold /run/keep absent after cutover'
 trace 'post check run keep'
 trace 'pre check guard armed and unacknowledged'
+i=0
+while [ ! -f "$GUARD/nonce" ] || [ -L "$GUARD/nonce" ]; do
+	[ "$($BB cat "$GUARD/armed" 2>/dev/null)" = "$boot" ] &&
+		[ ! -e "$GUARD/accepted" ] && [ ! -L "$GUARD/accepted" ] &&
+		[ ! -e "$GUARD/ack" ] && [ ! -L "$GUARD/ack" ] ||
+		die 'independent recovery guard is not armed and unacknowledged'
+	[ "$i" -lt 20 ] || die 'independent recovery guard is not armed and unacknowledged'
+	trace "guard nonce wait $i"
+	$BB sleep 1
+	i=$((i + 1))
+done
 [ -f "$GUARD/armed" ] && [ ! -L "$GUARD/armed" ] &&
 	[ "$($BB cat "$GUARD/armed")" = "$boot" ] &&
 	[ -f "$GUARD/nonce" ] && [ ! -L "$GUARD/nonce" ] &&
@@ -118,6 +129,7 @@ trace 'pre check guard armed and unacknowledged'
 trace 'post check guard armed and unacknowledged'
 trace 'pre check post-cutover contract'
 contract=${PMOS_ROOT_CONTRACT:-/run/pmos-root-contract.sh}
+[ -f "$contract" ] && [ ! -L "$contract" ] || contract="$GUARD/root-contract.sh"
 [ -f "$contract" ] && [ ! -L "$contract" ] && . "$contract" || die 'post-cutover boot record contract unavailable'
 trace 'post check post-cutover contract'
 trace 'record append entry'

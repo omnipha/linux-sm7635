@@ -30,15 +30,35 @@ if [ "${1:-}" != --inner ] && [ "${1:-}" != --pid1-ext4 ] && [ "${1:-}" != --ext
 	}
 	trap cleanup EXIT
 	PLAIN_POST="$WORK/pmos-self-post.plain.sh"
-	HERE="$HERE" PLAIN_POST="$PLAIN_POST" python3 -B - <<'PYEOF' || fail 'cannot derive the trace-free self-post script'
+	HERE="$HERE" PLAIN_POST="$PLAIN_POST" NOWAIT_POST="$WORK/pmos-self-post.nowait.sh" python3 -B - <<'PYEOF' || fail 'cannot derive the trace-free self-post script'
 import hashlib, importlib.util, os, pathlib
 here = pathlib.Path(os.environ["HERE"])
 spec = importlib.util.spec_from_file_location("persistent_root_builder", here / "build-init-boot-persistent-root.py")
 builder = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(builder)
 plain = builder.deinstrument((here / "pmos-self-post.sh").read_bytes())
-assert hashlib.sha256(plain).hexdigest() == "fe98c0d284906cd2e4fa843153f15a844a8ca8b9f3d301f772bab6233e410bab"
+assert hashlib.sha256(plain).hexdigest() == "6199649f1271c851ec72dbc3f36d55d7223a06c2ffe237689f0d41bbccc1041d"
 pathlib.Path(os.environ["PLAIN_POST"]).write_bytes(plain)
+traced = (here / "pmos-self-post.sh").read_bytes()
+block = b'''i=0
+while [ ! -f "$GUARD/nonce" ] || [ -L "$GUARD/nonce" ]; do
+\t[ "$($BB cat "$GUARD/armed" 2>/dev/null)" = "$boot" ] &&
+\t\t[ ! -e "$GUARD/accepted" ] && [ ! -L "$GUARD/accepted" ] &&
+\t\t[ ! -e "$GUARD/ack" ] && [ ! -L "$GUARD/ack" ] ||
+\t\tdie 'independent recovery guard is not armed and unacknowledged'
+\t[ "$i" -lt 20 ] || die 'independent recovery guard is not armed and unacknowledged'
+\ttrace "guard nonce wait $i"
+\t$BB sleep 1
+\ti=$((i + 1))
+done
+'''
+assert traced.count(block) == 1
+nowait = traced.replace(block, b"", 1)
+fallback = b'[ -f "$contract" ] && [ ! -L "$contract" ] || contract="$GUARD/root-contract.sh"\n'
+assert nowait.count(fallback) == 1
+nowait = nowait.replace(fallback, b"", 1)
+assert hashlib.sha256(nowait).hexdigest() == "3195dee92cf1156386391cf64a10f9f65e1b6d874683955914ba12fb1524bc6b"
+pathlib.Path(os.environ["NOWAIT_POST"]).write_bytes(nowait)
 PYEOF
 	truncate -s 268435456 "$WORK/userdata.img"
 	/sbin/mke2fs -q -F -t ext4 -b 4096 "$WORK/userdata.img"
@@ -63,9 +83,9 @@ PYEOF
 	for case in ack timeout; do
 		inner=$(mktemp -d "$WORK/pid1-ext4.XXXXXXXX")
 		printf '%s\n' "$inner" >> "$WORK/inners"
-		sudo -n timeout -k 2 90 unshare --mount --pid --net --fork --kill-child --mount-proc \
+		sudo -n timeout -k 2 150 unshare --mount --pid --net --fork --kill-child --mount-proc \
 			env HOST_ARCHIVE="$ARCHIVE" SOURCE="$HERE" MAIN_NUMS="$main_nums" OTHER_NUMS="$other_nums" \
-			PLAIN_POST="$PLAIN_POST" HOST_RUN="/mnt/pmos-root-fixture-$case" INNER="$inner" CASE="$case" HOST_TEST="$0" \
+			PLAIN_POST="$PLAIN_POST" NOWAIT_POST="$WORK/pmos-self-post.nowait.sh" HOST_RUN="/mnt/pmos-root-fixture-$case" INNER="$inner" CASE="$case" HOST_TEST="$0" \
 			/bin/busybox sh "$0" --pid1-ext4
 	done
 	exit 0
@@ -216,6 +236,61 @@ done' || fail 'self-post fixture pre-cutover record refused on the persistent ro
 	$BB grep -q 'cold-start post-cutover PID 1.*independent recovery guard remains unacknowledged' "$HOST_RUN/post-ok.out" || { $BB cat "$HOST_RUN/post-ok.out" >&2; fail 'self-post rejected valid ext4 switched root'; }
 	$BB grep -q "pmos-self-post: post-cutover PID 1 on boot $boot; guard identity check passed; pid1 identity check passed" /proc/1/root/.omnipha-boot-record ||
 		{ $BB cat /proc/1/root/.omnipha-boot-record >&2; fail 'post-cutover record line missing on the persistent root'; }
+	$BB rm -f /proc/1/root/run/pid1-guard/nonce
+	$BB cat "$HOST_RUN/record.before" > /proc/1/root/.omnipha-boot-record
+	ABS_START=$($BB awk '{print int($1)}' /proc/uptime)
+	$BB chroot /proc/1/root /bin/busybox sh /run/pmos-self-post.sh >"$HOST_RUN/post-absent.out" 2>&1 && fail 'self-post passed the nonce check although the nonce never minted'
+	ABS_END=$($BB awk '{print int($1)}' /proc/uptime)
+	[ "$(($ABS_END - $ABS_START))" -ge 20 ] || { $BB cat "$HOST_RUN/post-absent.out" >&2; fail 'self-post gave up on the absent nonce without the bounded wait'; }
+	$BB grep -q 'independent recovery guard is not armed and unacknowledged' "$HOST_RUN/post-absent.out" || { $BB cat "$HOST_RUN/post-absent.out" >&2; fail 'absent-nonce failure reason'; }
+	trace_has "$HOST_RUN/post-absent.out" 'guard nonce wait 19 rc=0'
+	trace_has "$HOST_RUN/post-absent.out" 'record_fail entry: independent recovery guard is not armed and unacknowledged rc=0'
+	trace_lacks "$HOST_RUN/post-absent.out" 'post check guard armed and unacknowledged'
+	trace_lacks "$HOST_RUN/post-absent.out" 'record append entry'
+	$BB cp "$NOWAIT_POST" /proc/1/root/run/pmos-self-post-nowait.sh
+	$BB chmod 700 /proc/1/root/run/pmos-self-post-nowait.sh
+	$BB cat "$HOST_RUN/record.before" > /proc/1/root/.omnipha-boot-record
+	( $BB sleep 4
+	  $BB printf '%s\n' fixture-nonce > /proc/1/root/run/pid1-guard/nonce ) &
+	MINTER=$!
+	$BB chroot /proc/1/root /bin/busybox sh /run/pmos-self-post-nowait.sh >"$HOST_RUN/post-nowait.out" 2>&1 && fail 'pre-fix self-post passed the late-minted nonce'
+	wait "$MINTER" || fail 'fixture nonce minter failed in the pre-fix replay'
+	$BB grep -q 'independent recovery guard is not armed and unacknowledged' "$HOST_RUN/post-nowait.out" || { $BB cat "$HOST_RUN/post-nowait.out" >&2; fail 'pre-fix late-nonce failure reason'; }
+	trace_lacks "$HOST_RUN/post-nowait.out" 'post check guard armed and unacknowledged'
+	trace_lacks "$HOST_RUN/post-nowait.out" 'guard nonce wait 0'
+	$BB rm -f /proc/1/root/run/pid1-guard/nonce
+	$BB cat "$HOST_RUN/record.before" > /proc/1/root/.omnipha-boot-record
+	( $BB sleep 4
+	  $BB printf '%s\n' fixture-nonce > /proc/1/root/run/pid1-guard/nonce ) &
+	MINTER=$!
+	LATE_START=$($BB awk '{print int($1)}' /proc/uptime)
+	$BB chroot /proc/1/root /bin/busybox sh /run/pmos-self-post.sh >"$HOST_RUN/post-late.out" 2>&1 && fail 'late-nonce self-post succeeded without radio script at /run/radio-bringup'
+	LATE_END=$($BB awk '{print int($1)}' /proc/uptime)
+	wait "$MINTER" || { $BB cat "$HOST_RUN/post-late.out" >&2; fail 'fixture nonce minter never minted'; }
+	[ "$(($LATE_END - $LATE_START))" -ge 3 ] || { $BB cat "$HOST_RUN/post-late.out" >&2; fail 'self-post passed the nonce check before the nonce minted'; }
+	$BB grep -q 'pinned radio bring-up script missing' "$HOST_RUN/post-late.out" || { $BB cat "$HOST_RUN/post-late.out" >&2; fail 'late-nonce self-post did not continue past the nonce check'; }
+	trace_has "$HOST_RUN/post-late.out" 'guard nonce wait 0 rc=0'
+	trace_has "$HOST_RUN/post-late.out" 'post check guard armed and unacknowledged rc=0'
+	trace_has "$HOST_RUN/post-late.out" 'record append entry rc=0'
+	trace_has "$HOST_RUN/post-late.out" 'record verify exit rc=0'
+	trace_lacks "$HOST_RUN/post-late.out" 'guard nonce wait 19 rc=0'
+	$BB rm /proc/1/root/run/pmos-root-contract.sh
+	$BB cat "$HOST_RUN/record.before" > /proc/1/root/.omnipha-boot-record
+	$BB chroot /proc/1/root /bin/busybox sh /run/pmos-self-post.sh >"$HOST_RUN/post-guardcontract.out" 2>&1 && fail 'guard-contract self-post succeeded without radio script at /run/radio-bringup'
+	$BB grep -q 'pinned radio bring-up script missing' "$HOST_RUN/post-guardcontract.out" || { $BB cat "$HOST_RUN/post-guardcontract.out" >&2; fail 'self-post refused the guard-staged contract with the default path absent (run-95 shape)'; }
+	trace_has "$HOST_RUN/post-guardcontract.out" 'post check post-cutover contract rc=0'
+	trace_has "$HOST_RUN/post-guardcontract.out" 'record append exit rc=0'
+	trace_has "$HOST_RUN/post-guardcontract.out" 'record verify exit rc=0'
+	$BB cat "$HOST_RUN/record.before" > /proc/1/root/.omnipha-boot-record
+	$BB mv /proc/1/root/run/pid1-guard/root-contract.sh /proc/1/root/run/pid1-guard/root-contract.saved
+	$BB chroot /proc/1/root /bin/busybox sh /run/pmos-self-post.sh >"$HOST_RUN/post-nocontract.out" 2>&1 && fail 'self-post passed with no contract at either path'
+	$BB grep -q 'switched-root or guard identity check failed' "$HOST_RUN/post-nocontract.out" || { $BB cat "$HOST_RUN/post-nocontract.out" >&2; fail 'missing-contract failure reason (must refuse at the first contract-dependent check)'; }
+	trace_lacks "$HOST_RUN/post-nocontract.out" 'record append entry'
+	$BB mv /proc/1/root/run/pid1-guard/root-contract.saved /proc/1/root/run/pid1-guard/root-contract.sh
+	$BB cp "$SOURCE/pmos-root-contract.sh" /proc/1/root/run/pmos-root-contract.sh
+	$BB chmod 700 /proc/1/root/run/pmos-root-contract.sh
+	$BB cat "$HOST_RUN/record.before" > /proc/1/root/.omnipha-boot-record
+	$BB printf '%s\n' fixture-nonce > /proc/1/root/run/pid1-guard/nonce
 	$BB chroot /proc/1/root /bin/busybox sh /run/pmos-radio-bringup.sh "$boot" modem capture-ok >"$HOST_RUN/radio-ok.out" 2>&1 && fail 'radio bring-up succeeded without staged INI'
 	$BB grep -q 'pre-cutover staged stock INI missing' "$HOST_RUN/radio-ok.out" || { $BB cat "$HOST_RUN/radio-ok.out" >&2; fail 'radio bring-up rejected valid ext4 switched root'; }
 	printf 'pass: ext4-ack; real BusyBox PID 1 switch_root to loop-backed userdata ext4 with surviving pre-cutover Dropbear PID and pinned key, real guard watch on ext4 switched root, strict key-only SSH before/after, ack/self-post/radio rejected on wrong PARTNAME and accepted after restoring userdata; no device recovery\n'
