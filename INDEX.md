@@ -2,6 +2,7 @@
 
 ## Latest 10
 
+- [2026-11-02-085828-run95-preack-selfpost-guard-nonce-check](records/2026-11-02-085828-run95-preack-selfpost-guard-nonce-check.md) | wlan run 95 | confirmed | omnipha/linux-sm7635#265 | Run 95: the automatic pre-ack self-post exits at the armed-and-unacknowledged check because `guard/nonce` is absent
 - [2026-11-02-075546-host-preack-trace-image](records/2026-11-02-075546-host-preack-trace-image.md) | wlan | confirmed | omnipha/linux-sm7635#265 | Instrumented pre-ack self-post: trace-only host image for dossier step 3 (awaiting the one live boot)
 - [2026-11-01-165231-run94-nonmount-inputs-all-pass](records/2026-11-01-165231-run94-nonmount-inputs-all-pass.md) | wlan | confirmed | omnipha/linux-sm7635#263 | Run 94 post-ack non-mount inputs: every captured value passes the unchanged contract; the run-90 refusal is not in any post-ack-observable input
 - [2026-11-01-151916-run93-postack-mountinfo-matches-fixture](records/2026-11-01-151916-run93-postack-mountinfo-matches-fixture.md) | wlan | confirmed | omnipha/linux-sm7635#261 | Run 93 post-ack mountinfo: live PID 1 table matches the fixture class; refusal is not in the mount checks
@@ -11,7 +12,6 @@
 - [2026-11-01-101915-coordinator-handoff-window-too-short](records/2026-11-01-101915-coordinator-handoff-window-too-short.md) | wlan run 89 | inconclusive | 253 | coordinator handoff window too short
 - [2026-11-01-021249-boe-bound-live-rails-reset-dcs-glass-dark](records/2026-11-01-021249-boe-bound-live-rails-reset-dcs-glass-dark.md) | display run 88 | refuted | omnipha/linux-sm7635#251 | BOE-bound live session: rails, reset and DCS exercised, glass stays dark
 - [2026-11-01-010622-boe-panel-node-bound-glass-dark](records/2026-11-01-010622-boe-panel-node-bound-glass-dark.md) | display run 87 | refuted | omnipha/linux-sm7635#248 | BOE node selected and bound, glass stays dark: node selection refuted
-- [2026-11-01-004839-boe-panel-node-host-image](records/2026-11-01-004839-boe-panel-node-host-image.md) | display | confirmed | omnipha/linux-sm7635#248 | BOE panel node: host image for the single-variable node-selection test
 
 ## By subsystem (latest 3, total in brackets)
 
@@ -40,15 +40,15 @@
 - [2026-10-30-150709-root-contract-measured-userdata-maximum](records/2026-10-30-150709-root-contract-measured-userdata-maximum.md) | userspace | confirmed | omnipha/linux-sm7635#199 | Measured userdata size accepted by the fail-closed root contract
 - [2026-10-30-142216-persistent-root-contract-size-gate](records/2026-10-30-142216-persistent-root-contract-size-gate.md) | userspace | refuted | omnipha/linux-sm7635#197 | Persistent root blocked by the closed #194 size gate
 
-### wlan [42]
+### wlan [43]
+- [2026-11-02-085828-run95-preack-selfpost-guard-nonce-check](records/2026-11-02-085828-run95-preack-selfpost-guard-nonce-check.md) | wlan run 95 | confirmed | omnipha/linux-sm7635#265 | Run 95: the automatic pre-ack self-post exits at the armed-and-unacknowledged check because `guard/nonce` is absent
 - [2026-11-02-075546-host-preack-trace-image](records/2026-11-02-075546-host-preack-trace-image.md) | wlan | confirmed | omnipha/linux-sm7635#265 | Instrumented pre-ack self-post: trace-only host image for dossier step 3 (awaiting the one live boot)
 - [2026-11-01-165231-run94-nonmount-inputs-all-pass](records/2026-11-01-165231-run94-nonmount-inputs-all-pass.md) | wlan | confirmed | omnipha/linux-sm7635#263 | Run 94 post-ack non-mount inputs: every captured value passes the unchanged contract; the run-90 refusal is not in any post-ack-observable input
-- [2026-11-01-151916-run93-postack-mountinfo-matches-fixture](records/2026-11-01-151916-run93-postack-mountinfo-matches-fixture.md) | wlan | confirmed | omnipha/linux-sm7635#261 | Run 93 post-ack mountinfo: live PID 1 table matches the fixture class; refusal is not in the mount checks
 
 ### wlan run 91 [1]
 - [2026-11-01-123812-coordinator-preack-window-missed](records/2026-11-01-123812-coordinator-preack-window-missed.md) | wlan run 91 run 91 | inconclusive | omnipha/linux-sm7635#256 | coordinator preack window missed
 
 ## By month
 
-- [2026-11](records/index-2026-11.md) [10]
+- [2026-11](records/index-2026-11.md) [11]
 - [2026-10](records/index-2026-10.md) [162]
