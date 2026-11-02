@@ -2,6 +2,7 @@
 
 ## Latest 10
 
+- [2026-11-02-162351-host-radio-postack-derivation](records/2026-11-02-162351-host-radio-postack-derivation.md) | wlan | confirmed | omnipha/linux-sm7635#280 | Host: post-ack variant of the radio script, derived from the staged copy
 - [2026-11-02-154929-host-radio-live-session-handoff](records/2026-11-02-154929-host-radio-live-session-handoff.md) | wlan | confirmed | omnipha/linux-sm7635#280 | Host handoff: the installed radio script refuses an acked guard before the modem stage; one live probe must confirm outcome C
 - [2026-11-02-150805-append-refusal-run97-correction](records/2026-11-02-150805-append-refusal-run97-correction.md) | wlan run 97 | confirmed | omnipha/linux-sm7635#275 | Run 97 correction: outcome B stands; the panel restore never fired, the nonce wait ran once, and the append failed 0.1 s before the diagnostic
 - [2026-11-02-145742-append-refusal-ordered-sequence-check](records/2026-11-02-145742-append-refusal-ordered-sequence-check.md) | wlan run 97 | confirmed | omnipha/linux-sm7635#275 | Run 97 (#275) outcome B: the append is refused by the ordered-sequence check; the refusing check is now named in kmsg
@@ -11,7 +12,6 @@
 - [2026-11-02-130607-run96-correction](records/2026-11-02-130607-run96-correction.md) | wlan run 96 | confirmed | omnipha/linux-sm7635#271 | Run 96 correction: the nonce was absent at the check and appeared within the first 1 s wait; the post-cutover append is the refusing check
 - [2026-11-02-130241-run96-nonce-wait-passes-then-record-append-refused](records/2026-11-02-130241-run96-nonce-wait-passes-then-record-append-refused.md) | wlan run 96 | inconclusive | omnipha/linux-sm7635#271 | Run 96: the nonce wait works, the nonce is minted, then self-post refuses at the post-cutover boot record append
 - [2026-11-02-114833-host-nonce-wait-initboot](records/2026-11-02-114833-host-nonce-wait-initboot.md) | wlan | confirmed | omnipha/linux-sm7635#271 | Host: successor init_boot 17531039 carries the #270 nonce wait on the installed a71b3f5f carrier (one init_boot_a write, awaiting the one live boot)
-- [2026-11-02-094850-host-guard-nonce-timing-vs-chroot](records/2026-11-02-094850-host-guard-nonce-timing-vs-chroot.md) | wlan | confirmed | omnipha/linux-sm7635#268 | Host separation of guard nonce timing vs post_root-in-chroot: timing (a) is supported, chroot divergence (b) is refuted; self-post now waits a bounded time for the nonce and falls back to the guard-staged contract
 
 ## By subsystem (latest 3, total in brackets)
 
@@ -40,15 +40,15 @@
 - [2026-10-30-150709-root-contract-measured-userdata-maximum](records/2026-10-30-150709-root-contract-measured-userdata-maximum.md) | userspace | confirmed | omnipha/linux-sm7635#199 | Measured userdata size accepted by the fail-closed root contract
 - [2026-10-30-142216-persistent-root-contract-size-gate](records/2026-10-30-142216-persistent-root-contract-size-gate.md) | userspace | refuted | omnipha/linux-sm7635#197 | Persistent root blocked by the closed #194 size gate
 
-### wlan [53]
+### wlan [54]
+- [2026-11-02-162351-host-radio-postack-derivation](records/2026-11-02-162351-host-radio-postack-derivation.md) | wlan | confirmed | omnipha/linux-sm7635#280 | Host: post-ack variant of the radio script, derived from the staged copy
 - [2026-11-02-154929-host-radio-live-session-handoff](records/2026-11-02-154929-host-radio-live-session-handoff.md) | wlan | confirmed | omnipha/linux-sm7635#280 | Host handoff: the installed radio script refuses an acked guard before the modem stage; one live probe must confirm outcome C
 - [2026-11-02-150805-append-refusal-run97-correction](records/2026-11-02-150805-append-refusal-run97-correction.md) | wlan run 97 | confirmed | omnipha/linux-sm7635#275 | Run 97 correction: outcome B stands; the panel restore never fired, the nonce wait ran once, and the append failed 0.1 s before the diagnostic
-- [2026-11-02-145742-append-refusal-ordered-sequence-check](records/2026-11-02-145742-append-refusal-ordered-sequence-check.md) | wlan run 97 | confirmed | omnipha/linux-sm7635#275 | Run 97 (#275) outcome B: the append is refused by the ordered-sequence check; the refusing check is now named in kmsg
 
 ### wlan run 91 [1]
 - [2026-11-01-123812-coordinator-preack-window-missed](records/2026-11-01-123812-coordinator-preack-window-missed.md) | wlan run 91 run 91 | inconclusive | omnipha/linux-sm7635#256 | coordinator preack window missed
 
 ## By month
 
-- [2026-11](records/index-2026-11.md) [21]
+- [2026-11](records/index-2026-11.md) [22]
 - [2026-10](records/index-2026-10.md) [162]
