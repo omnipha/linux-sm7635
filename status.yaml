@@ -3,13 +3,12 @@
 device: nothing-asteroids
 updated: 2026-11-02
 next_question: >-
-  Runs 93/94 eliminated every post-ack-observable contract input, so the
-  run-90 boot_record_append refusal lives in self-post-time state. #265 ships
-  trace-only instrumentation of the automatic pre-ack self-post: init_boot
-  27a78a22 (host-built only, pending its one flash; vendor_boot_b a71b3f5f
-  stays installed) names the exit point or non-invocation from the pre-armed
-  capture, no ack until the pre-ack window is observed.
-active_issue: omnipha/linux-sm7635#265
+  Run 95 (#265) named the exit point: the automatic pre-ack self-post passes
+  every identity and contract check, then exits at the armed-and-unacknowledged
+  check because guard/nonce is absent at ~156.5 s (armed present, accepted/ack
+  absent); boot_record_append is never reached. Next: why the guard watcher has
+  minted no nonce (post_root timing vs inside-chroot divergence), host first.
+active_issue: null
 subsystems:
   boot:
     state: confirmed
@@ -19,7 +18,7 @@ subsystems:
     record: records/2026-10-30-203515-run-69-second-boot-guard-wlan.md
   wlan:
     state: partial
-    record: records/2026-11-01-151916-run93-postack-mountinfo-matches-fixture.md
+    record: records/2026-11-02-085828-run95-preack-selfpost-guard-nonce-check.md
   modem:
     state: partial        # stays running past the EFS request after PID-1 cutover (run 55); no voice/SIM/data claim
     record: records/2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the.md
@@ -30,7 +29,7 @@ subsystems:
     state: untested
     record: null
 attempted_shas:       # cold-start index only; the flash gate is device-op status, not this file
-  - 27a78a22        # init_boot_a, #265 trace-only pre-ack self-post; HOST-BUILT ONLY, pending its one flash
+  - 27a78a22        # init_boot_a, run 95 (#265); flashed once, never-reflash
   - f9449ba5        # init_boot_a, #248 pair; flashed once run 87, never-reflash
   - a71b3f5f        # vendor_boot_b, #248 pair; flashed once run 87, never-reflash
   - fed40c30        # init_boot_a, run 86; flashed once, never-reflash
