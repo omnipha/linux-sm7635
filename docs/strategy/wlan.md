@@ -92,11 +92,15 @@ One boot next; not WLAN acceptance.
 4. Exactly one image carries the measured working chain. Acceptance per
    PLAN.md: two fresh boots, radio chain self-starts, wlan0 associates,
    address, DNS, internet. No host recipe.
-5. Budget: this step has taken the runs 84-95 (more than a week) without one
-   radio stage executing. If step 2 does not separate (a)/(b) on the host, the
-   cheaper path is to drop the pre-ack self-post and start the radio chain
-   after the ack from the live session (run 69 recipe), then ask whether the
-   guard design itself should change.
+5. Budget: this step has taken the runs 84-96 (more than a week) without one
+   radio stage executing; run 96 again died before any radio stage, one append
+   check later. #275 (run 97) is the last image whose only job is to get
+   self-post past a pre-radio check. If run 97 ends in (B) or (C), the next
+   issue is NOT another self-post image: start the radio chain from the acked
+   live session with the pinned scripts (run 69 recipe, no manual remoteproc
+   writes) on the installed chain, to measure the first radio stage at all,
+   then ask whether the guard design should change. Outcome (A)/(D) continues
+   as written. (Plan owner, 2026-11-02.)
 
 ## Acceptance (from PLAN.md)
 
