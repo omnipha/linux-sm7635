@@ -3,10 +3,12 @@
 device: nothing-asteroids
 updated: 2026-11-02
 next_question: >-
-  Does one pinned modem invocation from the acked live session on installed
-  2ebdf1db/a71b3f5f refuse at the armed-and-unacknowledged guard gate as
-  derived on the host? If so, outcome C is the measured guard-design input;
-  radio stages remain unmeasured and no image or interlock change is allowed.
+  Run 98 (#280): the pinned radio script refuses an acked guard, the post-ack
+  variant ran modem, wpss, wlan0, scan (33 BSS), association, address, DNS and
+  internet from one acked live session on 2ebdf1db/a71b3f5f. How does the
+  self-starting chain (no host recipe, two fresh boots) reach the same
+  chain, given the pre-ack append refusal and the services-stage hash checks
+  on a configured persistent root?
 active_issue: omnipha/linux-sm7635#280
 subsystems:
   boot:
@@ -17,7 +19,7 @@ subsystems:
     record: records/2026-10-30-203515-run-69-second-boot-guard-wlan.md
   wlan:
     state: partial
-    record: records/2026-11-02-154929-host-radio-live-session-handoff.md
+    record: records/2026-11-02-170048-run98-acked-session-radio-chain-wlan-up.md
   modem:
     state: partial        # stays running past the EFS request after PID-1 cutover (run 55); no voice/SIM/data claim
     record: records/2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the.md
@@ -63,5 +65,5 @@ notes: >-
   GPIO 161 held high, DCS 0x11/0x29 accepted (last_cmd_tx_sts 0x1), reads
   empty, actual_brightness 0, glass dark. The BOE and _vxn DT nodes name the
   same rails, reset GPIO and sequence, so node selection is refuted. The pair
-  stays never-reflash. WLAN stays down on this chain because regulatory.db is
-  missing.
+  stays never-reflash. WLAN still needs the host-run recipe on this chain
+  (run 98); regulatory.db is missing.
