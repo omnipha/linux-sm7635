@@ -7,6 +7,22 @@ if [ "${1:-}" != --inner ]; then
 	for variant in "$HERE/pmos-radio-bringup.sh" "$HERE/pmos-radio-bringup-persistent.sh"; do
 		sudo -n unshare --mount --pid --fork --mount-proc env HERE="$HERE" SCRIPT="$variant" /bin/busybox sh "$0" --inner
 	done
+	work=$(mktemp -d "${TMPDIR:-/tmp}/radio-fresh.XXXXXXXX")
+	chmod 755 "$work"
+	trap 'rm -rf "$work"' EXIT
+	HERE="$HERE" OUTPUT="$work/pmos-radio-bringup-fresh.sh" python3 -B - <<'PY'
+import importlib.util, os, pathlib
+here = pathlib.Path(os.environ['HERE'])
+def load(name, filename):
+    spec = importlib.util.spec_from_file_location(name, here / filename)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+radio = load('fresh', 'derive-radio-fresh-boot.py').derive(
+    load('persistent', 'derive-radio-persistent.py').derive((here / 'pmos-radio-bringup.sh').read_text()))
+pathlib.Path(os.environ['OUTPUT']).write_text(radio)
+PY
+	sudo -n unshare --mount --pid --fork --mount-proc env HERE="$HERE" SCRIPT="$work/pmos-radio-bringup-fresh.sh" /bin/busybox sh "$0" --inner
 	exit 0
 fi
 
@@ -299,8 +315,34 @@ $BB mv "$R/proc/358/root/vendor/firmware_mnt/image/modem.mdt" "$R/tmp/modem.mdt.
 reject_stage modem "$BOOT" modem "$modem_token"
 [ ! -e "$R/run/radio-bringup/modem.attempted" ] || fail 'modem start armed before firmware was reachable'
 $BB mv "$R/tmp/modem.mdt.hidden" "$R/proc/358/root/vendor/firmware_mnt/image/modem.mdt"
+if [ "${SCRIPT##*/}" = pmos-radio-bringup-fresh.sh ]; then
+	$BB touch "$R/vendor/firmware_mnt"
+	reject_stage modem "$BOOT" modem "$modem_token"
+	[ -f "$R/vendor/firmware_mnt" ] && [ ! -e "$R/run/radio-bringup/modem.attempted" ] || fail 'regular file repair not refused'
+	$BB rm "$R/vendor/firmware_mnt"
+	$BB ln -s /tmp "$R/vendor/firmware_mnt"
+	reject_stage modem "$BOOT" modem "$modem_token"
+	[ -L "$R/vendor/firmware_mnt" ] && [ ! -e "$R/run/radio-bringup/modem.attempted" ] || fail 'symlink repair not refused'
+	$BB rm "$R/vendor/firmware_mnt"
+	$BB mkdir -m 700 "$R/vendor/firmware_mnt"
+	$BB touch "$R/vendor/firmware_mnt/.hidden"
+	reject_stage modem "$BOOT" modem "$modem_token"
+	[ -f "$R/vendor/firmware_mnt/.hidden" ] && [ ! -e "$R/run/radio-bringup/modem.attempted" ] || fail 'nonempty repair not refused'
+	$BB rm "$R/vendor/firmware_mnt/.hidden"
+	$BB chmod 755 "$R/vendor/firmware_mnt"
+	reject_stage modem "$BOOT" modem "$modem_token"
+	[ -d "$R/vendor/firmware_mnt" ] && [ ! -e "$R/run/radio-bringup/modem.attempted" ] || fail 'wrong-mode repair not refused'
+	$BB chmod 700 "$R/vendor/firmware_mnt"
+	$BB printf 'tmpfs /vendor/firmware_mnt tmpfs rw 0 0\n' >> "$R/proc/mounts"
+	reject_stage modem "$BOOT" modem "$modem_token"
+	[ -d "$R/vendor/firmware_mnt" ] && [ ! -e "$R/run/radio-bringup/modem.attempted" ] || fail 'mounted repair not refused'
+	$BB sed -i '\|^tmpfs /vendor/firmware_mnt tmpfs |d' "$R/proc/mounts"
+fi
 $BB rm "$R/proc/628/root/boot/modemst1" "$R/proc/628/root/boot/modemst2" "$R/proc/628/root/dev/uio0" "$R/proc/628/root/dev/block/sdf2"
 run_stage modem "$modem_token"
+if [ "${SCRIPT##*/}" = pmos-radio-bringup-fresh.sh ]; then
+	expect "$R/tmp/modem.out" 'removed the measured empty unmounted persistent firmware_mnt directory' 'empty repair not applied'
+fi
 expect "$R/tmp/modem.out" 'restored backing links: uio0 sdf2 modemst1 modemst2' 'cutover-deleted rmtfs paths not restored'
 [ -c "$R/proc/628/root/dev/uio0" ] && [ -b "$R/proc/628/root/dev/block/sdf2" ] && [ -b "$R/proc/628/root/dev/block/sdf3" ] &&
 	[ "$($BB readlink "$R/proc/628/root/boot/modemst1")" = /dev/block/sdf2 ] &&
@@ -461,7 +503,7 @@ $R/etc/runlevels/default/networking
 $R/etc/runlevels/default/wpa_supplicant" ] || fail 'unexpected enabled OpenRC runlevel entries'
 reject_stage services "$BOOT" services "$services_token"
 
-if [ "${SCRIPT##*/}" = pmos-radio-bringup-persistent.sh ]; then
+if [ "${SCRIPT##*/}" = pmos-radio-bringup-persistent.sh ] || [ "${SCRIPT##*/}" = pmos-radio-bringup-fresh.sh ]; then
 persistent_reboot() {
 	$BB rm -f "$R/run/radio-bringup/services.attempted" "$R/run/radio-bringup/services-stdin" \
 		"$R/run/radio-bringup/order" "$R/run/radio-bringup/wpa_supplicant.started" \
@@ -482,6 +524,8 @@ expect "$R/tmp/services-persistent-ok.out" 'OpenRC wpa_supplicant then networkin
 net' ] || fail 'persistent services did not start wpa_supplicant then networking'
 [ "$($BB cat "$R/run/radio-bringup/services.attempted")" = "$BOOT" ] || fail 'persistent services attempt not recorded'
 $BB grep -q '^wpa_supplicant_if="wlan0"$' "$R/etc/conf.d/wpa_supplicant" || fail 'persistent own supplicant config changed'
+[ "$($BB stat -c '%u:%a' "$R/run/radio-bringup/ifquery-wlan")" = 0:700 ] &&
+	[ "$($BB stat -c '%u:%a' "$R/run/radio-bringup/lease-wrapper.sh")" = 0:700 ] || fail 'fresh-boot helpers not recreated root-only'
 $BB cmp -s "$R/etc/network/interfaces" "$R/tmp/interfaces.own" || fail 'persistent interfaces not idempotent'
 $BB cmp -s "$R/etc/wpa_supplicant/wpa_supplicant.conf" "$R/tmp/profile.own" || fail 'persistent profile not idempotent'
 
