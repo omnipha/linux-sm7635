@@ -62,6 +62,11 @@ if staged is not None:
     assert 'LEASE_SHA=1fbf50af4658eee252a3fb6b35d32c758106b89d1757d5b9bf10cc0554e03f56' in derived
     assert 'persistent OpenRC WLAN services already running; no reinstall' in derived
     postack_derived = postack.derive(derived)
+    assert hashlib.sha256(postack_derived.encode()).hexdigest() == \
+        '71c7b15d8c5507354268c9e0ccc49279b1e46c4e6a7fd5689bc6e21ef572202d'
+    assert p.derive(postack.derive(staged)) == postack_derived, 'derivations do not commute'
+    assert 'LEASE_SHA=1fbf50af4658eee252a3fb6b35d32c758106b89d1757d5b9bf10cc0554e03f56' in postack_derived
+    assert 'armed and unacknowledged on this boot' not in postack_derived
     assert 'armed and acknowledged on this boot' in postack_derived
     assert 'own_digest()' in postack_derived
     assert 'persistent OpenRC WLAN services already running; no reinstall' in postack_derived
