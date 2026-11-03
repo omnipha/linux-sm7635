@@ -14,10 +14,10 @@ Status: active. Goal: autonomous WLAN on every boot.
 
 ## Next single variable
 
-Finish and verify host-only #301, then return the retained #294 context to the
-coordinator for a proven live SSH/capture handoff. Measure the same-boot startup
-boundary and actual radio chain; fix the measured cause, not the host hypothesis.
-Reuse the installed chain where possible; build an image only when needed.
+Host-only #301 is complete ([PR #304](https://github.com/omnipha/linux-sm7635/pull/304)); the retained #294 context is ready for the coordinator's live SSH/capture handoff.
+Measure the same-boot startup boundary and actual radio chain; fix the measured
+cause, not the host hypothesis. Reuse the installed chain where possible; build
+an image only when needed.
 
 The owner accepted possible loss of the uncopied run-100 pstore and lifted that
 hold. The retained host capture is not a pstore copy. [Decision](https://github.com/omnipha/linux-sm7635/issues/294#issuecomment-6598398647).
