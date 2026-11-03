@@ -3,8 +3,8 @@
 device: nothing-asteroids
 updated: 2026-11-03
 next_question: >-
-  How will the coordinator and owner resolve preservation of the unknown
-  run-100 pstore before a potentially overwriting #294 diagnostic boot?
+  After #301, what does the retained #294 context measure at the panel restore
+  boundary, or at startup and radio if needed, in a coordinator-proven session?
 active_issue: omnipha/linux-sm7635#294
 subsystems:
   boot:
@@ -15,7 +15,7 @@ subsystems:
     record: records/2026-10-30-203515-run-69-second-boot-guard-wlan.md
   wlan:
     state: partial
-    record: records/2026-11-03-031528-pstore-preservation-host-evidence.md
+    record: records/2026-11-03-093747-boot-id-shape-host-diagnostic.md
   modem:
     state: partial        # stays running past the EFS request after PID-1 cutover (run 55); no voice/SIM/data claim
     record: records/2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the.md

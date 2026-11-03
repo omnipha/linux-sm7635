@@ -10,6 +10,7 @@ BusyBox. The extracted EXIT trap removes only a synthetic temporary profile.
 """
 import hashlib
 import importlib.util
+import os
 import pathlib
 import shutil
 import subprocess
@@ -216,6 +217,494 @@ fi
           'matches, duplicates and restore refusals observed; synthetic only, not a fix or device evidence')
 
 
+def test_panel_record_contract(post):
+    busybox = shutil.which('busybox')
+    if busybox is None:
+        raise SystemExit('host BusyBox is required for the #301 panel contract fixture')
+    if os.geteuid() == 0:
+        raise SystemExit('the #301 panel contract fixture requires an unprivileged user')
+
+    assert sha(post) == POST_FRESH_SHA, 'the #301 fixture requires the exact c917 prefix'
+    start, end = "trace 'pre check panel record'\n", "trace 'record append entry'\n"
+    assert post.count(start) == post.count(end) == 1, 'panel block boundaries changed'
+    block = start + post.split(start, 1)[1].split(end, 1)[0]
+    assignments = [line for line in block.splitlines(keepends=True) if line.startswith('\tpanel_hits=')]
+    assert assignments == [selfpost.NEW_GREP], 'candidate panel pipeline differs from NEW_GREP'
+    experiment = r'''\tpanel_hits=$($BB dmesg 2>/dev/null | $BB sed 's/^<[0-9][0-9]*>//; s/^\(\[[ 0-9.]*\]\[ *T1\] \|\[[ 0-9.]*\] \)\{0,1\}usb-init: //' | $BB grep -E "^usb-init: pre-SSH panel node=(boe|vxn|none) card0=[ -~]* boot $boot\$")
+'''.replace(r'\t', '\t', 1)
+    assert block.count(selfpost.NEW_GREP) == 1 and experiment != selfpost.NEW_GREP
+    before, after = block.split(selfpost.NEW_GREP)
+    assert experiment not in block and experiment not in post, 'experimental assignment leaked into candidate'
+    experimental_block = block.replace(selfpost.NEW_GREP, experiment, 1)
+    assert experimental_block.count(experiment) == 1
+    assert experimental_block == before + experiment + after, 'experiment changed bytes outside assignment'
+    assert experimental_block.replace(experiment, selfpost.NEW_GREP, 1) == block
+    assert post.count(selfpost.NEW_GREP) == 1 and sha(post) == POST_FRESH_SHA
+    blocks = {}
+    for variant, candidate in (('original', block), ('experiment', experimental_block)):
+        for original, replacement, count in (
+            ('panel=/run/pmos-pre-ssh-panel.record', 'panel=$PANEL', 1),
+            ('/.omnipha-boot-record', '"$RECORD"', 3),
+        ):
+            assert candidate.count(original) == count, f'{variant} panel path changed: {original}'
+            candidate = candidate.replace(original, replacement)
+        blocks[variant] = candidate
+    assert blocks['experiment'].replace(experiment, selfpost.NEW_GREP, 1) == blocks['original']
+    assert 'fixture_bb dmesg' not in ''.join(blocks.values())
+    trace_start, trace_end = 'trace() {\n', '\n}\n'
+    assert post.count(trace_start) == 1, 'candidate trace function changed'
+    trace_function = trace_start + post.split(trace_start, 1)[1].split(trace_end, 1)[0] + trace_end
+    assert post.splitlines()[1] == 'set -eu'
+
+    boot = '11111111-2222-3333-4444-555555555555'
+    foreign_boot = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+    panel = (f'usb-init: pre-SSH panel node=boe card0=1 dsi1=1 dcs=none reset=none '
+             f'suspend=clear brightness=0 boot {boot}')
+    conflict = panel.replace('node=boe', 'node=vxn')
+    foreign_panel = panel.replace(boot, foreign_boot)
+    transition = 'usb-init: pid1 transition guard armed; exec switch_root to postmarketOS init'
+
+    def pre_lines(boot_id, panel_line):
+        return [
+            f'boot {boot_id}',
+            f'pmos-self-stage: diagnostic hold and :22 verified on boot {boot_id}',
+            panel_line,
+            'pmos-stage: using unpacked persistent postmarketOS root',
+            'pmos-stage: mounted private proc/sys/configfs and guest-only dev, verified nodes and private devpts',
+            'pmos-stage: second key-only SSH listening on 172.16.42.2:2222 (diagnostic :22 untouched)',
+            'pmos-stage: STAGED ok; enter with: ssh -p 2222 root@172.16.42.2 (accept the printed key)',
+            'pmos-self-stage: mounted pinned persistent root from read-only /dev/block/sda13 (sda13) and verified its root contract',
+            'pmos-self-stage: guest :2222 public key matches the diagnostic host key; pin [172.16.42.2]:2222 before the PID 1 request',
+            'radio-bringup: stock INI, one-shot helper and service markers verified and staged in guest RAM before cutover',
+            f'pmos-self-stage: staged postmarketOS root and armed PID 1 request for boot {boot_id}',
+            transition,
+        ]
+
+    def post_line(boot_id):
+        return f'pmos-self-post: post-cutover PID 1 on boot {boot_id}; guard identity check passed; pid1 identity check passed'
+
+    setup = r'''REAL_BB=$1
+ROOT=$2
+PANEL=$3
+INPUT=$4
+BOOT_ID_FILE=$5
+OWNER=$6
+CONTRACT=$7
+RECORD=$ROOT/.omnipha-boot-record
+PMOS_PANEL_RECORD=$PANEL
+fixture_bb() {
+    case "$1" in
+        dmesg)
+            [ "$#" = 1 ] || return 1
+            "$REAL_BB" cat "$INPUT"; return;;
+        cat)
+            if [ "$#" = 2 ] && [ "$2" = /proc/sys/kernel/random/boot_id ]; then
+                "$REAL_BB" cat "$BOOT_ID_FILE"; return
+            fi;;
+        sync)
+            [ "$#" = 3 ] && [ "$2" = -f ] && [ "$3" = "$RECORD" ]; return;;
+        stat)
+            if [ "$#" = 4 ] && [ "$2" = -c ]; then
+                case "$3:$4" in
+                    "%u:$ROOT"|"%u:%a:%h:$PANEL"|"%u:%a:%h:%s:$RECORD")
+                        fixture_stat=$("$REAL_BB" "$@") || return 1
+                        case "$fixture_stat" in
+                            "$OWNER") printf '0\n';;
+                            "$OWNER":*) printf '0:%s\n' "${fixture_stat#*:}";;
+                            *) printf '%s\n' "$fixture_stat";;
+                        esac
+                        return;;
+                esac
+            fi;;
+    esac
+    case "$1" in
+        cat|stat|sed|printf|grep|sort|wc|awk) "$REAL_BB" "$@";;
+        *) printf 'fixture FAIL: unexpected BusyBox applet %s\n' "$1" >&2; return 1;;
+    esac
+}
+BB=fixture_bb
+. "$CONTRACT"
+umask 077
+root_contract_pinned_userdata() {
+    [ "$#" = 1 ] && [ "$1" = "$ROOT" ] || return 1
+    ROOT_CONTRACT_OPTS=rw
+}
+fixture_fail() { printf 'fixture FAIL: %s\n' "$*" >&2; exit 90; }
+log() { printf '%s\n' "$*"; }
+die() { fixture_fail "$*"; }
+''' + trace_function
+    identify = r'''boot_record_id || fixture_fail 'synthetic boot ID refused'
+boot=$br_boot
+printf 'fixture: boot ID %s\n' "$boot"
+'''
+    prepare = r'''boot_record_open "$ROOT" || fixture_fail 'open refused'
+initial=$("$REAL_BB" cat "$RECORD")
+post="pmos-self-post: post-cutover PID 1 on boot $boot; guard identity check passed; pid1 identity check passed"
+transition='usb-init: pid1 transition guard armed; exec switch_root to postmarketOS init'
+if boot_record_append "$ROOT" 'pmos-stage: using unpacked persistent postmarketOS root'; then
+    fixture_fail 'out-of-order stage append accepted'
+fi
+if boot_record_append "$ROOT" "$post"; then fixture_fail 'out-of-order post append accepted'; fi
+if boot_record_verify "$ROOT" "$transition"; then fixture_fail 'incomplete transition verified'; fi
+[ "$("$REAL_BB" cat "$RECORD")" = "$initial" ] || fixture_fail 'out-of-order attempt changed record'
+printf 'fixture: out-of-order append and incomplete verify refused unchanged\n'
+panel_line=$("$REAL_BB" cat "$PANEL")
+boot_record_append "$ROOT" "pmos-self-stage: diagnostic hold and :22 verified on boot $boot" || fixture_fail 'hold append refused'
+boot_record_append "$ROOT" "$panel_line" || fixture_fail 'panel append refused'
+boot_record_append "$ROOT" 'pmos-stage: using unpacked persistent postmarketOS root' || fixture_fail 'unpacked append refused'
+boot_record_append "$ROOT" 'pmos-stage: mounted private proc/sys/configfs and guest-only dev, verified nodes and private devpts' || fixture_fail 'mount append refused'
+boot_record_append "$ROOT" 'pmos-stage: second key-only SSH listening on 172.16.42.2:2222 (diagnostic :22 untouched)' || fixture_fail 'SSH append refused'
+boot_record_append "$ROOT" 'pmos-stage: STAGED ok; enter with: ssh -p 2222 root@172.16.42.2 (accept the printed key)' || fixture_fail 'staged append refused'
+boot_record_append "$ROOT" 'pmos-self-stage: mounted pinned persistent root from read-only /dev/block/sda13 (sda13) and verified its root contract' || fixture_fail 'root append refused'
+boot_record_append "$ROOT" 'pmos-self-stage: guest :2222 public key matches the diagnostic host key; pin [172.16.42.2]:2222 before the PID 1 request' || fixture_fail 'key append refused'
+boot_record_append "$ROOT" 'radio-bringup: stock INI, one-shot helper and service markers verified and staged in guest RAM before cutover' || fixture_fail 'radio marker append refused'
+boot_record_append "$ROOT" "pmos-self-stage: staged postmarketOS root and armed PID 1 request for boot $boot" || fixture_fail 'request append refused'
+boot_record_append "$ROOT" "$transition" || fixture_fail 'transition append refused'
+boot_record_verify "$ROOT" "$transition" || fixture_fail 'transition verify refused'
+printf 'fixture: full pre-cutover record verified\n'
+'''
+    attempt = r'''post="pmos-self-post: post-cutover PID 1 on boot $boot; guard identity check passed; pid1 identity check passed"
+if boot_record_append "$ROOT" "$post"; then
+    printf 'fixture: append accepted\n'
+else
+    printf 'fixture: append refused\n'
+fi
+if boot_record_verify "$ROOT" "$post"; then
+    printf 'fixture: verify accepted\n'
+else
+    printf 'fixture: verify refused\n'
+fi
+'''
+    no_match = (False, False, False)
+    success = (True, True, True)
+    refusal = (True, False, False)
+    restored_refusal = (True, True, False)
+    timestamp = '[    3.000000]'
+    caller = f'{timestamp}[    T1] usb-init: '
+    cases = (
+        ('prefix-stripped-same-boot', f'usb-init: {panel}', boot, panel, '', success, success),
+        ('timestamp', f'{timestamp} usb-init: {panel}', boot, panel, '', success, success),
+        ('priority', f'<6>usb-init: {panel}', boot, panel, '', success, success),
+        ('priority-timestamp', f'<6>{timestamp} usb-init: {panel}', boot, panel, '', success, success),
+        ('timestamp-caller', f'{caller}{panel}', boot, panel, '', no_match, success),
+        ('priority-timestamp-caller', f'<6>{caller}{panel}', boot, panel, '', no_match, success),
+        ('caller-unpadded', f'{timestamp}[T1] usb-init: {panel}', boot, panel, '', no_match, success),
+        ('caller-wide-padding', f'{timestamp}[       T1] usb-init: {panel}', boot, panel, '', no_match, success),
+        ('caller-thread-t2', f'{timestamp}[    T2] usb-init: {panel}', boot, panel, '', no_match, no_match),
+        ('caller-thread-t10', f'{timestamp}[   T10] usb-init: {panel}', boot, panel, '', no_match, no_match),
+        ('caller-thread-t01', f'{timestamp}[   T01] usb-init: {panel}', boot, panel, '', no_match, no_match),
+        ('caller-cpu', f'{timestamp}[    C1] usb-init: {panel}', boot, panel, '', no_match, no_match),
+        ('caller-trailing-padding', f'{timestamp}[T1 ] usb-init: {panel}', boot, panel, '', no_match, no_match),
+        ('caller-tab-padding', f'{timestamp}[\tT1] usb-init: {panel}', boot, panel, '', no_match, no_match),
+        ('caller-missing-bracket', f'{timestamp}[    T1 usb-init: {panel}', boot, panel, '', no_match, no_match),
+        ('caller-missing-separator', f'{timestamp}[    T1]usb-init: {panel}', boot, panel, '', no_match, no_match),
+        ('caller-extra-separator', f'{timestamp}[    T1]  usb-init: {panel}', boot, panel, '', no_match, no_match),
+        ('caller-without-timestamp', f'[    T1] usb-init: {panel}', boot, panel, '', no_match, no_match),
+        ('caller-separated-from-timestamp', f'{timestamp} [    T1] usb-init: {panel}', boot, panel, '', no_match, no_match),
+        ('caller-extra-bracket', f'{timestamp}[    T1][    T1] usb-init: {panel}', boot, panel, '', no_match, no_match),
+        ('caller-embedded', f'prefix {caller}{panel}', boot, panel, '', no_match, no_match),
+        ('caller-single-tag', f'{timestamp}[    T1] {panel}', boot, panel, '', no_match, no_match),
+        ('caller-invalid-node', f'{caller}{panel.replace("node=boe", "node=other")}', boot, panel, '', no_match, no_match),
+        ('caller-prefix-only', f'{caller}', boot, panel, '', no_match, no_match),
+        ('caller-malformed-priority', f'<x>{caller}{panel}', boot, panel, '', no_match, no_match),
+        ('caller-extra-suffix', f'{caller}{panel} trailing', boot, panel, '', no_match, no_match),
+        ('caller-overlong', f'{caller}{panel.replace("card0=1", "card0=" + "x" * 401)}', boot, panel, '', no_match, refusal),
+        ('caller-foreign-only', f'{caller}{foreign_panel}', boot, panel, '', no_match, no_match),
+        ('foreign-boot-only', f'usb-init: {foreign_panel}', boot, panel, '', no_match, no_match),
+        ('absent', '', boot, panel, '', no_match, no_match),
+        ('same-boot-conflict', f'usb-init: {panel}\nusb-init: {conflict}', boot, panel, '', refusal, refusal),
+        ('caller-conflict', f'{caller}{panel}\n{caller}{conflict}', boot, panel, '', no_match, refusal),
+        ('mixed-format-conflict', f'usb-init: {panel}\n{caller}{conflict}', boot, panel, '', success, refusal),
+        ('unsupported-caller-conflict', f'{caller}{panel}\n{timestamp}[    T2] usb-init: {conflict}', boot, panel, '', no_match, success),
+        ('identical-duplicates', f'usb-init: {panel}\nusb-init: {panel}', boot, panel, '', success, success),
+        ('caller-identical-duplicates', f'{caller}{panel}\n{caller}{panel}', boot, panel, '', no_match, success),
+        ('line-3-mismatch', f'usb-init: {panel}', boot, conflict, '', refusal, refusal),
+        ('caller-line-3-mismatch', f'{caller}{panel}', boot, conflict, '', no_match, refusal),
+        ('foreign-persistent-identity', f'usb-init: {panel}', foreign_boot, panel, '', restored_refusal, restored_refusal),
+        ('foreign-mixed-with-valid', f'usb-init: {foreign_panel}\nusb-init: {panel}', boot, panel, '', success, success),
+        ('caller-foreign-mixed-with-valid', f'{caller}{foreign_panel}\n{caller}{panel}', boot, panel, '', no_match, success),
+        ('caller-foreign-different-node-mixed', f'{caller}{foreign_panel.replace("node=boe", "node=vxn")}\n{caller}{panel}', boot, panel, '', no_match, success),
+        ('unsafe-record-mode', f'usb-init: {panel}', boot, panel, 'mode', restored_refusal, restored_refusal),
+        ('hardlinked-record', f'usb-init: {panel}', boot, panel, 'link', restored_refusal, restored_refusal),
+        ('oversized-record', f'usb-init: {panel}', boot, panel, 'size', restored_refusal, restored_refusal),
+    )
+    print('caveat #301: synthetic boot ID and dmesg; temporary-user ownership mapped to root; '
+          'userdata/mount identity modeled rw; sync is a no-op; real mode, link, size and ordering checks')
+    print('caveat #301: c917 panel block only; full 9a8c candidate not built or run; '
+          'no device evidence, radio, gate, guard, capture or ACK execution')
+    print('caveat #301: foreign persistent identity deliberately retains the current-boot panel line '
+          'to isolate the record identity check')
+    print('caveat experiment: in-memory host-only assignment, not a generated or deployable successor; '
+          'the whole #294 candidate was not run; only timestamp-adjacent T1 with optional leading spaces is modeled')
+    print('caveat experiment: the log supplies panel evidence; the persistent record supplies only line-3 equality '
+          'and ordering, not independent panel evidence')
+    print('caveat: the original ignores T1 lines; the experiment ignores unsupported caller formats, '
+          'so conflicts exclusively in ignored formats are not detected')
+    print('caveat diagnostics: unmodified contract under modeled dependencies; real guard, root/mount identity, '
+          'nonce and ACK are not executed or verified; synthetic source/model is not physical proof')
+
+    def write_private(path, value):
+        path.write_text(value, encoding='ascii')
+        path.chmod(0o600)
+
+    def run(script, positional):
+        return subprocess.run([busybox, 'sh', '-eu', '-c', script] + positional,
+                              capture_output=True, text=True, check=False,
+                              env={'LC_ALL': 'C', 'PATH': '/usr/bin:/bin'})
+
+    assert not pathlib.Path(tempfile.gettempdir()).resolve().is_relative_to(here.parent.resolve()), (
+        'fixture temp directory is inside the repository'
+    )
+    with tempfile.TemporaryDirectory(prefix='panel-contract-301.') as tmp:
+        work = pathlib.Path(tmp)
+        owner = str(os.geteuid())
+        assert work.stat().st_uid == os.geteuid() and work.stat().st_mode & 0o777 == 0o700
+        scenarios = (
+            (variant, name, text, seed_boot, record_panel, mutation, expectations)
+            for name, text, seed_boot, record_panel, mutation, original_expected, experiment_expected in cases
+            for variant, expectations in (('original', original_expected), ('experiment', experiment_expected))
+        )
+        for variant, name, text, seed_boot, record_panel, mutation, expectations in scenarios:
+            reached, restored, accepted = expectations
+            label = f'{name}/{variant}'
+            case = work / f'{name}-{variant}'
+            case.mkdir(mode=0o700)
+            root = case / 'root'
+            root.mkdir(mode=0o700)
+            input_path, panel_path, boot_path = (case / item for item in ('dmesg', 'panel', 'boot-id'))
+            record_path = root / '.omnipha-boot-record'
+
+            write_private(input_path, text + '\n' if text else '')
+            write_private(panel_path, record_panel + '\n')
+            write_private(boot_path, seed_boot + '\n')
+            positional = ['panel-contract-301', busybox, str(root), str(panel_path), str(input_path),
+                          str(boot_path), owner, str(here / 'pmos-root-contract.sh')]
+
+            result = run(setup + identify + prepare, positional)
+            expected = (f'fixture: boot ID {seed_boot}\n'
+                        'fixture: out-of-order append and incomplete verify refused unchanged\n'
+                        'fixture: full pre-cutover record verified\n')
+            assert (result.returncode, result.stdout, result.stderr) == (0, expected, ''), (label, 'prepare', result)
+            pre = ('\n'.join(pre_lines(seed_boot, record_panel)) + '\n').encode('ascii')
+            assert record_path.read_bytes() == pre, (label, 'pre-cutover content')
+            info = record_path.stat()
+            assert (info.st_uid, info.st_mode & 0o777, info.st_nlink, info.st_size) == (
+                os.geteuid(), 0o600, 1, len(pre)
+            ) and info.st_size <= 4096, (label, 'pre-cutover metadata', info)
+            assert pre.splitlines()[2].decode('ascii') == record_panel, (label, 'panel is not line 3')
+            panel_path.unlink()
+            write_private(boot_path, boot + '\n')
+            if mutation == 'mode':
+                record_path.chmod(0o644)
+            elif mutation == 'link':
+                os.link(record_path, root / 'record-link')
+            elif mutation == 'size':
+                with record_path.open('ab') as stream:
+                    stream.write(b'x' * 4096 + b'\n')
+                assert record_path.stat().st_size > 4096, label
+            before = record_path.read_bytes()
+            before_info = record_path.stat()
+
+            result = run(setup + identify + blocks[variant] + attempt, positional)
+            expected = f'fixture: boot ID {boot}\nself-post-trace: pre check panel record rc=0\n'
+            if restored:
+                expected += 'self-post-trace: panel record restored from the boot kernel log rc=0\n'
+            if reached:
+                expected += 'self-post-trace: post check panel record rc=0\n'
+                expected += 'fixture: append accepted\nfixture: verify accepted\n' if accepted else (
+                    'fixture: append refused\nfixture: verify refused\n'
+                )
+            assert (result.returncode, result.stdout, result.stderr) == (
+                0 if reached else 1, expected, ''
+            ), (label, 'parser and contract', result, expected)
+            assert panel_path.exists() == restored, (label, 'panel restoration', result)
+            if restored:
+                info = panel_path.stat()
+                assert panel_path.read_text(encoding='ascii') == panel + '\n', (label, 'restored panel content')
+                assert (info.st_uid, info.st_mode & 0o777, info.st_nlink, info.st_size) == (
+                    os.geteuid(), 0o600, 1, len(panel) + 1
+                ), (label, 'restored panel metadata', info)
+            if accepted:
+                assert record_path.read_bytes() == pre + (post_line(boot) + '\n').encode('ascii'), (label, 'post record')
+                info = record_path.stat()
+                assert (info.st_uid, info.st_mode & 0o777, info.st_nlink, info.st_size) == (
+                    os.geteuid(), 0o600, 1, len(pre) + len(post_line(boot)) + 1
+                ) and info.st_size <= 4096, (label, 'post metadata', info)
+            else:
+                assert record_path.read_bytes() == before, (label, 'refused parser attempt changed record')
+                assert panel_path.exists() == restored, (label, 'panel changed before independent attempt')
+                independent = run(setup + identify + attempt, positional)
+                expected_independent = (f'fixture: boot ID {boot}\n'
+                                        'fixture: append refused\nfixture: verify refused\n')
+                assert (independent.returncode, independent.stdout, independent.stderr) == (
+                    0, expected_independent, ''
+                ), (label, 'independent contract attempt', independent)
+                after_info = record_path.stat()
+                assert panel_path.exists() == restored, (label, 'independent attempt changed panel state')
+                assert record_path.read_bytes() == before and (
+                    after_info.st_mode, after_info.st_nlink, after_info.st_size
+                ) == (before_info.st_mode, before_info.st_nlink, before_info.st_size), (
+                    label, 'independent refusal changed record'
+                )
+            state = 'restored' if restored else 'not restored'
+            if accepted:
+                outcome = 'append/verify accepted'
+            elif reached:
+                outcome = 'in-child and independent append/verify refused unchanged'
+            else:
+                outcome = 'no in-child append; independent append/verify refused unchanged'
+            print(f'pass #301: {label}: parser {"continued" if reached else "exited 1 before post-check"}; '
+                  f'panel {state}; {outcome}')
+
+        diagnostics = (
+            ('producer-failure-empty', '', panel, False, False, False),
+            ('producer-failure-partial-raw', f'usb-init: {panel}', panel, False, False, True),
+            ('producer-failure-partial-t1', f'{caller}{panel}', panel, False, True, True),
+            ('existing-foreign-panel', '', foreign_panel, True, False, False),
+        )
+        producer_original = '''        dmesg)
+            [ "$#" = 1 ] || return 1
+            "$REAL_BB" cat "$INPUT"; return;;
+'''
+        producer_failure = '''        dmesg)
+            [ "$#" = 1 ] || return 91
+            printf 'invoked\\n' > "$PRODUCER_MARKER" || return 92
+            "$REAL_BB" cat "$INPUT" || return 93
+            return 23;;
+'''
+        assert setup.count(producer_original) == 1
+        diagnostic_setup = setup.replace(producer_original, producer_failure, 1)
+        assert diagnostic_setup.replace(producer_failure, producer_original, 1) == setup
+        diagnostic_setup += r'''PRODUCER_MARKER=$INPUT.invoked
+'''
+        for name, text, seed_panel, existing, t1_only, has_output in diagnostics:
+            for variant in ('original', 'experiment'):
+                label = f'{name}/{variant}'
+                case = work / f'diagnostic-{name}-{variant}'
+                case.mkdir(mode=0o700)
+                root = case / 'root'
+                root.mkdir(mode=0o700)
+                input_path, panel_path, boot_path = (case / item for item in ('dmesg', 'panel', 'boot-id'))
+                record_path = root / '.omnipha-boot-record'
+                producer_marker = case / 'dmesg.invoked'
+                write_private(input_path, text + '\n' if text else '')
+                write_private(panel_path, seed_panel + '\n')
+                write_private(boot_path, boot + '\n')
+                positional = ['panel-diagnostic-301', busybox, str(root), str(panel_path), str(input_path),
+                              str(boot_path), owner, str(here / 'pmos-root-contract.sh')]
+                if not existing:
+                    probe = run(diagnostic_setup + r'''fixture_bb dmesg
+''', positional)
+                    assert (probe.returncode, probe.stdout, probe.stderr) == (
+                        23, text + '\n' if text else '', ''
+                    ), (label, 'standalone failed producer', probe)
+                    assert producer_marker.read_text(encoding='ascii') == 'invoked\n', label
+                    producer_marker.unlink()
+                result = run(diagnostic_setup + identify + prepare, positional)
+                expected = (f'fixture: boot ID {boot}\n'
+                            'fixture: out-of-order append and incomplete verify refused unchanged\n'
+                            'fixture: full pre-cutover record verified\n')
+                assert (result.returncode, result.stdout, result.stderr) == (0, expected, ''), (
+                    label, 'prepare', result
+                )
+                pre = ('\n'.join(pre_lines(boot, seed_panel)) + '\n').encode('ascii')
+                assert record_path.read_bytes() == pre, (label, 'pre-cutover record')
+                record_info = record_path.stat()
+                assert (record_info.st_uid, record_info.st_mode & 0o777, record_info.st_nlink, record_info.st_size) == (
+                    os.geteuid(), 0o600, 1, len(pre)
+                ) and record_info.st_size <= 4096, (label, 'pre-cutover metadata', record_info)
+                if existing:
+                    assert boot != foreign_boot and pre.splitlines()[0] == f'boot {boot}'.encode('ascii')
+                    assert pre.splitlines()[2] == foreign_panel.encode('ascii')
+                    panel_before = panel_path.stat()
+                    assert not panel_path.is_symlink() and panel_path.read_text(encoding='ascii') == foreign_panel + '\n'
+                    assert (panel_before.st_uid, panel_before.st_mode & 0o777, panel_before.st_nlink) == (
+                        os.geteuid(), 0o600, 1
+                    ), (label, 'pre-existing panel metadata', panel_before)
+                else:
+                    panel_path.unlink()
+                assert not producer_marker.exists(), (label, 'producer ran before panel block')
+                result = run(diagnostic_setup + identify + blocks[variant] + attempt, positional)
+                reached = existing or (has_output and (not t1_only or variant == 'experiment'))
+                expected = f'fixture: boot ID {boot}\nself-post-trace: pre check panel record rc=0\n'
+                if reached and not existing:
+                    expected += 'self-post-trace: panel record restored from the boot kernel log rc=0\n'
+                if reached:
+                    expected += ('self-post-trace: post check panel record rc=0\n'
+                                 'fixture: append accepted\nfixture: verify accepted\n')
+                assert (result.returncode, result.stdout, result.stderr) == (
+                    0 if reached else 1, expected, ''
+                ), (label, 'observed panel block and contract', result, expected)
+                assert producer_marker.exists() != existing, (label, 'unexpected producer invocation')
+                if not existing:
+                    assert producer_marker.read_text(encoding='ascii') == 'invoked\n', label
+                assert panel_path.exists() == reached, (label, 'observed panel state')
+                if reached:
+                    panel_info = panel_path.stat()
+                    assert panel_path.read_text(encoding='ascii') == seed_panel + '\n', (label, 'panel content')
+                    assert (panel_info.st_uid, panel_info.st_mode & 0o777, panel_info.st_nlink, panel_info.st_size) == (
+                        os.geteuid(), 0o600, 1, len(seed_panel) + 1
+                    ), (label, 'panel metadata', panel_info)
+                    if existing:
+                        assert (panel_info.st_dev, panel_info.st_ino) == (panel_before.st_dev, panel_before.st_ino), (
+                            label, 'existing panel was replaced'
+                        )
+                        assert not seed_panel.endswith(f' boot {boot}'), (label, 'foreign panel was accepted as same-boot')
+                    expected_record = pre + (post_line(boot) + '\n').encode('ascii')
+                    assert record_path.read_bytes() == expected_record, (label, 'observed appended record')
+                    record_info = record_path.stat()
+                    assert (record_info.st_uid, record_info.st_mode & 0o777, record_info.st_nlink, record_info.st_size) == (
+                        os.geteuid(), 0o600, 1, len(expected_record)
+                    ) and record_info.st_size <= 4096, (label, 'appended metadata', record_info)
+                    if existing:
+                        print(f'known limitation: {label}: existing foreign-boot panel bypassed dmesg and restore; '
+                              'the modeled contract appended and verified, not a same-boot identity check')
+                    else:
+                        print(f'known limitation: {label}: producer exited 23 after synthetic output; '
+                              'final grep masked failure, panel restored and modeled contract appended/verified; '
+                              'failed output is not valid evidence')
+                else:
+                    assert record_path.read_bytes() == pre, (label, 'parser exit changed record')
+                    independent = run(diagnostic_setup + identify + attempt, positional)
+                    expected = (f'fixture: boot ID {boot}\n'
+                                'fixture: append refused\nfixture: verify refused\n')
+                    assert (independent.returncode, independent.stdout, independent.stderr) == (
+                        0, expected, ''
+                    ), (label, 'independent contract refusal', independent)
+                    after_info = record_path.stat()
+                    assert not panel_path.exists() and record_path.read_bytes() == pre and (
+                        after_info.st_dev, after_info.st_ino, after_info.st_mode, after_info.st_nlink, after_info.st_size
+                    ) == (
+                        record_info.st_dev, record_info.st_ino, record_info.st_mode, record_info.st_nlink, record_info.st_size
+                    ), (label, 'independent refusal changed synthetic state')
+                    print(f'diagnostic: {label}: producer exited 23; parser exited 1 before post-check; '
+                          'no panel, independent append/verify refused unchanged')
+
+        for invalid in ('not-a-boot-id', 'g1111111-2222-3333-4444-555555555555'):
+            write_private(boot_path, invalid + '\n')
+            result = run(setup + r'''if boot_record_id; then fixture_fail 'invalid synthetic boot ID accepted'; fi
+printf 'fixture: invalid synthetic boot ID refused\n'
+''', positional)
+            assert (result.returncode, result.stdout, result.stderr) == (
+                0, 'fixture: invalid synthetic boot ID refused\n', ''
+            ), ('boot_record_id', invalid, result)
+        malformed = '11111111-2222-3333-4444-55555555555-'
+        write_private(boot_path, malformed + '\n')
+        result = run(setup + f'''EXPECTED_BOOT={malformed}
+''' + r'''boot_record_id || fixture_fail 'malformed synthetic boot ID refused'
+[ "$br_boot" = "$EXPECTED_BOOT" ] || fixture_fail 'synthetic boot ID changed'
+printf 'fixture: malformed synthetic boot ID accepted\n'
+''', positional)
+        assert (result.returncode, result.stdout, result.stderr) == (
+            0, 'fixture: malformed synthetic boot ID accepted\n', ''
+        ), ('boot_record_id', malformed, result)
+        print('pass #301: real boot_record_id accepted synthetic IDs and rejected invalid length and non-hex input')
+        print('known limitation: boot_record_id accepted a synthetic misplaced trailing hyphen; '
+              'this is not a valid boot identity')
+        print('pass #301: identical duplicate panel values are accepted by sort -u, not rejected')
+    assert sha(post) == POST_FRESH_SHA and post.count(selfpost.NEW_GREP) == 1, 'production prefix changed'
+
+
 def main():
     staged = builder.current_scripts()['pmos-radio-bringup.sh'].decode()
     assert sha(staged) == STAGED_SHA
@@ -266,6 +755,7 @@ def main():
 
     assert selfpost.NEW_GREP in post and selfpost.OLD_GREP not in post
     test_panel_pipeline(source, post)
+    test_panel_record_contract(post)
 
     for text, name in ((radio, 'radio'), (post, 'post'), (hook, 'hook')):
         for forbidden in ('fastboot', 'init_boot', 'vendor_boot', 'avb'):
