@@ -102,7 +102,8 @@ BB=/real/busybox
 mode=$($BB cat /tmp/mode)
 if [ "${1:-}" = setsid ]; then
 	printf 'launch\n' >> /tmp/hook-launches
-	[ "${2:-}" = /bin/busybox ] && [ "${3:-}" = sh ] && [ "${4:-}" = /usr/libexec/omnipha/pmos-self-post-fresh-boot.sh ] && [ "$#" = 4 ] || exit 1
+	[ "${2:-}" = /bin/busybox ] && [ "${3:-}" = sh ] && [ "${4:-}" = -c ] &&
+		[ "${6:-}" = self-post ] && [ "${7:-}" = /usr/libexec/omnipha/pmos-self-post-fresh-boot.sh ] && [ "$#" = 7 ] || exit 1
 	$BB touch /tmp/hook-at-barrier
 	count=0
 	while [ ! -f /tmp/hook-release ]; do
@@ -115,7 +116,8 @@ if [ "${1:-}" = setsid ]; then
 		$BB mv /tmp/hook-post-result.new /tmp/hook-post-result
 		exit 0
 	fi
-	$BB setsid "$2" "$3" "$4" &
+	shift
+	$BB setsid "$@" &
 	child=$!
 	printf '%s\n' "$child" > /tmp/post.pid
 	if wait "$child"; then result=0; else result=$?; fi

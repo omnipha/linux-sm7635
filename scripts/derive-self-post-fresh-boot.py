@@ -45,7 +45,12 @@ for spec in "{POST_PATH} {post_sha}" "{RADIO_PATH} {radio_sha}"; do
 		exit 1
 	}}
 done
-( /bin/busybox setsid /bin/busybox sh {POST_PATH} >/dev/null 2>&1 & )
+( /bin/busybox setsid /bin/busybox sh -c '
+	/bin/busybox sh "$1" >/dev/null 2>&1
+	result=$?
+	[ "$result" -eq 0 ] || /bin/busybox printf "pmos-self-post-fresh: process exited rc=%s\\n" "$result" 2>/dev/null >/dev/kmsg || true
+	exit "$result"
+' self-post {POST_PATH} >/dev/null 2>&1 & )
 '''
     return post, hook
 
