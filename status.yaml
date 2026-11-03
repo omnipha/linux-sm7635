@@ -3,8 +3,8 @@
 device: nothing-asteroids
 updated: 2026-11-03
 next_question: >-
-  Can the verified caller-aware successor be installed and reach autonomous
-  WLAN and guard acceptance on two coordinator-observed fresh boots?
+  Can a newly proven live session verify and restore the exact caller-aware
+  successor before two autonomous WLAN and guard-acceptance measurements?
 active_issue: omnipha/linux-sm7635#294
 subsystems:
   boot:
@@ -15,7 +15,7 @@ subsystems:
     record: records/2026-10-30-203515-run-69-second-boot-guard-wlan.md
   wlan:
     state: partial
-    record: records/2026-11-03-132059-run104-close-next-session-readiness.md
+    record: records/2026-11-03-134121-run105-handoff-capture-loss.md
   modem:
     state: partial        # stays running past the EFS request after PID-1 cutover (run 55); no voice/SIM/data claim
     record: records/2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the.md
