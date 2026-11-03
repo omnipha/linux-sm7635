@@ -3,8 +3,8 @@
 device: nothing-asteroids
 updated: 2026-11-03
 next_question: >-
-  Can the failed candidate boot pstore be retrieved without an overwriting
-  boot, so a newly proven #294 panel diagnosis session can be established?
+  How will the coordinator and owner resolve preservation of the unknown
+  run-100 pstore before a potentially overwriting #294 diagnostic boot?
 active_issue: omnipha/linux-sm7635#294
 subsystems:
   boot:
@@ -15,7 +15,7 @@ subsystems:
     record: records/2026-10-30-203515-run-69-second-boot-guard-wlan.md
   wlan:
     state: partial
-    record: records/2026-11-03-023259-run101-preboot-pstore-access-blocker.md
+    record: records/2026-11-03-031528-pstore-preservation-host-evidence.md
   modem:
     state: partial        # stays running past the EFS request after PID-1 cutover (run 55); no voice/SIM/data claim
     record: records/2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the.md
