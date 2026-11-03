@@ -4,35 +4,51 @@ Status: active. Goal: autonomous WLAN on every boot.
 
 ## Measured
 
-- Runs 98/99: the installed chain reached WLAN and the internet with host help;
-  this does not prove autonomous startup. [Run 99](../../records/2026-11-02-192316-run99-persistent-services-acked-session.md).
-- Run 100: the self-start trace stopped before radio; `wlan0` and the success
-  ACK were absent, and the phone returned to fastboot. The cause and launched
-  script are not proven. [Run 100](../../records/2026-11-03-014728-run100-candidate-boot1-capture-boundary.md).
-- Run 101 measured a same-boot caller-prefixed panel line rejected by the
-  installed parser; its later read-only normalization matched ordered record
-  line 3. This does not prove run 100's cause or WLAN success.
-  [Run 101](../../records/2026-11-03-104136-run101-panel-parser-live-boundary.md).
+- [Run 99](../../records/2026-11-02-192316-run99-persistent-services-acked-session.md)
+  reached WLAN and the internet using host-directed stages after ACK; it does
+  not prove autonomous, unacknowledged startup.
+- [Run 101](../../records/2026-11-03-104136-run101-panel-parser-live-boundary.md)
+  stopped at the pre-radio panel record; a caller-prefixed line was rejected.
+  [Run 105](../../records/2026-11-03-134121-run105-handoff-capture-loss.md)
+  lost capture before the worker could inspect the guest.
+- [Run 106](../../records/2026-11-03-143859-run106-radio-pin-mismatch.md)
+  stopped at the hook's radio pin: the installed radio has two weakened checks
+  and differs from the tested artifact. No candidate radio stage ran. The
+  [coordinator](https://github.com/omnipha/linux-sm7635/issues/294#issuecomment-6606847931)
+  reports the session closed, responsive fastboot and exact same-boot rescue.
 
 ## Next single variable
 
-The #294 caller-aware successor addresses the measured parser boundary with
-host fixtures; it is not yet device-tested. The coordinator can install it
-under existing backup and recovery procedures, then measure the actual radio
-chain without a host-run recipe or competing ACK. Continue the retained context
-after a proven live handoff; reuse the installed chain and build no image solely
-for this parser change. [Candidate](../../records/2026-11-03-110917-caller-aware-gate-candidate.md).
+Measure the first **device-started, pre-ACK radio stage**, not another panel,
+record or hook refusal. Repeated attempts have stopped in front of that target;
+#294's fixed candidate/ordered-precheck approach has not measured it. First,
+use one bounded host-only investigation to determine whether panel and ordered
+record bookkeeping can be moved after the automatic radio observation while
+remaining mandatory before the real ACK. Keep the radio script and all guard,
+nonce, boot identity, capture, backup and recovery interlocks unchanged. Test
+both success and failure against the real guard/record contract; a mock-only
+pass is insufficient. Do not bypass, forge or weaken a check.
 
-The owner accepted possible loss of the uncopied run-100 pstore and lifted that
-hold. The retained host capture is not a pstore copy. [Decision](https://github.com/omnipha/linux-sm7635/issues/294#issuecomment-6598398647).
+If the host test proves that ordering safe, the coordinator may arrange one
+captured diagnostic boot: the device must start the exact tested radio itself;
+record the first stage entered and its actual result, or the exact refusal.
+Do not run a radio recipe, start remoteprocs manually or supply a host ACK.
+The installed altered radio must not run: under a proven session and verified
+backup/recovery, restore and re-hash the exact tested artifact first. A setup
+boot or host-assisted observation is not an autonomous WLAN pass.
 
-## Fallback and boundaries
+## Budget and fallback
 
-If the panel check does not explain the observed failure, measure startup and
-radio in the live session before changing another pre-radio check. Keep the
-existing identity, capture, rescue, nonce, guard and success-ACK interlocks;
-no manual remoteproc writes or host substitute ACK. Automatic recovery has known
-limits. [Review](../../records/2026-11-02-225455-success-gated-ack-owner-review-blockers.md).
+Budget: one host-only ordering investigation, then at most one diagnostic
+boot for a new radio-stage fact. If the real contract ties that ordering to
+safety, or another pre-radio layer stops the diagnostic, stop and identify the
+specific dependency and cheaper host-side fix; do not repeat measuring boots
+or build an image merely for a new hash. Preserve the same worker context until
+the supervisor reconciles its closed assignment; do not start a second worker.
+
+The owner accepted possible loss of uncopied comparable WLAN-session pstore;
+host capture is not a pstore copy. [Decision](https://github.com/omnipha/linux-sm7635/issues/294#issuecomment-6603722440).
+Known guard recovery limits remain; this is not permission to weaken them.
 
 ## Acceptance
 
