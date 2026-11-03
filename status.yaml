@@ -4,7 +4,7 @@ device: nothing-asteroids
 updated: 2026-11-03
 next_question: >-
   Can the coordinator preflight install the reviewed success-gated chain
-  before one autonomous WLAN and guard-acceptance measurement?
+  before two autonomous WLAN and guard-acceptance measurements?
 active_issue: omnipha/linux-sm7635#311
 subsystems:
   boot:
