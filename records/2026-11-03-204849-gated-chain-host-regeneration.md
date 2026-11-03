@@ -5,7 +5,7 @@ issue: linux-sm7635#311
 subsystem: wlan
 result: confirmed
 ---
-# gated chain host regeneration
+# run 5: gated chain host regeneration
 
 Host artifact regeneration and fixture checks for issue #311.
 Base: `e5fa1dba12cca1ccc4978feae92e5ce25376c39b` (`origin/main`).
