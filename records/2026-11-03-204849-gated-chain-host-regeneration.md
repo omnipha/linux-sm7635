@@ -7,8 +7,7 @@ result: confirmed
 ---
 # gated chain host regeneration
 
-Host artifact regeneration and fixture checks for issue #311. This corrects
-the original record's unsupported installed-chain and handoff claims.
+Host artifact regeneration and fixture checks for issue #311.
 Base: `e5fa1dba12cca1ccc4978feae92e5ce25376c39b` (`origin/main`).
 No physical phone, USB, adb, fastboot, flash, reboot or device ACK.
 
