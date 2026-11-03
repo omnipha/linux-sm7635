@@ -48,15 +48,26 @@ host-tested only. OpenRC ordering on a fresh boot is unmeasured.
 
 ## Next single variable
 
-Owner review of the #294 design and its measured recovery/evidence limits
-(records/2026-11-02-225455-success-gated-ack-owner-review-blockers.md). The
-host-only derived gate publishes a real same-boot ACK only after all radio and
-connectivity checks, but its generated hook deliberately refuses launch. The
-installed chain has an unbounded pre-guard interval after its guest hold, no
-independent supervision of the single watcher, and no durable post-success
-failure-record channel. No fresh-boot measurement is authorized until the
-owner chooses the minimal recovery/evidence redesign or explicitly narrows
-those guarantees; do not weaken the nonce interlock, capture gate or guard.
+Complete and test the smallest deployable #294 success-gated candidate from
+PR #295, then measure whether the installed chain starts WLAN and stays in
+Linux without a host-run recipe. On 2026-11-03 01:30 CET the owner explicitly
+chose the existing recovery and evidence mechanisms in issue #294, superseding
+the earlier owner-review blocker. Adapt the fixtures and remove the deliberate
+launch refusal only for the reviewed candidate: use the real same-boot guard
+ACK only after association, address, DNS and internet succeed; publish no ACK
+on a prior failure. Preserve the existing nonce, capture and recovery
+interlocks, and do not use a competing host ACK during measurement. Avoid a
+new image if the installed chain can carry the candidate.
+
+The owner's risk choice does not repair the limits in
+`records/2026-11-02-225455-success-gated-ack-owner-review-blockers.md`:
+automatic recovery is not guaranteed before guard arming, if the watcher or
+kernel fails, or after ACK publication; a published ACK may be accepted even
+if its publisher is interrupted. Failure evidence can be volatile and the
+strict acceptance-time deadline race remains. Report these limits, not a
+guarantee of recovery on every failure. The pre-arm watchdog, watcher
+supervisor, durable failure-record redesign and strict deadline change are
+not prerequisites for this experiment.
 
 Why this direction: run 84 measured an unacknowledged boot returning to
 fastboot (records/2026-10-31-162218-run-84-record-rotation-cutover-noack-return.md).
@@ -68,16 +79,14 @@ own. #293 proposed exactly those two boots and is closed for that reason; do
 not dispatch or deploy it. The panel-record dmesg format remains a hypothesis,
 not the measured cause of run 97's append refusal.
 
-Budget: one bounded host design/fixture issue and at most one subsequent
-coordinator-owned fresh-boot test of the resulting reviewed candidate; do not
-spend that boot if the host cannot show both success and independent failure
-recovery. No new pre-radio-only self-post image: that budget was spent in run
-97. Fallback if the existing pinned contract cannot support this transition:
-show the smallest reviewed guard/ack redesign and its recovery trade-off to the
-owner before any risky device experiment; do not change the acceptance check.
-A temporary pre-deadline radio measurement can be considered only if a named
-live fact is indispensable to the host design, not as acceptance.
-(Plan owner, 2026-11-02.)
+Budget: finish the existing host candidate and its fixtures, then at most two
+coordinator-owned fresh boots of the reviewed candidate, the second only if
+the first passes and is safely closed or handed off. No new pre-radio-only
+self-post image: that budget was spent in run 97. If the existing chain cannot
+carry the candidate, stop with the concrete incompatibility and propose the
+smallest reviewed change; do not substitute the four deferred architecture
+projects or change the acceptance check. A temporary pre-deadline radio
+measurement is not acceptance. (Plan owner, 2026-11-03.)
 
 ## Order (binding)
 
@@ -87,11 +96,12 @@ live fact is indispensable to the host design, not as acceptance.
    association, address, DNS and internet in host-acked sessions.
 3. Done on host only: #291 derived the persistent fresh-boot hook and radio
    candidate; it cannot maintain a no-host boot because it never acknowledges.
-4. Done on host only: #294 derived and fixture-tested the gate, but refuted
-   full intact-chain recovery/evidence acceptance; its hook refuses launch.
-   Next: owner review of the named recovery/evidence redesign decisions.
-5. Only then measure one reviewed candidate on a fresh device boot under the
-   coordinator's existing safety gate, followed by a second boot only when
+4. #294 derived and fixture-tested the gate, but its hook refuses launch;
+   the owner has now accepted the existing recovery/evidence limits for this
+   experiment. Complete the deployable candidate and adapt its host fixtures;
+   do not treat the prior review request as still blocking it.
+5. The coordinator installs the reviewed candidate under existing backup and
+   recovery procedures and measures one fresh boot, then a second only when
    the first passes. A merged device record is required for the PLAN check.
 
 ## Acceptance (from PLAN.md)
@@ -106,8 +116,8 @@ an automatic return to fastboot is not acceptance.
 - No manual remoteproc or radio writes outside the pinned scripts.
 - No worker-in-window pre-ack probes; a pre-armed capture observes pre-ack state.
 - No image for a question a live session can answer.
-- No unattended or self-generated guard ACK without a reviewed, success-gated
-  design that demonstrably preserves bounded independent recovery on failure.
+- No unattended guard ACK except the reviewed, real same-boot success-gated
+  protocol; do not claim the existing recovery covers the known failure limits.
 - Issue #288: an unowned key-only dropbear listener on WLAN `:22` recurs with
   DHCP. Whether it is deliberate is unproven; the separate owner decision and
   possible removal remain open, and the listener is not a PLAN acceptance test.
