@@ -12,32 +12,19 @@ the original record's unsupported installed-chain and handoff claims.
 Base: `e5fa1dba12cca1ccc4978feae92e5ce25376c39b` (`origin/main`).
 No physical phone, USB, adb, fastboot, flash, reboot or device ACK.
 
-## Chain integration and installed carrier compatibility
+## Builder integration gap
 
-The repository builder `current_scripts()` in `build-init-boot-persistent-root.py`
-bundles the pre-cutover diagnostic chain:
-- Staged radio (`f54b3372...`), leased helper pin (`1fbf50af...`), and
-  pre-cutover preparation.
-- Persistent root staging in `pmos-self-stage.sh` and `pmos-session-stage.sh`
-  which:
-  1. Mounts the persistent ext4 userdata filesystem from `/dev/block/sda13`.
-  2. Verifies the persistent root contract.
-  3. Inspects `/etc/local.d/10-omnipha-self-stage.start`: when present as a
-     root-owned, regular, non-symlink `0700` file, it is preserved unchanged;
-     only when absent does it generate the fallback diagnostic hook.
-  4. Defers persistent OpenRC `wpa_supplicant` and `networking` runlevel
-     symlinks so they cannot start before the device-owned helper.
-  5. Places the protected WLAN profile into `/run/radio-bringup/wpa_supplicant.conf`
-     as root-only `0600`.
-  6. Arms the PID 1 transition guard with root contract verification before
-     `switch_root`.
+Source inspection of `build-init-boot-persistent-root.py::current_scripts()`
+shows that it bundles the older staged radio (`f54b3372...`) and an ungated
+post, not the generated gated radio, post and hook. The derived self-stage
+preserves an existing root-owned `0700` hook based on metadata, not content,
+or creates the older hook if absent. The derived session stage defers the two
+WLAN runlevel links. None of this establishes that a current carrier installs
+the reviewed chain, nor that a particular carrier is currently installed.
+A final image/carrier pair and its builder/verifier self-test remain outstanding.
+Do not install or boot this incomplete chain as a physical handoff.
 
-On unit `mb003`, the carrier `vendor_boot_b` (`a71b3f5f...`) and `init_boot_a`
-are already flashed ("never-reflash" policy). The successor WLAN chain does not
-require building or flashing a new image pair; it is installed onto the
-persistent ext4 userdata filesystem by the coordinator.
-
-## Candidate artifacts for coordinator installation
+## Host-derived candidate artifacts
 
 The candidate files were generated reproducibly without private inputs:
 - `/usr/libexec/omnipha/pmos-radio-bringup-fresh-boot.sh` (29,356 bytes):
