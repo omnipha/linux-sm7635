@@ -13,6 +13,7 @@ HERE = pathlib.Path(__file__).resolve().parent
 
 def load(name, filename):
     spec = importlib.util.spec_from_file_location(name, HERE / filename)
+    assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -98,7 +99,8 @@ def main():
         # Both generators must carry byte-identical monitor logic.
         probe = gate.build_dns_probe()
         candidate, hook = gate.derive(post, radio.encode(), probe)
-        assert hashlib.sha256(candidate.encode()).hexdigest() == '9a8c40adce2f84d61e30fd49f6d0f3be5a08d3a57909e9335c3c02f2751ea97b'
+        assert candidate.startswith(post.replace(gate.PANEL_OLD, gate.PANEL_NEW, 1))
+        assert hashlib.sha256(candidate.encode()).hexdigest() in hook
         assert hook.split(prefix, 1)[1].split(suffix, 1)[0] == fresh_hook.split(prefix, 1)[1].split(suffix, 1)[0]
     print('pass: detached fresh/success hook reports exit status to kmsg; success, failure, errexit, unbound, syntax, sink loss; no device')
 

@@ -9,15 +9,19 @@ Status: active. Goal: autonomous WLAN on every boot.
 - Run 100: the self-start trace stopped before radio; `wlan0` and the success
   ACK were absent, and the phone returned to fastboot. The cause and launched
   script are not proven. [Run 100](../../records/2026-11-03-014728-run100-candidate-boot1-capture-boundary.md).
-- A historical caller-prefixed panel line fails the host parser replay. This is
-  a possible discriminator, not a diagnosis of run 100. [Replay](https://github.com/omnipha/linux-sm7635/issues/294#issuecomment-6597114588).
+- Run 101 measured a same-boot caller-prefixed panel line rejected by the
+  installed parser; its later read-only normalization matched ordered record
+  line 3. This does not prove run 100's cause or WLAN success.
+  [Run 101](../../records/2026-11-03-104136-run101-panel-parser-live-boundary.md).
 
 ## Next single variable
 
-Host-only #301 is complete ([PR #304](https://github.com/omnipha/linux-sm7635/pull/304)); the retained #294 context is ready for the coordinator's live SSH/capture handoff.
-Measure the same-boot startup boundary and actual radio chain; fix the measured
-cause, not the host hypothesis. Reuse the installed chain where possible; build
-an image only when needed.
+The #294 caller-aware successor addresses the measured parser boundary with
+host fixtures; it is not yet device-tested. The coordinator can install it
+under existing backup and recovery procedures, then measure the actual radio
+chain without a host-run recipe or competing ACK. Continue the retained context
+after a proven live handoff; reuse the installed chain and build no image solely
+for this parser change. [Candidate](../../records/2026-11-03-110917-caller-aware-gate-candidate.md).
 
 The owner accepted possible loss of the uncopied run-100 pstore and lifted that
 hold. The retained host capture is not a pstore copy. [Decision](https://github.com/omnipha/linux-sm7635/issues/294#issuecomment-6598398647).
