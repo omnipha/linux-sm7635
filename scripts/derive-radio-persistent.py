@@ -3,7 +3,8 @@
 
 The pinned script (and the builder-patched copy staged on the installed chain)
 refuses its own persisted output on a persistent root. This derives a copy whose
-only differences are four blocks of the services stage:
+only differences are four blocks of the services stage and removal of the
+installed script's already-started shortcut when present:
   * install_service_config: idempotent, emitter-based, never overwrites a
     differing persisted WLAN profile
   * conf.d check: pristine archive or the stage own exact output
@@ -181,9 +182,30 @@ INPUTS_NEW = r'''	[ ! -e "$STATE/services.attempted" ] && [ ! -L "$STATE/service
 '''
 
 BLOCKS = ((INSTALL, INSTALL_NEW), (CONFD, CONFD_NEW), (RUNLEVEL, RUNLEVEL_NEW), (INPUTS, INPUTS_NEW))
+SHORTCUT = '''\tif [ -f /etc/network/interfaces ] && [ -f /etc/wpa_supplicant/wpa_supplicant.conf ] &&
+\t\t/sbin/rc-service networking status >/dev/null 2>&1 &&
+\t\t/sbin/rc-service wpa_supplicant status >/dev/null 2>&1; then
+\t\treport 'persistent OpenRC WLAN services already running; no reinstall'
+\t\treturn 0
+\tfi
+'''
+SERVICES_ENTRY = 'services() {\n\tstage=services\n\tcapture_gate\n'
 
 
 def derive(text):
+    if text.count(SERVICES_ENTRY) != 1:
+        raise SystemExit('services entry not found exactly once')
+    entry = text.index(SERVICES_ENTRY) + len(SERVICES_ENTRY)
+    has_installed_prepare = 'persistent INI firmware link invalid' in text
+    has_shortcut = text[entry:].startswith(SHORTCUT)
+    if has_installed_prepare != has_shortcut:
+        raise SystemExit('installed services shortcut mismatch')
+    if has_shortcut:
+        if text.count(SHORTCUT) != 1:
+            raise SystemExit('services shortcut not found exactly once')
+        text = text[:entry] + text[entry + len(SHORTCUT):]
+    if not text[entry:].startswith('\twlan_present && ') or SHORTCUT in text:
+        raise SystemExit('unexpected services entry')
     for old, new in BLOCKS:
         if text.count(old) != 1:
             raise SystemExit('services block not found exactly once')

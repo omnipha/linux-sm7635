@@ -39,6 +39,8 @@ $BB cp /bin/busybox "$BASE/real/busybox"
 $BB cp "$WORK/post" "$BASE/usr/libexec/omnipha/pmos-self-post-fresh-boot.sh"
 $BB cp "$WORK/radio" "$BASE/usr/libexec/omnipha/pmos-radio-bringup-fresh-boot.sh"
 $BB cp "$WORK/hook" "$BASE/hook"
+$BB cp "$HERE/pmos-root-contract.sh" "$BASE/run/pid1-guard/root-contract.sh"
+$BB chmod 600 "$BASE/run/pid1-guard/root-contract.sh"
 $BB chmod 700 "$BASE/hook" "$BASE/usr/libexec/omnipha/"*.sh "$BASE/run" "$BASE/run/radio-bringup" "$BASE/run/pid1-guard"
 $BB mknod -m 666 "$BASE/dev/null" c 1 3
 $BB mknod -m 666 "$BASE/dev/zero" c 1 5
@@ -47,7 +49,12 @@ $BB chmod 666 "$BASE/dev/kmsg"
 $BB printf '%s\n' "$boot" > "$BASE/proc/sys/kernel/random/boot_id"
 $BB printf '%s\n' "$boot" > "$BASE/run/pid1-guard/armed"
 $BB printf '%s\n' "$nonce" > "$BASE/run/pid1-guard/nonce"
-$BB printf 'tmpfs / tmpfs rw 0 0\ntmpfs /run tmpfs rw 0 0\n' > "$BASE/proc/1/mounts"
+$BB printf '/dev/block/sda13 / ext4 rw 0 0\ntmpfs /run tmpfs rw 0 0\n' > "$BASE/proc/1/mounts"
+$BB printf '1 0 8:13 / / rw - ext4 /dev/block/sda13 rw\n' > "$BASE/proc/1/mountinfo"
+$BB mkdir -p "$BASE/sys/class/block/sda13" "$BASE/dev/block"
+$BB printf 'PARTNAME=userdata\n' > "$BASE/sys/class/block/sda13/uevent"
+$BB printf '8:13\n' > "$BASE/sys/class/block/sda13/dev"
+$BB printf '209715200\n' > "$BASE/sys/class/block/sda13/size"
 $BB ln -s / "$BASE/proc/1/root"
 $BB ln -s /bin/busybox "$BASE/proc/1/exe"
 $BB ln -s / "$BASE/proc/43/root"
@@ -84,7 +91,19 @@ $BB chmod 600 "$BASE/run/keep" "$BASE/run/pid1-guard/armed" "$BASE/run/pid1-guar
 	"$BASE/etc/conf.d/networking" "$BASE/etc/conf.d/wpa_supplicant"
 $BB chmod 700 "$BASE/run/radio-bringup/ifquery-wlan" "$BASE/run/radio-bringup/lease-wrapper.sh" "$BASE/run/radio-bringup/wlan-udhcpc-lease.sh"
 panel="usb-init: pre-SSH panel node=boe card0=1 dsi1=1 dcs=none reset=none suspend=clear brightness=0 boot $boot"
-$BB printf 'boot %s\npre\n%s\n' "$boot" "$panel" > "$BASE/.omnipha-boot-record"
+$BB printf '%s\n' "boot $boot
+pmos-self-stage: diagnostic hold and :22 verified on boot $boot
+$panel
+pmos-stage: using unpacked persistent postmarketOS root
+pmos-stage: mounted private proc/sys/configfs and guest-only dev, verified nodes and private devpts
+pmos-stage: second key-only SSH listening on 172.16.42.2:2222 (diagnostic :22 untouched)
+pmos-stage: STAGED ok; enter with: ssh -p 2222 root@172.16.42.2 (accept the printed key)
+pmos-self-stage: mounted pinned persistent root from read-only /dev/block/sda13 (sda13) and verified its root contract
+pmos-self-stage: guest :2222 public key matches the diagnostic host key; pin [172.16.42.2]:2222 before the PID 1 request
+radio-bringup: stock INI, one-shot helper and service markers verified and staged in guest RAM before cutover
+pmos-self-stage: staged postmarketOS root and armed PID 1 request for boot $boot
+usb-init: pid1 transition guard armed; exec switch_root to postmarketOS init
+pmos-self-post: post-cutover PID 1 on boot $boot; guard identity check passed; pid1 identity check passed" > "$BASE/.omnipha-boot-record"
 $BB chmod 600 "$BASE/.omnipha-boot-record"
 $BB cp "$BASE/.omnipha-boot-record" "$BASE/tmp/synthetic-record.before"
 $BB printf '%s\n' "$panel" > "$BASE/run/pmos-pre-ssh-panel.record"
@@ -99,6 +118,8 @@ $BB chmod 700 "$BASE/run/pmos-root-contract.sh"
 $BB cat > "$BASE/bin/busybox" <<'MOCK'
 #!/real/busybox sh
 BB=/real/busybox
+boot=11111111-2222-3333-4444-555555555555
+nonce=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 mode=$($BB cat /tmp/mode)
 if [ "${1:-}" = setsid ]; then
 	printf 'launch\n' >> /tmp/hook-launches
@@ -133,6 +154,9 @@ mutate() {
 		state-mode) $BB chmod 755 "$state";;
 		run-mode) $BB chmod 755 /run;;
 		run-mount) $BB printf 'tmpfs / tmpfs rw 0 0\n' > /proc/1/mounts;;
+		record-strip) $BB sed -i '$d' /.omnipha-boot-record;;
+		record-mutate) $BB printf 'tampered\n' >> /.omnipha-boot-record;;
+		ready-premature) $BB printf '%s %s\n' "$nonce" "$boot" > "$guard/success-ready"; $BB chmod 600 "$guard/success-ready";;
 		radio-changed) $BB printf '\n' >> /usr/libexec/omnipha/pmos-radio-bringup-fresh-boot.sh;;
 		guard-mode) $BB chmod 755 "$guard";;
 		wrong-boot) $BB printf '00000000-0000-0000-0000-000000000000\n' > /proc/sys/kernel/random/boot_id;;
@@ -174,9 +198,30 @@ mutate() {
 		resolver-partial) $BB printf 'nameserver\n' > /etc/resolv.conf;;
 		gate-exists) $BB mkdir -m 700 "$gate";;
 		staging-stale) $BB printf 'stale\n' > "$guard/.success-gated-ack-new";;
+		ready-stale) $BB printf 'stale\n' > "$guard/success-ready";;
+		ready-staging-stale) $BB printf 'stale\n' > "$guard/.success-ready-new";;
+		record-corrupt) $BB printf 'invalid\n' > /.omnipha-boot-record;;
+		record-mode) $BB chmod 644 /.omnipha-boot-record;;
 	esac
 }
 case "${1:-}" in
+	sync)
+		if [ "${2:-}" = -f ] && [ "${3:-}" = //.omnipha-boot-record ]; then
+			printf 'verify\n' >> /tmp/ordered-record-requests
+			[ -f "$gate/all-checks.ok" ] && [ ! -e "$guard/ack" ] && [ ! -e "$guard/.success-gated-ack-new" ] &&
+				[ ! -e "$guard/success-ready" ] && [ ! -e "$guard/.success-ready-new" ] || { $BB touch /tmp/unsafe-record-order; exit 1; }
+			[ "$mode" != record-sync-fail ] || exit 1
+			case "$mode" in
+				contract-missing) $BB rm -f "$guard/root-contract.sh"; exit 1;;
+				contract-mode) $BB chmod 644 "$guard/root-contract.sh"; exit 1;;
+				contract-corrupt) $BB printf '\n' >> "$guard/root-contract.sh"; exit 1;;
+			esac
+			$BB sync -f //.omnipha-boot-record || exit 1
+			$BB touch /tmp/record-verified
+			exit 0
+		fi
+		shift
+		exec "$BB" sync "$@";;
 	mkdir)
 		if [ "${2:-}" = -m ] && [ "${3:-}" = 700 ] && [ "${4:-}" = "$gate" ]; then
 			$BB mkdir "$2" "$3" "$4" || exit 1
@@ -193,7 +238,6 @@ case "${1:-}" in
 			case "$mode" in
 				stage-write-fail) exit 1;;
 				staged-partial) printf 'partial\n'; exit 0;;
-				staged-wrong-boot) printf '%s %s\n' "$3" '00000000-0000-0000-0000-000000000000'; exit 0;;
 				staged-nonce-change) $BB printf '%064d\n' 0 > "$guard/nonce";;
 				staged-other) $BB touch "$guard/.ack-new";;
 			esac
@@ -310,6 +354,9 @@ case "${1:-}" in
 			exit 0
 		fi;;
 	pidof) [ "$mode" != service-process ] || exit 1; [ "$mode" != final-process ] || [ ! -f "$gate/dns.ok" ] || exit 1; printf '42\n'; exit 0;;
+	cmp)
+		if [ "$mode" = ready-cmp-fail ] && [ "${4:-}" = "$guard/success-ready" ]; then exit 1; fi
+		if [ "$mode" = ack-cmp-fail ] && { [ "${4:-}" = "$guard/.success-gated-ack-new" ] || [ "${4:-}" = "$guard/ack" ]; }; then exit 1; fi;;
 	grep)
 		if [ "${2:-}" = -Ei ] && [ "${4:-}" = "$gate/kmsg" ]; then
 			if [ "$mode" = kmsg-radio-grep-fail ] && [ ! -f "$gate/radio-health.ok" ]; then exit 2; fi
@@ -341,8 +388,27 @@ case "${1:-}" in
 			exit 0
 		fi;;
 	ln)
+		if [ "${2:-}" = "$guard/.success-ready-new" ] && [ "${3:-}" = "$guard/success-ready" ]; then
+			printf 'attempt\n' >> /tmp/ready-publication-attempts
+			if [ "$mode" = ready-publication-race ]; then printf 'synthetic foreign ready\n' > "$guard/success-ready"; fi
+			if [ "$mode" = interrupt-before-ready-link ]; then kill -TERM "$($BB cat /tmp/post.pid)"; exit 1; fi
+			$BB ln "$2" "$3" || exit 1
+			printf 'published\n' >> /tmp/ready-publications
+			$BB cp "$guard/success-ready" /tmp/ready-at-link
+			$BB stat -c '%u:%a:%h:%s' "$guard/success-ready" > /tmp/ready-at-link.stat
+			case "$mode" in
+				ready-published-corrupt) $BB printf 'partial\n' > "$guard/success-ready";;
+				ready-published-replaced) $BB rm "$guard/success-ready"; $BB printf 'foreign\n' > "$guard/success-ready"; $BB chmod 600 "$guard/success-ready";;
+			esac
+			exit 0
+		fi
 		if [ "${2:-}" = "$guard/.success-gated-ack-new" ] && [ "${3:-}" = "$guard/ack" ]; then
 			printf 'attempt\n' >> /tmp/publication-attempts
+			[ -f "$gate/all-checks.ok" ] && [ "$( $BB cat /tmp/ordered-record-requests)" = verify ] && [ -f /tmp/record-verified ] &&
+				[ "$($BB stat -c '%u:%a:%h:%s' "$guard/success-ready")" = "0:600:1:$((${#nonce} + ${#boot} + 2))" ] &&
+				$BB printf '%s %s\n' "$nonce" "$boot" | $BB cmp -s - "$guard/success-ready" || { $BB touch /tmp/unsafe-ack-order; exit 1; }
+			$BB cp "$guard/success-ready" /tmp/ready-at-ack
+			$BB stat -c '%u:%a:%h:%s' "$guard/success-ready" > /tmp/ready-at-ack.stat
 			if [ "$mode" = publication-race ]; then printf 'synthetic competing ack\n' > "$guard/ack"; fi
 			if [ "$mode" = interrupt-before-link ]; then kill -TERM "$($BB cat /tmp/post.pid)"; exit 1; fi
 			$BB ln "$2" "$3" || exit 1
@@ -358,6 +424,18 @@ case "${1:-}" in
 		fi;;
 	rm)
 		if [ "${2:-}" = "$gate/kmsg" ] && [ "$mode" = kmsg-remove-fail ]; then exit 1; fi
+		if [ "${2:-}" = "$guard/.success-ready-new" ]; then
+			[ "$mode" != ready-unlink-fail ] || exit 1
+			$BB rm "$2" || exit 1
+			case "$mode" in
+				ready-after-replaced) $BB rm "$guard/success-ready"; $BB printf '%s %s\n' "$nonce" "$boot" > "$guard/success-ready"; $BB chmod 600 "$guard/success-ready";;
+				ready-after-corrupt) $BB printf 'partial\n' > "$guard/success-ready";;
+				ready-after-nonce-change) $BB printf '%064d\n' 0 > "$guard/nonce";;
+				ready-after-ack) $BB printf 'foreign ACK\n' > "$guard/ack";;
+				ready-after-staging) $BB touch "$guard/.ack-new";;
+			esac
+			exit 0
+		fi
 		if [ "${2:-}" = "$guard/.success-gated-ack-new" ]; then
 			if [ "$mode" = interrupt-before-unlink ]; then kill -TERM "$($BB cat /tmp/post.pid)"; exit 1; fi
 			[ "$mode" != unlink-fail ] || exit 1
@@ -387,11 +465,15 @@ case "${1:-}" in
 				$BB rm "$guard/nonce" "$guard/ack"
 				$BB cat "$guard/armed" > "$guard/accepted"
 				$BB chmod 600 "$guard/accepted"
+				case "$mode" in
+					accepted-ready-missing) $BB rm -f "$guard/success-ready";;
+					accepted-ready-corrupt) $BB printf 'partial\n' > "$guard/success-ready";;
+				esac
 			fi
 		fi
 		exit 0;;
 esac
-exec "$BB" "$@"
+	exec "$BB" "$@"
 MOCK
 $BB chmod 755 "$BASE/bin/busybox"
 $BB cat > "$BASE/sbin/rc-service" <<'SERVICE'
@@ -592,11 +674,16 @@ expect_refusal() {
 	printf 'pass: %s -> %s\n' "$case_name" "$terminal"
 }
 check_publication() {
+	[ "$( $BB cat "$ROOT/tmp/ready-publication-attempts")" = attempt ] && [ "$( $BB cat "$ROOT/tmp/ready-publications")" = published ] || fail "$1: success-ready publication count differs"
 	[ "$( $BB cat "$ROOT/tmp/publication-attempts")" = attempt ] || fail "$1: not exactly one publication attempt"
 	[ "$( $BB cat "$ROOT/tmp/publications")" = published ] || fail "$1: not exactly one successful publication"
 	$BB printf '%s %s\n' "$nonce" "$boot" > "$ROOT/tmp/expected-ack"
 	$BB cmp -s "$ROOT/tmp/expected-ack" "$ROOT/tmp/ack-at-link" || fail "$1: ACK bytes differ"
+	$BB cmp -s "$ROOT/tmp/expected-ack" "$ROOT/tmp/ready-at-link" && $BB cmp -s "$ROOT/tmp/expected-ack" "$ROOT/tmp/ready-at-ack" || fail "$1: readiness bytes differ"
+	[ "$( $BB cat "$ROOT/tmp/ready-at-link.stat")" = "0:600:2:$((${#nonce} + ${#boot} + 2))" ] &&
+		[ "$( $BB cat "$ROOT/tmp/ready-at-ack.stat")" = "0:600:1:$((${#nonce} + ${#boot} + 2))" ] || fail "$1: readiness metadata differs"
 	[ "$( $BB cat "$ROOT/tmp/ack-at-link.stat")" = "0:600:2:$((${#nonce} + ${#boot} + 2))" ] || fail "$1: published inode metadata differs"
+	[ ! -e "$ROOT/tmp/unsafe-ack-order" ] || fail "$1: ACK preceded readiness"
 }
 
 reset_case success
@@ -909,12 +996,22 @@ expect_refusal mid-final-fatal-before final-health 'fatal radio evidence before 
 expect_refusal mid-final-fatal-after final-health 'fatal radio evidence before ACK'
 expect_refusal final-fatal final-health 'fatal radio evidence before ACK'
 expect_refusal all-evidence all-checks 'cannot record final success'
-expect_refusal staging-stale ack-publication 'stale ACK staging path'
-expect_refusal stage-write-fail ack-publication 'cannot stage ACK'
-expect_refusal staged-partial ack-publication 'unsafe staged ACK'
-expect_refusal staged-wrong-boot ack-publication 'unsafe staged ACK'
-expect_refusal staged-nonce-change ack-publication 'boot, root, nonce or unacknowledged guard changed'
-expect_refusal staged-other ack-publication 'another ACK publisher is staging'
+expect_refusal ready-premature nonce-and-radio-markers 'foreign success-ready or staging path'
+expect_refusal staging-stale nonce-and-radio-markers 'foreign ACK staging path'
+expect_refusal ready-stale nonce-and-radio-markers 'foreign success-ready or staging path'
+expect_refusal ready-staging-stale nonce-and-radio-markers 'foreign success-ready or staging path'
+expect_refusal record-corrupt ack-publication 'pinned ordered boot record verification failed'
+expect_refusal record-mode ack-publication 'pinned ordered boot record verification failed'
+expect_refusal record-strip ack-publication 'pinned ordered boot record verification failed'
+expect_refusal record-mutate ack-publication 'pinned ordered boot record verification failed'
+expect_refusal record-sync-fail ack-publication 'pinned ordered boot record verification failed'
+expect_refusal contract-missing ack-publication 'pinned ordered boot record verification failed'
+expect_refusal contract-mode ack-publication 'pinned ordered boot record verification failed'
+expect_refusal contract-corrupt ack-publication 'pinned ordered boot record verification failed'
+expect_refusal stage-write-fail ack-publication 'cannot stage success-ready'
+expect_refusal staged-partial ack-publication 'unsafe staged success-ready'
+expect_refusal staged-nonce-change ack-publication 'guard changed before readiness'
+expect_refusal staged-other ack-publication 'foreign ACK staging path'
 
 reset_case kmsg-oversized
 if run_post; then fail 'oversized kmsg produced success'; fi
@@ -1024,6 +1121,26 @@ check_no_publication publication-race
 check_evidence "$ROOT/run/radio-bringup/success-gate-294/refusal" "boot=$boot stage=ack-publication result=refused-or-interrupted phase=publication-uncertain reason=atomic no-replace publication failed"
 printf 'pass: competing ACK preserved by atomic no-replace publication\n'
 
+for mode in ready-publication-race ready-published-corrupt ready-unlink-fail ready-after-corrupt ready-after-replaced ready-after-nonce-change ready-after-ack ready-after-staging; do
+	reset_case "$mode"
+	if run_post; then fail "$mode: candidate unexpectedly succeeded"; fi
+	check_prefix "$mode"
+	check_no_publication "$mode"
+	gate=$ROOT/run/radio-bringup/success-gate-294
+	case "$mode" in
+		ready-publication-race) phase=before-publication; reason='atomic no-replace success-ready publication failed';;
+		ready-published-corrupt) phase=before-publication; reason='published success-ready is not the staged inode';;
+		ready-unlink-fail) phase=before-publication; reason='cannot make success-ready single-link';;
+		ready-after-corrupt|ready-after-replaced) phase=before-publication; reason='guard or success-ready changed';;
+		ready-after-nonce-change) phase=before-publication; reason='guard or success-ready changed';;
+		ready-after-ack) phase=before-publication; reason='guard or success-ready changed';;
+		ready-after-staging) phase=before-publication; reason='foreign ACK staging path';;
+	esac
+	check_evidence "$gate/refusal" "boot=$boot stage=ack-publication result=refused-or-interrupted phase=$phase reason=$reason"
+	[ ! -e "$gate/published.ok" ] && [ ! -e "$gate/accepted.ok" ] || fail "$mode: false success evidence"
+	printf 'pass: %s -> %s\n' "$mode" "$reason"
+done
+
 for mode in published-corrupt published-guard-change unlink-fail published-replaced published-evidence; do
 	reset_case "$mode"
 	if run_post; then fail "$mode: candidate unexpectedly succeeded"; fi
@@ -1091,7 +1208,7 @@ for mode in interrupt-before interrupt-before-link interrupt-after-link interrup
 	printf 'pass: %s -> %s\n' "$mode" "$phase"
 done
 
-for mode in acceptance-timeout accepted-wrong-boot accepted-partial wait-root-change accepted-evidence; do
+for mode in acceptance-timeout accepted-wrong-boot accepted-partial wait-root-change accepted-evidence accepted-ready-missing accepted-ready-corrupt; do
 	reset_case "$mode"
 	if run_post; then fail "$mode: candidate falsely reported acceptance"; fi
 	check_prefix "$mode"
@@ -1106,6 +1223,9 @@ for mode in acceptance-timeout accepted-wrong-boot accepted-partial wait-root-ch
 	check_evidence "$gate/refusal" "boot=$boot stage=guard-acceptance result=refused-or-interrupted phase=$phase reason=$reason"
 	if [ "$mode" = accepted-evidence ]; then
 		[ -f "$gate/accepted.ok" ] && [ ! -s "$gate/accepted.ok" ] || fail "$mode: evidence write did not leave an empty file"
+		check_evidence "$ROOT/run/pid1-guard/accepted" "$boot"
+	elif [ "$mode" = accepted-ready-missing ] || [ "$mode" = accepted-ready-corrupt ]; then
+		[ ! -e "$gate/accepted.ok" ] || fail "$mode: false acceptance evidence"
 		check_evidence "$ROOT/run/pid1-guard/accepted" "$boot"
 	else
 		[ ! -e "$gate/accepted.ok" ] || fail "$mode: false acceptance evidence"

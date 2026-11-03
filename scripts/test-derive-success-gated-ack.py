@@ -85,8 +85,8 @@ def prepare(work):
     gate = load('gate', 'derive-success-gated-ack.py')
     radio = fresh.derive(persist.derive(builder.current_scripts()['pmos-radio-bringup.sh'].decode()))
     prefix, fresh_hook = selfpost.derive((HERE / 'pmos-self-post.sh').read_text(), radio.encode())
-    assert digest(radio.encode()) == 'a0ea867a7fb8ada2fda46fdf94076c44c814e8a8d2a470c200df820529445c21'
-    assert digest(prefix.encode()) == 'c9173d6d362a79cd55a92814f2572ba0a111b99a61a84b99b0c3076a7e1fcbc7'
+    assert digest(radio.encode()) == '146ed59271cde6b593f28212caf8871c0f00062a3c5b1d460c858e4c90271e14'
+    assert digest(prefix.encode()) == 'db82eb4b0efd2b5f94f4665e3ed2c4e766c488816862118bda773d74588695b0'
     source, radio_path, post_path, hook_path = (work / name for name in ('prefix', 'radio', 'post', 'hook'))
     source.write_text(prefix)
     radio_path.write_text(radio)
@@ -106,8 +106,15 @@ def prepare(work):
     expected_gate = gate.GATE.replace('@DNS_BASE64@', '\n'.join(textwrap.wrap(base64.b64encode(probe).decode('ascii'), 96)))
     expected_gate = expected_gate.replace('@DNS_SHA@', digest(probe))
     assert post == corrected + expected_gate
-    assert digest(post.encode()) == '9f0adb6618524c142f84dee13ffe9871d71fec19653b8c3def8e893ed0ec102f'
-    assert digest(hook.encode()) == '64c3ffdb483d9746432ef5ffafc13979e6fed420d89c6086186907f013f6477b'
+    publication = gate.GATE.split('gate_stage=all-checks\n', 1)[1].split('gate_phase=publication-uncertain\n', 1)[0]
+    assert publication.index('gate_file all-checks.ok') < publication.index('gate_ordered_record ||')
+    assert publication.index('gate_ordered_record ||') < publication.index('> "$GUARD/.success-ready-new"')
+    assert publication.index('> "$GUARD/.success-ready-new"') < publication.index('"$GUARD/success-ready" 2>/dev/null')
+    assert publication.index('"$GUARD/success-ready" 2>/dev/null') < publication.index('> "$GUARD/.success-gated-ack-new"')
+    assert 'boot_record_verify / "pmos-self-post: post-cutover PID 1 on boot $boot; guard identity check passed; pid1 identity check passed"' in gate.GATE
+    assert '. "$contract"' in gate.GATE and 'c76c31ff148ab19ff5b2de6f1e40a036ee6ec275d54b0b5d1eaab0bbf0f06cc6' in gate.GATE
+    assert digest(post.encode()) == '113553dddfc646b77dacb06777cc2c450e4f17d33aaf508e3113c993968ac0f3'
+    assert digest(hook.encode()) == '3d317a6937f547565968785dee9984c9d5edd714ac0a8dde4c1dbf2c550b4e67'
     assert corrected.replace(gate.PANEL_NEW, gate.PANEL_OLD, 1) == prefix
     assert gate.derive(prefix, radio.encode(), probe) == (post, hook)
     fresh_pin = f'{gate.POST_PATH} {digest(prefix.encode())}'

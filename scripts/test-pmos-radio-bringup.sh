@@ -35,7 +35,7 @@ staged = load('builder', 'build-init-boot-persistent-root.py').current_scripts()
 assert hashlib.sha256(staged).hexdigest() == 'f54b33727cefdf728001e4692d625c0f5a77298694454832e02b6cf0c765764f'
 radio = load('fresh', 'derive-radio-fresh-boot.py').derive(
     load('persistent', 'derive-radio-persistent.py').derive(staged.decode()))
-assert hashlib.sha256(radio.encode()).hexdigest() == 'a0ea867a7fb8ada2fda46fdf94076c44c814e8a8d2a470c200df820529445c21'
+assert hashlib.sha256(radio.encode()).hexdigest() == '146ed59271cde6b593f28212caf8871c0f00062a3c5b1d460c858e4c90271e14'
 pathlib.Path(os.environ['OUTPUT']).write_text(radio)
 PY
 	mkdir "$work/radio-291-root"
@@ -57,7 +57,7 @@ if [ "${1:-}" = --inner-291 ]; then
 	done
 	$BB cp /bin/busybox "$R/bin/busybox.real"
 	$BB cp "$SCRIPT" "$R/radio.sh"
-	[ "$( $BB sha256sum "$R/radio.sh" | $BB cut -d ' ' -f 1)" = a0ea867a7fb8ada2fda46fdf94076c44c814e8a8d2a470c200df820529445c21 ] || fail 'radio pin differs'
+	[ "$( $BB sha256sum "$R/radio.sh" | $BB cut -d ' ' -f 1)" = 146ed59271cde6b593f28212caf8871c0f00062a3c5b1d460c858e4c90271e14 ] || fail 'radio pin differs'
 	$BB mknod -m 666 "$R/dev/null" c 1 3
 	$BB ln -s /bin/busybox "$R/proc/1/exe"
 	$BB printf 'tmpfs / tmpfs rw 0 0\n' > "$R/proc/1/mounts"
@@ -208,17 +208,31 @@ net' ] || fail "$1: starts not ordered"
 	done
 	next_291_boot 44444444-2222-3333-4444-555555555555 fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210
 	$BB touch "$R/run/radio-bringup/wpa_supplicant.started" "$R/run/radio-bringup/networking.started"
-	run_291_services started || { $BB cat "$R/tmp/started.out" >&2; fail 'already-started services refused'; }
-	$BB grep -qF 'persistent OpenRC WLAN services already running; no reinstall' "$R/tmp/started.out" || fail 'already-started early return missing'
-	[ -f "$R/run/radio-bringup/wpa_supplicant.started" ] && [ -f "$R/run/radio-bringup/networking.started" ] || fail 'already-started status changed'
-	for path in ifquery-wlan lease-wrapper.sh services.attempted services-stdin order; do
-		[ ! -e "$R/run/radio-bringup/$path" ] && [ ! -L "$R/run/radio-bringup/$path" ] || fail "already-started unexpectedly created $path"
-	done
 	$BB printf 'invalid\n' > "$R/run/radio-bringup/services.marker"
 	if run_291_services started_invalid_marker; then fail 'already-started bypassed capture marker'; fi
 	$BB grep -qF 'guest radio marker missing or unsafe' "$R/tmp/started_invalid_marker.out" || fail 'already-started capture refusal missing'
-	[ ! -e "$R/run/radio-bringup/order" ] && [ ! -e "$R/run/radio-bringup/ifquery-wlan" ] && [ ! -e "$R/run/radio-bringup/lease-wrapper.sh" ] || fail 'already-started capture refusal changed services'
-	$BB printf 'pass: exact #291 radio; synthetic failed/stopped services recreate helpers and start wpa then networking; already-started early return leaves both helpers absent (limitation)\n'
+	$BB printf '%s\n' "$token" > "$R/run/radio-bringup/services.marker"
+	$BB ln -s /etc/init.d/sshd "$R/etc/runlevels/boot/foreign"
+	if run_291_services started_foreign; then fail 'already-started bypassed runlevel inventory'; fi
+	$BB grep -qF 'another OpenRC service enabled' "$R/tmp/started_foreign.out" || fail 'already-started runlevel refusal missing'
+	$BB rm "$R/etc/runlevels/boot/foreign"
+	$BB printf 'different synthetic profile\n' > "$R/etc/wpa_supplicant/wpa_supplicant.conf"
+	if run_291_services started_profile; then fail 'already-started bypassed profile comparison'; fi
+	$BB grep -qF 'persisted WLAN profile differs' "$R/tmp/started_profile.out" || fail 'already-started profile refusal missing'
+	[ "$( $BB cat "$R/etc/wpa_supplicant/wpa_supplicant.conf")" = 'different synthetic profile' ] || fail 'different profile overwritten'
+	$BB cp "$R/tmp/wpa_supplicant.conf.own" "$R/etc/wpa_supplicant/wpa_supplicant.conf"
+	$BB chmod 600 "$R/etc/wpa_supplicant/wpa_supplicant.conf"
+	[ ! -e "$R/run/radio-bringup/order" ] && [ ! -e "$R/run/radio-bringup/ifquery-wlan" ] &&
+		[ ! -e "$R/run/radio-bringup/lease-wrapper.sh" ] && [ ! -e "$R/run/radio-bringup/services.attempted" ] || fail 'refusal changed services'
+	run_291_services started || { $BB cat "$R/tmp/started.out" >&2; fail 'already-started services refused'; }
+	$BB grep -qF 'OpenRC wpa_supplicant then networking started' "$R/tmp/started.out" || fail 'started: service summary missing'
+	check_291_starts started
+	for path in run/radio-bringup/ifquery-wlan run/radio-bringup/lease-wrapper.sh; do
+		$BB cmp -s "$R/$path" "$R/tmp/${path##*/}.own" || fail "started: $path differs from own output"
+	done
+	if run_291_services same_boot; then fail 'same-boot services retry accepted'; fi
+	$BB grep -qF 'services already attempted this boot; no retry' "$R/tmp/same_boot.out" || fail 'same-boot refusal missing'
+	$BB printf 'pass: exact derived radio; stopped, failed and started replay recreates helpers; capture, inventory, profile and same-boot refusals preserved\n'
 	exit 0
 fi
 

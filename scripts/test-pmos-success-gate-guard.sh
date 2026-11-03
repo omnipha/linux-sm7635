@@ -2,14 +2,15 @@
 set -eu
 
 BB=/bin/busybox
-MOCK_SHA=e112e65f2e9a6dc28531b45eda218284e4afb152dc3a02b588f7a25255cce2d1
-GUARD_SHA=f72a68a4c3a0e9bb7e72aa88883dcc9087a684985f5af688e34ea13c0226d3ad
+MOCK_SHA=fe72fe25364a1a08c6482bcecb3175f2c0def38af6fc02967b1edc1d6cf28e71
+CONTRACT_SHA=c76c31ff148ab19ff5b2de6f1e40a036ee6ec275d54b0b5d1eaab0bbf0f06cc6
+GUARD_SHA=dcc4124dd404823f891e683d455177613d91afc2bd91582835cc1d6bbe118243
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 hash() { "$BB" sha256sum "$1" | "$BB" cut -d ' ' -f 1; }
 
 if [ "${1:-}" = --switched ]; then
 	[ "$#" = 2 ] && [ "$$" = 1 ] || fail 'switched process is not PID 1'
-	case "$2" in success|partial|invalid|interrupt|post-interrupt|dead-watcher|replay|late) CASE=$2;; *) fail 'invalid case';; esac
+	case "$2" in success|partial|invalid|interrupt|post-interrupt|dead-watcher|replay|late|premature|no-record|bad-record|record-mode|record-symlink|record-links|record-foreign|record-order|record-malformed|panel-absent|panel-record-absent|panel-foreign|panel-conflict|panel-malformed|panel-mode|panel-symlink|panel-links|contract-missing|contract-corrupt|contract-mode|contract-symlink|contract-links|ready-mode|ready-symlink|ready-links|ready-nonce|ready-boot|ready-newline|staging|staging-record-invalid|gate-staging|preplanted-multilink) CASE=$2;; *) fail 'invalid case';; esac
 	umask 077
 	for ns in mnt pid net; do
 		eval "host_ns=\${HOST_${ns}_NS:-}"
@@ -18,10 +19,24 @@ if [ "${1:-}" = --switched ]; then
 	"$BB" awk -F: 'NR > 2 {gsub(/[ \t]/, "", $1); if ($1 != "lo") bad++; else n++} END {exit(bad || n != 1)}' /proc/net/dev || fail 'switched network namespace has unexpected interfaces'
 	[ "$(hash /proc/1/exe)" = "$(hash /bin/busybox)" ] || fail 'PID 1 executable differs from real BusyBox'
 	[ "$("$BB" stat -c '%d:%i' /)" = "$("$BB" stat -Lc '%d:%i' /proc/1/root)" ] || fail 'PID 1 root differs'
-	"$BB" awk '$2 == "/" {n++; if ($3 != "tmpfs") bad++} END {exit(n != 1 || bad)}' /proc/1/mounts || fail 'root is not tmpfs'
+	"$BB" awk '$2 == "/" {n++; if ($3 != "ext4") bad++} END {exit(n != 1 || bad)}' /proc/1/mounts || fail 'root is not isolated ext4'
 	"$BB" awk '$2 == "/run" {n++; if ($3 != "tmpfs") bad++} END {exit(n != 1 || bad)}' /proc/1/mounts || fail 'run is not tmpfs'
 	[ "$(hash /run/pid1-guard/guard.sh)" = "$GUARD_SHA" ] && [ "$(hash /run/pid1-guard/mock-restart2)" = "$MOCK_SHA" ] || fail 'guard or recovery helper changed'
 	[ ! -e /bin/restart2 ] && [ ! -L /bin/restart2 ] || fail 'real recovery helper present'
+	case "$CASE" in
+		contract-*)
+			i=0
+			until [ -f /run/pid1-guard/recovery-request ]; do
+			[ "$i" -lt 240 ] && [ ! -e /run/pid1-guard/nonce ] && [ ! -e /run/pid1-guard/accepted ] || fail "$CASE did not fail closed"
+				"$BB" sleep 0.1
+				i=$((i + 1))
+			done
+			[ "$("$BB" cat /run/pid1-guard/recovery-request)" = bootloader ] && [ ! -e /run/pid1-guard/accepted ] || fail "$CASE recovery invalid"
+			printf 'pass: %s: copied root contract invalid before cutover; no nonce, deadline recovery\n' "$CASE"
+			exit 0;;
+	esac
+	[ -f /run/pid1-guard/root-contract.sh ] && [ ! -L /run/pid1-guard/root-contract.sh ] &&
+		[ "$(hash /run/pid1-guard/root-contract.sh)" = "$CONTRACT_SHA" ] || fail 'real root contract not carried into switch_root'
 	boot=$("$BB" cat /proc/sys/kernel/random/boot_id)
 	deadline_reached() {
 		now=$("$BB" awk '{print int($1)}' /proc/uptime)
@@ -35,6 +50,97 @@ if [ "${1:-}" = --switched ]; then
 	done
 	nonce=$("$BB" cat /run/pid1-guard/nonce)
 	[ "${#nonce}" = 64 ] || fail 'guard nonce invalid'
+	case "$CASE" in
+		panel-absent) PANEL_EVIDENCE=absent "$BB" sh /boot-record-setup.sh || fail 'real contract could not create no-panel record';;
+		*) "$BB" sh /boot-record-setup.sh || fail 'real contract could not create ordered record';;
+	esac
+	[ "$("$BB" cat /run/pid1-guard/nonce)" = "$nonce" ] && [ ! -e /run/pid1-guard/accepted ] && [ ! -e /run/pid1-guard/recovery-request ] && [ ! -e /run/pid1-guard/ack ] || fail 'guard changed while creating record'
+	case "$CASE" in
+		no-record) "$BB" rm /.omnipha-boot-record;;
+		bad-record) "$BB" printf '%s\n' 'invalid terminal record' >> /.omnipha-boot-record;;
+		record-mode) "$BB" chmod 644 /.omnipha-boot-record;;
+		record-symlink) "$BB" mv /.omnipha-boot-record /run/record-link-target; "$BB" ln -s /run/record-link-target /.omnipha-boot-record;;
+		record-links) "$BB" ln /.omnipha-boot-record /.record-link;;
+		record-foreign) "$BB" printf 'boot 11111111-2222-3333-4444-555555555555\n' > /.omnipha-boot-record;;
+		record-order) "$BB" sed -i '1{h;d};2{p;g}' /.omnipha-boot-record;;
+		record-malformed) "$BB" head -c 20 /dev/urandom > /.omnipha-boot-record;;
+		panel-record-absent) "$BB" rm -f /run/pmos-pre-ssh-panel.record;;
+		panel-foreign) "$BB" printf 'usb-init: pre-SSH panel node=boe card0=1 boot 11111111-2222-3333-4444-555555555555\n' > /run/pmos-pre-ssh-panel.record;;
+		panel-conflict) "$BB" printf 'usb-init: pre-SSH panel node=vxn card0=2 boot %s\n' "$boot" > /run/pmos-pre-ssh-panel.record;;
+		panel-malformed) "$BB" printf 'corrupt panel record\n' > /run/pmos-pre-ssh-panel.record;;
+		panel-mode) "$BB" chmod 644 /run/pmos-pre-ssh-panel.record;;
+		panel-symlink) "$BB" mv /run/pmos-pre-ssh-panel.record /run/panel-link-target; "$BB" ln -s /run/panel-link-target /run/pmos-pre-ssh-panel.record;;
+		panel-links) "$BB" ln /run/pmos-pre-ssh-panel.record /run/panel-link;;
+		staging-record-invalid) "$BB" printf 'invalid\n' >> /.omnipha-boot-record;;
+	esac
+	case "$CASE" in
+		panel-absent)
+			[ ! -e /run/pmos-pre-ssh-panel.record ] && [ ! -L /run/pmos-pre-ssh-panel.record ] || fail 'no-panel fixture unexpectedly has a panel record'
+			if "$BB" grep -qF 'usb-init: pre-SSH panel node=' /.omnipha-boot-record; then fail 'no-panel fixture record includes panel evidence'; fi;;
+		staging|staging-record-invalid)
+			(umask 077; set -C; "$BB" printf '%s %s\n' "$nonce" "$boot" > /run/pid1-guard/success-ready)
+			(umask 077; set -C; "$BB" printf '%s %s\n' "$nonce" "$boot" > /run/pid1-guard/.staging-ack-new)
+			"$BB" chmod 640 /run/pid1-guard/.staging-ack-new
+			"$BB" ln /run/pid1-guard/.staging-ack-new /run/pid1-guard/ack
+			[ "$("$BB" stat -c '%u:%a:%h:%s' /run/pid1-guard/ack)" = "0:640:2:$((${#nonce} + ${#boot} + 2))" ] || fail 'malformed staging ACK does not have 2 links'
+			"$BB" sleep 2
+			[ ! -e /run/pid1-guard/recovery-request ] && [ ! -e /run/pid1-guard/accepted ] || fail 'two-link malformed ACK caused premature recovery or acceptance'
+			"$BB" chmod 600 /run/pid1-guard/ack
+			"$BB" rm /run/pid1-guard/.staging-ack-new
+			[ "$("$BB" stat -c '%u:%a:%h' /run/pid1-guard/ack)" = 0:600:1 ] || fail 'ACK not single link after unstage'
+			i=0
+			if [ "$CASE" = staging ]; then
+				until [ -f /run/pid1-guard/accepted ]; do
+					[ "$i" -lt 60 ] && [ ! -e /run/pid1-guard/recovery-request ] || fail 'single-link ACK not accepted after staging'
+					"$BB" sleep 0.1
+					i=$((i + 1))
+				done
+				[ "$("$BB" cat /run/pid1-guard/accepted)" = "$boot" ] && [ ! -e /run/pid1-guard/nonce ] && [ ! -e /run/pid1-guard/ack ] || fail 'staging ACK consumption failed'
+				printf 'pass: staging: malformed two-link ACK with success-ready did not cause premature recovery; accepted once single-link 0600\n'
+			else
+				until [ -f /run/pid1-guard/recovery-request ]; do
+					[ "$i" -lt 160 ] && [ ! -e /run/pid1-guard/accepted ] || fail "$CASE did not request recovery"
+					"$BB" sleep 0.1
+					i=$((i + 1))
+				done
+				[ "$("$BB" cat /run/pid1-guard/recovery-request)" = bootloader ] && [ ! -e /run/pid1-guard/accepted ] || fail "$CASE recovery invalid"
+				printf 'pass: %s: two-link staging did not recover; invalid record refused once single-link\n' "$CASE"
+			fi
+			exit 0;;
+		ready-mode|ready-symlink|ready-links|ready-nonce|ready-boot|ready-newline|no-record|bad-record|record-mode|record-symlink|record-links|record-foreign|record-order|record-malformed|panel-record-absent|panel-foreign|panel-conflict|panel-malformed|panel-mode|panel-symlink|panel-links|premature)
+				if [ "$CASE" != premature ]; then
+					case "$CASE" in
+						ready-symlink) "$BB" printf '%s %s\n' "$nonce" "$boot" > /run/ready-target; "$BB" ln -s /run/ready-target /run/pid1-guard/success-ready;;
+						ready-nonce) "$BB" printf '%064d %s\n' 0 "$boot" > /run/pid1-guard/success-ready;;
+						ready-boot) "$BB" printf '%s %s\n' "$nonce" 11111111-2222-3333-4444-555555555555 > /run/pid1-guard/success-ready;;
+						ready-newline) "$BB" printf '%s %s\000' "$nonce" "$boot" > /run/pid1-guard/success-ready;;
+						*) "$BB" printf '%s %s\n' "$nonce" "$boot" > /run/pid1-guard/success-ready;;
+					esac
+					case "$CASE" in
+						ready-mode) "$BB" chmod 644 /run/pid1-guard/success-ready;;
+						ready-links) "$BB" ln /run/pid1-guard/success-ready /run/pid1-guard/ready-link;;
+					esac
+				fi
+				"$BB" printf '%s %s\n' "$nonce" "$boot" > /run/pid1-guard/ack
+				i=0
+				until [ -f /run/pid1-guard/recovery-request ]; do
+					[ "$i" -lt 60 ] && [ ! -e /run/pid1-guard/accepted ] || fail "$CASE did not request recovery promptly"
+					"$BB" sleep 0.1
+					i=$((i + 1))
+				done
+				[ "$("$BB" cat /run/pid1-guard/recovery-request)" = bootloader ] &&
+					[ "$("$BB" cat /run/pid1-guard/ack)" = "$nonce $boot" ] &&
+					[ "$("$BB" cat /run/pid1-guard/nonce)" = "$nonce" ] || fail "$CASE recovery changed ACK or nonce"
+				if [ "$CASE" = premature ]; then
+					now=$("$BB" awk '{print int($1)}' /proc/uptime)
+					[ "$now" -lt "$((TEST_ARM_UPTIME + TEST_BUDGET))" ] || fail 'premature ACK reached recovery only at the deadline'
+					"$BB" printf '%s %s\n' "$nonce" "$boot" > /run/pid1-guard/success-ready
+					"$BB" sleep 2
+					[ ! -e /run/pid1-guard/accepted ] && [ "$("$BB" cat /run/pid1-guard/ack)" = "$nonce $boot" ] && [ "$("$BB" cat /run/pid1-guard/nonce)" = "$nonce" ] || fail 'late readiness accepted premature ACK'
+				fi
+				printf 'pass: %s: real guard refused and requested mock recovery without consuming ACK or nonce\n' "$CASE"
+				exit 0;;
+		esac
 	case "$CASE" in
 		dead-watcher|post-interrupt)
 			[ "$(hash /pidfd-signal)" = "$HOST_PIDFD_SHA" ] || fail 'pidfd helper changed'
@@ -161,7 +267,7 @@ IFQUERY
 	if [ "$CASE" = late ] || [ "$CASE" = replay ]; then
 		i=0
 		until [ -f /run/pid1-guard/recovery-request ]; do
-			[ "$i" -lt 200 ] || fail 'guard did not reach its real deadline'
+			[ "$i" -lt 300 ] || fail 'guard did not reach its real deadline'
 			[ ! -e /run/pid1-guard/accepted ] || fail 'guard accepted replay or no ACK'
 			"$BB" sleep 0.1
 			i=$((i + 1))
@@ -178,6 +284,20 @@ IFQUERY
 	fi
 	"$BB" sh /gate-runner > /run/gate.log 2>&1 &
 	gate=$!
+	if [ "$CASE" = gate-staging ]; then
+		i=0
+		until [ -f /run/link-barrier ]; do
+			[ "$i" -lt 100 ] && "$BB" kill -0 "$gate" 2>/dev/null || { "$BB" cat /run/gate.log >&2; fail 'publisher did not reach two-link barrier'; }
+			"$BB" sleep 0.1
+			i=$((i + 1))
+		done
+		[ "$("$BB" stat -c '%u:%a:%h:%s' /run/pid1-guard/ack)" = "0:600:2:$((${#nonce} + ${#boot} + 2))" ] &&
+			[ "$("$BB" cat /run/pid1-guard/ack)" = "$nonce $boot" ] &&
+			[ "$("$BB" cat /run/pid1-guard/success-ready)" = "$nonce $boot" ] || fail 'publisher two-link state invalid'
+		"$BB" sleep 2
+		[ ! -e /run/pid1-guard/recovery-request ] && [ ! -e /run/pid1-guard/accepted ] || fail 'guard consumed or recovered during two-link publication'
+		"$BB" touch /run/link-release
+	fi
 	if [ "$CASE" = interrupt ]; then
 		i=0
 		until [ -f /run/iw-waiting ]; do
@@ -224,8 +344,23 @@ IFQUERY
 		printf 'pass: post-interrupt: gate recorded published-awaiting-guard interruption; resumed real guard accepted the single-link ACK\n'
 		exit 0
 	fi
-	if [ "$CASE" = success ]; then
-		[ "$result" = 0 ] || { "$BB" cat /run/gate.log >&2; fail 'generated gate failed'; }
+	if [ "$CASE" = preplanted-multilink ]; then
+		[ "$result" != 0 ] && [ ! -e /run/pid1-guard/accepted ] || fail 'preplanted two-link ACK was accepted or gate succeeded'
+		[ "$("$BB" stat -c '%u:%a:%h:%s' /run/pid1-guard/ack)" = "0:600:2:$((${#nonce} + ${#boot} + 2))" ] &&
+			[ "$("$BB" cat /run/pid1-guard/ack)" = "$nonce $boot" ] &&
+			[ "$("$BB" cat /run/pid1-guard/nonce)" = "$nonce" ] || fail 'preplanted ACK or nonce changed'
+		i=0
+		until [ -f /run/pid1-guard/recovery-request ]; do
+			[ "$i" -lt 300 ] && [ ! -e /run/pid1-guard/accepted ] || fail 'preplanted ACK did not recover'
+			"$BB" sleep 0.1
+			i=$((i + 1))
+		done
+		[ "$("$BB" cat /run/pid1-guard/recovery-request)" = bootloader ] && [ ! -e /run/pid1-guard/accepted ] || fail 'preplanted recovery invalid'
+		printf 'pass: preplanted-multilink: genuine publisher failed no-replace; forged two-link ACK was not accepted and recovery occurred\n'
+		exit 0
+	fi
+	if [ "$CASE" = success ] || [ "$CASE" = panel-absent ] || [ "$CASE" = gate-staging ]; then
+		[ "$result" = 0 ] || { "$BB" cat /run/gate.log /run/radio-bringup/success-gate-294/refusal >&2 2>/dev/null || true; "$BB" ls -la /run/pid1-guard >&2; fail 'generated gate failed'; }
 		[ "$("$BB" wc -l < /run/kmsg-requests)" = 3 ] && [ ! -e /run/radio-bringup/success-gate-294/kmsg ] || fail 'three bounded snapshots were not completed and removed'
 		for stage in nonce-and-radio-markers radio-health services association address route gateway internet dns final-health all-checks published accepted; do
 			[ -f "/run/radio-bringup/success-gate-294/$stage.ok" ] || fail "missing success evidence: $stage"
@@ -236,8 +371,8 @@ IFQUERY
 		[ "$("$BB" cat /run/pid1-guard/accepted)" = "$boot" ] && [ ! -e /run/pid1-guard/nonce ] && [ ! -e /run/pid1-guard/ack ] || fail 're-invocation changed accepted state'
 		"$BB" sleep "$((TEST_BUDGET + 2))"
 		[ ! -e /run/pid1-guard/recovery-request ] || fail 'accepted guard requested recovery after deadline'
-		printf 'REPLAY_NONCE=%s\n' "$nonce"
-		printf 'pass: success: generated gate published; real guard accepted and consumed nonce and ACK; one-shot retry refused\n'
+		[ "$CASE" != success ] || printf 'REPLAY_NONCE=%s\n' "$nonce"
+		printf 'pass: %s: generated gate published; real guard accepted the contract-verified record and consumed nonce and ACK; one-shot retry refused\n' "$CASE"
 		exit 0
 	fi
 	[ "$result" != 0 ] || fail "$CASE gate unexpectedly succeeded"
@@ -254,7 +389,7 @@ IFQUERY
 	fi
 	i=0
 	until [ -f /run/pid1-guard/recovery-request ]; do
-		[ "$i" -lt 200 ] || fail "$CASE guard did not independently request recovery"
+		[ "$i" -lt 300 ] || fail "$CASE guard did not independently request recovery"
 		[ ! -e /run/pid1-guard/accepted ] || fail "$CASE guard accepted"
 		"$BB" sleep 0.1
 		i=$((i + 1))
@@ -275,8 +410,9 @@ if [ "${1:-}" = --inner ]; then
 		[ -n "$host_ns" ] && [ "$("$BB" readlink "/proc/1/ns/$ns")" != "$host_ns" ] || fail "$ns namespace not isolated"
 	done
 	"$BB" awk -F: 'NR > 2 {gsub(/[ \t]/, "", $1); if ($1 != "lo") bad++; else n++} END {exit(bad || n != 1)}' /proc/net/dev || fail 'network namespace has unexpected interfaces'
-	case "$2" in success|partial|invalid|interrupt|post-interrupt|dead-watcher|replay|late) CASE=$2;; *) fail 'invalid case';; esac
+	case "$2" in success|partial|invalid|interrupt|post-interrupt|dead-watcher|replay|late|premature|no-record|bad-record|record-mode|record-symlink|record-links|record-foreign|record-order|record-malformed|panel-absent|panel-record-absent|panel-foreign|panel-conflict|panel-malformed|panel-mode|panel-symlink|panel-links|contract-missing|contract-corrupt|contract-mode|contract-symlink|contract-links|ready-mode|ready-symlink|ready-links|ready-nonce|ready-boot|ready-newline|staging|staging-record-invalid|gate-staging|preplanted-multilink) CASE=$2;; *) fail 'invalid case';; esac
 	"$BB" mount --make-rprivate / || fail 'cannot privatize mounts'
+	MAIN_NUMS=$HOST_MAIN_NUMS
 	"$BB" mount -t tmpfs -o mode=0700,size=32m tmpfs /run || fail 'private staging run'
 	"$BB" cp "$HOST_WORK/gate" /run/gate
 	"$BB" cp "$HOST_WORK/radio" /run/radio
@@ -288,17 +424,29 @@ if [ "${1:-}" = --inner ]; then
 	esac
 	"$BB" cp "$HOST_SCRIPT" /run/test.sh
 	"$BB" cp "$HOST_GUARD" /run/guard.sh
-	[ "$(hash /run/guard.sh)" = "$GUARD_SHA" ] || fail 'guard pin changed'
+	"$BB" cp "$HOST_CONTRACT" /run/pmos-root-contract.sh
+	[ "$(hash /run/guard.sh)" = "$GUARD_SHA" ] && [ "$(hash /run/pmos-root-contract.sh)" = "$CONTRACT_SHA" ] || fail 'guard or root contract pin changed'
 	"$BB" mount -t tmpfs -o mode=0700,size=64m tmpfs /tmp || fail 'private staging tmp'
 	"$BB" mkdir /tmp/initial
 	"$BB" mount -t tmpfs -o mode=0755,size=32m tmpfs /tmp/initial || fail 'initial tmpfs'
 	R=/tmp/initial
-	"$BB" mkdir -p "$R/bin" "$R/oldroot" "$R/guest" "$R/proc" "$R/dev"
+	"$BB" mkdir -p "$R/bin" "$R/oldroot" "$R/guest" "$R/proc" "$R/dev" "$R/sys/class/block/sda13"
+	"$BB" printf 'PARTNAME=userdata\n' > "$R/sys/class/block/sda13/uevent"
+	"$BB" printf '%s\n' "$MAIN_NUMS" > "$R/sys/class/block/sda13/dev"
+	"$BB" printf '%s\n' 524288 > "$R/sys/class/block/sda13/size"
+	"$BB" mount -t tmpfs -o mode=0755,size=1m tmpfs /dev || fail 'private fixture dev'
+	"$BB" mknod -m 666 /dev/null c 1 3
+	"$BB" mknod -m 666 /dev/urandom c 1 9
+	"$BB" mkdir -p /dev/block
+	"$BB" mknod -m 0400 /dev/block/sda13 b "${MAIN_NUMS%%:*}" "${MAIN_NUMS##*:}"
+	"$BB" mount -t ext4 -o rw /dev/block/sda13 "$R/guest" || fail 'isolated ext4 guest mount'
+	"$BB" mount --make-private "$R/guest"
+	"$BB" find "$R/guest" -mindepth 1 -maxdepth 1 ! -name lost+found -exec "$BB" rm -rf -- {} +
+	"$BB" cp /run/pmos-root-contract.sh "$R/pmos-root-contract.sh"
 	"$BB" cp /bin/busybox "$R/bin/busybox"
 	"$BB" cp /run/guard.sh "$R/guard.sh"
 	"$BB" touch "$R/init"
 	"$BB" mount -t proc -o nosuid,nodev,noexec proc "$R/proc" || fail 'initial proc'
-	"$BB" mount -t tmpfs -o mode=0755,size=32m tmpfs "$R/guest" || fail 'guest tmpfs'
 	G=$R/guest
 	"$BB" mkdir -p "$G/bin" "$G/proc" "$G/dev" "$G/run" "$G/sys" "$G/sbin" "$G/usr/sbin" "$G/usr/libexec/omnipha"
 	"$BB" mount -t tmpfs -o mode=0700,size=16m tmpfs "$G/run" || fail 'private guest run'
@@ -316,6 +464,12 @@ if [ "${1:-}" = --inner ]; then
 			"$BB" chmod 700 "$G/pidfd-signal"
 			[ "$(hash "$G/pidfd-signal")" = "$HOST_PIDFD_SHA" ] || fail 'guest pidfd helper changed';;
 	esac
+	"$BB" mkdir -p "$G/dev/block" "$G/sys/class/block/sda13"
+	"$BB" mknod -m 0400 "$G/dev/block/sda13" b "${MAIN_NUMS%%:*}" "${MAIN_NUMS##*:}"
+	"$BB" printf 'PARTNAME=userdata\n' > "$G/sys/class/block/sda13/uevent"
+	"$BB" printf '%s\n' "$MAIN_NUMS" > "$G/sys/class/block/sda13/dev"
+	"$BB" printf '%s\n' 524288 > "$G/sys/class/block/sda13/size"
+	"$BB" cp /run/pmos-root-contract.sh "$G/run/pmos-root-contract.sh"
 	"$BB" cp /run/radio "$G/usr/libexec/omnipha/pmos-radio-bringup-fresh-boot.sh"
 	"$BB" chmod 700 "$G/usr/libexec/omnipha/pmos-radio-bringup-fresh-boot.sh"
 	"$BB" cat > "$G/run/mock" <<'MOCK'
@@ -324,7 +478,7 @@ set -eu
 b=/bin/busybox
 s=/run/pid1-guard
 [ "$#" -eq 1 ] && [ "$1" = bootloader ] || exit 2
-$b awk '$2 == "/" {n++; if ($3 != "tmpfs") bad++} END {exit(n != 1 || bad)}' /proc/mounts || exit 2
+$b awk '$2 == "/" {n++; if ($3 != "tmpfs" && $3 != "ext4") bad++} END {exit(n != 1 || bad)}' /proc/mounts || exit 2
 [ "$($b stat -c '%u:%a' "$s")" = 0:700 ] || exit 2
 [ "$($b stat -c '%d:%i' /)" = "$($b cat "$s/root-identity")" ] || exit 2
 [ ! -e "$s/recovery-request" ] && [ ! -L "$s/recovery-request" ] || exit 2
@@ -346,6 +500,23 @@ case "${1:-}" in
 		exit 0;;
 	pidof) case "${2:-}" in pd-mapper|tqftpserv) exit 0;; esac; exit 1;;
 	ping) case "$*" in 'ping -4 -I wlan0 -c 1 -W 4 -w 5 192.0.2.1'|'ping -4 -I wlan0 -c 1 -W 4 -w 5 1.1.1.1') exit 0;; esac; exit 1;;
+	ln)
+		if [ "$#" = 3 ] && [ "$2" = /run/pid1-guard/.success-gated-ack-new ] && [ "$3" = /run/pid1-guard/ack ]; then
+			case "$("$b" cat /run/case)" in
+				gate-staging)
+					"$b" ln "$2" "$3" || exit 1
+					"$b" touch /run/link-barrier
+					while [ ! -f /run/link-release ]; do "$b" sleep 0.1; done
+					exit 0;;
+				preplanted-multilink)
+					[ -f /run/pid1-guard/success-ready ] && [ "$("$b" stat -c '%u:%a:%h' /run/pid1-guard/success-ready)" = 0:600:1 ] || exit 1
+					(umask 077; set -C; "$b" cat /run/pid1-guard/success-ready > /run/pid1-guard/preplanted-ack) || exit 1
+					"$b" ln /run/pid1-guard/preplanted-ack "$3" || exit 1
+					"$b" sleep 2
+					[ ! -e /run/pid1-guard/accepted ] && [ ! -e /run/pid1-guard/recovery-request ] || exit 1
+					exec "$b" ln "$2" "$3";;
+			esac
+		fi;;
 	rm)
 		if [ "$#" = 2 ] && [ "$2" = /run/pid1-guard/.success-gated-ack-new ] && [ "$($b cat /run/case)" = post-interrupt ]; then
 			$b rm "$2" || exit 1
@@ -396,6 +567,38 @@ case "$*" in
 esac
 IP
 	"$BB" chmod 700 "$G/sbin/rc-service" "$G/usr/sbin/iw" "$G/sbin/ip"
+	"$BB" cat > "$G/boot-record-setup.sh" <<'REC'
+#!/bin/busybox sh
+set -eu
+BB=/bin/busybox
+. /run/pmos-root-contract.sh
+boot=$($BB cat /proc/sys/kernel/random/boot_id)
+panel="usb-init: pre-SSH panel node=boe card0=1 boot $boot"
+if [ "${PANEL_EVIDENCE:-present}" = present ]; then
+	(umask 077; set -C; $BB printf '%s\n' "$panel" > /run/pmos-pre-ssh-panel.record)
+	[ -f /run/pmos-pre-ssh-panel.record ] && [ ! -L /run/pmos-pre-ssh-panel.record ] &&
+		[ "$($BB stat -c '%u:%a:%h' /run/pmos-pre-ssh-panel.record)" = 0:600:1 ] &&
+		[ "$($BB cat /run/pmos-pre-ssh-panel.record)" = "$panel" ]
+fi
+boot_record_open /
+boot_record_append / "pmos-self-stage: diagnostic hold and :22 verified on boot $boot"
+if [ "${PANEL_EVIDENCE:-present}" = present ]; then
+	boot_record_append / "$panel"
+fi
+boot_record_append / 'pmos-stage: using unpacked persistent postmarketOS root'
+boot_record_append / 'pmos-stage: mounted private proc/sys/configfs and guest-only dev, verified nodes and private devpts'
+boot_record_append / 'pmos-stage: second key-only SSH listening on 172.16.42.2:2222 (diagnostic :22 untouched)'
+boot_record_append / 'pmos-stage: STAGED ok; enter with: ssh -p 2222 root@172.16.42.2 (accept the printed key)'
+boot_record_append / 'pmos-self-stage: mounted pinned persistent root from read-only /dev/block/sda13 (sda13) and verified its root contract'
+boot_record_append / 'pmos-self-stage: guest :2222 public key matches the diagnostic host key; pin [172.16.42.2]:2222 before the PID 1 request'
+boot_record_append / 'radio-bringup: stock INI, one-shot helper and service markers verified and staged in guest RAM before cutover'
+boot_record_append / "pmos-self-stage: staged postmarketOS root and armed PID 1 request for boot $boot"
+boot_record_append / 'usb-init: pid1 transition guard armed; exec switch_root to postmarketOS init'
+boot_record_verify / 'usb-init: pid1 transition guard armed; exec switch_root to postmarketOS init'
+boot_record_append / "pmos-self-post: post-cutover PID 1 on boot $boot; guard identity check passed; pid1 identity check passed"
+boot_record_verify / "pmos-self-post: post-cutover PID 1 on boot $boot; guard identity check passed; pid1 identity check passed"
+REC
+	"$BB" chmod 700 "$G/boot-record-setup.sh"
 	"$BB" cat > "$G/gate-runner" <<'PREAMBLE'
 #!/bin/busybox sh
 set -eu
@@ -403,7 +606,7 @@ BB=/run/tool
 STATE=/run/radio-bringup
 GUARD=/run/pid1-guard
 RADIO=/usr/libexec/omnipha/pmos-radio-bringup-fresh-boot.sh
-RADIO_SHA=a0ea867a7fb8ada2fda46fdf94076c44c814e8a8d2a470c200df820529445c21
+RADIO_SHA=f2dc583067ee309059ab3b76f1253aa4261d3f4599b066f64b32b02a0cdae65b
 PROFILE=$STATE/wpa_supplicant.conf
 umask 077
 boot=$(/bin/busybox cat /proc/sys/kernel/random/boot_id)
@@ -422,12 +625,21 @@ PREAMBLE
 	"$BB" cat /run/gate >> "$G/gate-runner"
 	"$BB" chmod 700 "$G/gate-runner"
 	"$BB" pivot_root "$R" "$R/oldroot" || fail 'pivot to isolated initial root'
+	"$BB" mkdir -p /dev/block
+	"$BB" mknod -m 0400 /dev/block/sda13 b "${MAIN_NUMS%%:*}" "${MAIN_NUMS##*:}"
 	"$BB" umount -l /oldroot || fail 'cannot detach host root'
-	case "$CASE" in success|post-interrupt) TEST_BUDGET=20;; dead-watcher) TEST_BUDGET=5;; *) TEST_BUDGET=12;; esac
+	case "$CASE" in success|panel-absent|gate-staging|post-interrupt|preplanted-multilink) TEST_BUDGET=30;; dead-watcher) TEST_BUDGET=10;; *) TEST_BUDGET=18;; esac
 	TEST_ARM_UPTIME=$("$BB" awk '{print int($1)}' /proc/uptime)
 	export TEST_BUDGET TEST_ARM_UPTIME MOCK_SHA
 	"$BB" sh /guard.sh mock-arm /guest "$TEST_BUDGET" /guest/run/mock "$MOCK_SHA" || fail 'real mock guard did not arm'
 	[ "$(hash /guest/run/pid1-guard/guard.sh)" = "$GUARD_SHA" ] && [ ! -e /guest/run/pid1-guard/nonce ] || fail 'guard copy changed or minted before switch'
+	case "$CASE" in
+		contract-missing) "$BB" rm /guest/run/pid1-guard/root-contract.sh;;
+		contract-corrupt) "$BB" printf '\n' >> /guest/run/pid1-guard/root-contract.sh;;
+		contract-mode) "$BB" chmod 644 /guest/run/pid1-guard/root-contract.sh;;
+		contract-symlink) "$BB" mv /guest/run/pid1-guard/root-contract.sh /guest/run/contract-link-target; "$BB" ln -s /run/contract-link-target /guest/run/pid1-guard/root-contract.sh;;
+		contract-links) "$BB" ln /guest/run/pid1-guard/root-contract.sh /guest/run/pid1-guard/contract-link;;
+	esac
 	case "$CASE" in
 		dead-watcher|post-interrupt)
 			"$BB" printf '/bin/busybox\000sh\000/run/pid1-guard/guard.sh\000watch\000mock\000%s\000%s\000' "$TEST_BUDGET" "$MOCK_SHA" > /guest/run/watch-command
@@ -447,13 +659,25 @@ fi
 HERE=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 SCRIPT=$HERE/test-pmos-success-gate-guard.sh
 [ "$(hash "$HERE/pmos-pid1-guard.sh")" = "$GUARD_SHA" ] || fail 'guard pin changed'
+[ "$(hash "$HERE/pmos-root-contract.sh")" = "$CONTRACT_SHA" ] || fail 'root contract pin changed'
 [ "$("$BB" uname -m)" != aarch64 ] || fail 'guard mock requires a non-aarch64 host'
 [ -f "$BB" ] && [ ! -L "$BB" ] || fail 'native BusyBox must be a regular executable'
-for tool in python3 aarch64-linux-gnu-gcc cc sudo unshare timeout; do command -v "$tool" >/dev/null 2>&1 || fail "missing $tool"; done
+export PATH="/usr/sbin:/sbin:$PATH"
+for tool in python3 aarch64-linux-gnu-gcc cc sudo unshare timeout truncate mke2fs losetup; do command -v "$tool" >/dev/null 2>&1 || fail "missing $tool"; done
 sudo -n true || fail 'passwordless sudo required'
 WORK=$(mktemp -d /tmp/pmos-success-gate.XXXXXXXX)
-trap 'rm -rf -- "$WORK"' EXIT
+MAIN_DEV=
+cleanup() {
+	[ -z "$MAIN_DEV" ] || sudo -n losetup -d "$MAIN_DEV" >/dev/null 2>&1 || true
+	rm -rf -- "$WORK"
+}
+trap cleanup EXIT
 trap 'exit 1' HUP INT TERM
+WORK_DISK=$WORK/userdata.img
+truncate -s 268435456 "$WORK_DISK"
+mke2fs -q -F -t ext4 -b 4096 "$WORK_DISK"
+MAIN_DEV=$(sudo -n losetup --find --show "$WORK_DISK")
+MAIN_NUMS="$((0x$(stat -c %t "$MAIN_DEV"))):$((0x$(stat -c %T "$MAIN_DEV")))"
 cc -static -O2 -Wall -Wextra -Werror -x c -o "$WORK/pidfd-signal" - <<'C'
 #define _GNU_SOURCE
 #include <errno.h>
@@ -575,43 +799,33 @@ def load(name, filename):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
-builder = load('builder', 'build-init-boot-persistent-root.py')
 persist = load('persist', 'derive-radio-persistent.py')
 fresh = load('fresh', 'derive-radio-fresh-boot.py')
-postgen = load('postgen', 'derive-self-post-fresh-boot.py')
 gen = load('gate_gen', 'derive-success-gated-ack.py')
-radio = fresh.derive(persist.derive(builder.current_scripts()['pmos-radio-bringup.sh'].decode()))
-post, _ = postgen.derive((here / 'pmos-self-post.sh').read_text(), radio.encode())
+radio = fresh.derive(persist.derive((here / 'pmos-radio-bringup.sh').read_text()))
 probe = gen.build_dns_probe()
-candidate, hook = gen.derive(post, radio.encode(), probe)
-if post.count(gen.PANEL_OLD) != 1:
-    raise SystemExit('pinned post panel block differs')
-corrected = post.replace(gen.PANEL_OLD, gen.PANEL_NEW, 1)
-if not candidate.startswith(corrected) or not candidate[len(corrected):].startswith('\nGATE_DIR='):
-    raise SystemExit('candidate does not contain the generated gate suffix')
 encoded = '\n'.join(textwrap.wrap(base64.b64encode(probe).decode('ascii'), 96))
-if candidate[len(corrected):] != gen.GATE.replace('@DNS_BASE64@', encoded).replace('@DNS_SHA@', gen.sha(probe)):
-    raise SystemExit('generated gate suffix differs')
-if '@DNS_BASE64@' in candidate or '@DNS_SHA@' in candidate:
-    raise SystemExit('candidate contains unresolved probe placeholders')
+gate = gen.GATE.replace('@DNS_BASE64@', encoded).replace('@DNS_SHA@', gen.sha(probe))
+if '$GUARD/success-ready' not in gate or '$GUARD/.success-ready-new' not in gate:
+    raise SystemExit('real generated gate does not publish success-ready')
 work = pathlib.Path(os.environ['WORK'])
-(work / 'gate').write_text(candidate[len(corrected):])
+(work / 'gate').write_text(gate)
 (work / 'radio').write_text(radio)
-(work / 'candidate').write_text(candidate)
-(work / 'hook').write_text(hook)
 (work / 'replay-nonce').write_text('none\n')
 PY
-for generated in "$WORK/candidate" "$WORK/hook"; do sh -n "$generated" || fail "generated syntax: $generated"; done
-printf '%s\n' 'fixture: generated gate suffix only; preceding self-post and radio stages are not executed'
+sh -n "$WORK/gate" || fail 'generated gate syntax'
+printf '%s\n' 'fixture: isolated loop-backed ext4 with synthetic userdata identity; real contract open/append/verify builds each ordered stage; external stage observations and panel evidence are synthetic'
+printf '%s\n' 'fixture: real generated gate suffix publishes success-ready; preceding self-post and radio stages are not executed'
 printf '%s\n' 'fixture: mocked radio/process/service evidence, selected hashes, kmsg, network commands and DNS result; real probe bytes are checked but not executed'
 printf '%s\n' 'fixture: dead-watcher uses pidfd SIGKILL; post-interrupt pauses the real watcher and barriers the publisher after single-link ACK publication'
 HOST_mnt_NS=$(readlink /proc/self/ns/mnt)
 HOST_pid_NS=$(readlink /proc/self/ns/pid)
 HOST_net_NS=$(readlink /proc/self/ns/net)
 run_case() {
-	sudo -n timeout -k 5 90 unshare --mount --pid --net --fork --kill-child --mount-proc \
+	sudo -n timeout -k 5 150 unshare --mount --pid --net --fork --kill-child --mount-proc \
 		env -i HOST_mnt_NS="$HOST_mnt_NS" HOST_pid_NS="$HOST_pid_NS" HOST_net_NS="$HOST_net_NS" \
-		HOST_WORK="$WORK" HOST_SCRIPT="$SCRIPT" HOST_GUARD="$HERE/pmos-pid1-guard.sh" HOST_PIDFD_SHA="$HOST_PIDFD_SHA" \
+		HOST_WORK="$WORK" HOST_SCRIPT="$SCRIPT" HOST_GUARD="$HERE/pmos-pid1-guard.sh" \
+		HOST_CONTRACT="$HERE/pmos-root-contract.sh" HOST_MAIN_NUMS="$MAIN_NUMS" HOST_PIDFD_SHA="$HOST_PIDFD_SHA" \
 		/bin/busybox sh "$SCRIPT" --inner "$1"
 }
 result=$(run_case success) || fail 'isolated success case'
@@ -619,5 +833,6 @@ nonce=$(printf '%s\n' "$result" | "$BB" awk -F= '/^REPLAY_NONCE=/ {print $2}')
 case "$nonce" in ????????????????????????????????????????????????????????????????) case "$nonce" in *[!0-9a-f]*) fail 'invalid captured nonce';; esac;; *) fail 'missing captured nonce';; esac
 printf '%s\n' "$nonce" > "$WORK/replay-nonce"
 printf '%s\n' "$result" | "$BB" grep -v '^REPLAY_NONCE='
+for case in premature no-record bad-record record-mode record-symlink record-links record-foreign record-order record-malformed panel-absent panel-record-absent panel-foreign panel-conflict panel-malformed panel-mode panel-symlink panel-links contract-missing contract-corrupt contract-mode contract-symlink contract-links ready-mode ready-symlink ready-links ready-nonce ready-boot ready-newline staging staging-record-invalid gate-staging preplanted-multilink; do run_case "$case" || fail "$case isolated fixture"; done
 for case in partial invalid interrupt post-interrupt dead-watcher replay late; do run_case "$case" || fail "$case isolated fixture"; done
-printf '%s\n' 'pass: host-only isolated tmpfs switch_root; unchanged digest-pinned guard; generated gate with mocked external evidence, no network or device'
+printf '%s\n' 'pass: host-only isolated ext4 switch_root; digest-pinned guard and real generated gate; real ordered-record contract; mocked external evidence; no network or physical device'

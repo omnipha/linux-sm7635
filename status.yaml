@@ -3,9 +3,9 @@
 device: nothing-asteroids
 updated: 2026-11-03
 next_question: >-
-  Can a newly proven live session verify and restore the exact caller-aware
-  successor before two autonomous WLAN and guard-acceptance measurements?
-active_issue: omnipha/linux-sm7635#294
+  Can the coordinator preflight install the reviewed success-gated chain
+  before one autonomous WLAN and guard-acceptance measurement?
+active_issue: omnipha/linux-sm7635#311
 subsystems:
   boot:
     state: confirmed
@@ -15,7 +15,7 @@ subsystems:
     record: records/2026-10-30-203515-run-69-second-boot-guard-wlan.md
   wlan:
     state: partial
-    record: records/2026-11-03-143859-run106-radio-pin-mismatch.md
+    record: records/2026-11-03-200358-preack-guard-interlock-host-integration.md
   modem:
     state: partial        # stays running past the EFS request after PID-1 cutover (run 55); no voice/SIM/data claim
     record: records/2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the.md
