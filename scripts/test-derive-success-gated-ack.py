@@ -109,7 +109,7 @@ def prepare(work):
     fresh_pin = f'{gate.POST_PATH} {digest(prefix.encode())}'
     gate_pin = f'{gate.POST_PATH} {digest(post.encode())}'
     radio_pin = f'{gate.RADIO_PATH} {digest(radio.encode())}'
-    launch = f'( /bin/busybox setsid /bin/busybox sh {gate.POST_PATH} >/dev/null 2>&1 & )\n'
+    launch = f"' self-post {gate.POST_PATH} >/dev/null 2>&1 & )\n"
     assert fresh_hook.count(fresh_pin) == 1 and fresh_hook.count(radio_pin) == 1
     assert fresh_hook.count(launch) == 1
     assert hook == fresh_hook.replace(fresh_pin, gate_pin, 1)

@@ -58,12 +58,13 @@ overwrite unknown pstore contents. The verified host console is not a pstore
 pull (records/2026-11-03-023259-run101-preboot-pstore-access-blocker.md).
 The bounded #298 investigation found no demonstrated non-overwriting route or
 equivalent (records/2026-11-03-031528-pstore-preservation-host-evidence.md).
-The owner subsequently accepted possible loss of uncopied run-100 pstore and
-lifted that specific hold; the coordinator confirmed the decision
-(records/2026-11-03-092218-pstore-preservation-owner-decision.md). The console
-is still not a pstore pull. Separately, the coordinator replayed an actual
-historical run-95 guest panel line with a timestamp and caller prefix: the
-candidate parser exited under
+On 2026-11-03 08:56 CET the owner explicitly accepted possible loss of that
+uncopied pstore and lifted the specific preservation hold (#294 comment
+https://github.com/omnipha/linux-sm7635/issues/294#issuecomment-6598398647).
+The host capture is retained but is not a pstore copy. This authorizes further
+coordinator-owned diagnosis and measurement; it is not a WLAN result.
+Separately, the coordinator replayed an actual historical run-95 guest panel
+line with a timestamp and caller prefix: the candidate parser exited under
 BusyBox, while the prefix-stripped control passed (#294 comment
 https://github.com/omnipha/linux-sm7635/issues/294#issuecomment-6597114588).
 This is host evidence for a parser limitation, not the actual run-100 guest
@@ -71,26 +72,28 @@ snapshot, a pstore pull or proof of the run-100 cause.
 
 ## Next single variable
 
-The bounded host-only #301 tested the historic-format representative and the
-pinned candidate against the real ordered-record functions
-(records/2026-11-03-084931-panel-format-ordered-host-replay.md). Identical
-recognized duplicates are accepted; conflicting recognized values refuse.
-A T1-only in-memory experiment is not a deployable correction: ignored caller
-formats can hide conflicts. Separate diagnostics found producer-status and
-pre-existing panel identity limits
-(records/2026-11-03-092026-panel-contract-producer-identity-host-diagnostics.md).
-The parser, nonce, capture, guard and success-ACK code remain unchanged. No
-device operation, image, deployment or physical handoff is part of #301.
+The strategist qualified #301 and the supervisor dispatched it: finish this
+bounded host-only test of whether the candidate preserves the valid historical
+timestamp-plus-caller panel line, rejects foreign-boot, conflicting and absent
+input, and handles identical duplicates per the pinned contract. Compare the
+prefix-stripped control; retain ordered line-3 equality and nonce, capture,
+guard and success-ACK checks. Report the smallest tested correction or the
+remaining discriminator. A fixture alone does not diagnose run 100 or authorize
+speculative deployment; #301 itself has no device, image or deployment scope.
 
-With the specific preservation hold lifted, continue #294 in its retained
-context after #301: use a newly coordinator-proven live capture/handoff to
-measure the actual same-boot panel
-file, dmesg status/format and launch provenance, then make only the smallest
-evidence-supported correction. Do not repeat the failed boot as acceptance or
-infer its cause from the host fixture. Ultimately measure autonomous WLAN and
-lasting Linux on two fresh boots, without a host-run recipe or competing ACK;
-the second only after the first passes. The candidate publishes a real
-same-boot guard ACK only after association, address, DNS and internet succeed.
+The owner has lifted the separate pstore-preservation hold; do not re-ask for
+that decision. Continue #294 using a newly coordinator-proven live capture and
+handoff, with independent capture, identity and practical rescue, to measure the
+actual same-boot panel file, dmesg status/format and launch provenance. Apply
+the verified #301 result to the smallest workable startup candidate and fix the
+observed issue; reuse the installed chain if suitable and build an image only
+if technically needed. The coordinator owns setup and device operations; the
+supervisor coordinates the retained #294 context with active #301 without a
+second worker. Do not count a diagnostic session, host replay, or failed boot as
+acceptance. Ultimately measure autonomous WLAN and lasting Linux on two fresh
+boots, without a host-run recipe or competing ACK; the second only after the
+first passes. The candidate publishes a real same-boot guard ACK only after
+association, address, DNS and internet succeed.
 
 The owner's risk choice does not repair the limits in
 `records/2026-11-02-225455-success-gated-ack-owner-review-blockers.md`:
@@ -112,16 +115,26 @@ own. #293 proposed exactly those two boots and is closed for that reason; do
 not dispatch or deploy it. The panel-record dmesg format remains a hypothesis,
 not the measured cause of run 97's append refusal.
 
-Budget and boundaries: #298's bounded preservation investigation did not find a
-proven route, which is not proof that none exists. The owner accepted possible
-evidence loss and lifted the specific hold. #301's bounded host investigation
-does not authorize an image, deployment or device action. After #301, the
-coordinator owns the newly proven session and the retained #294 context owns
-its diagnosis. Run 100 failed; do not count a repeated failure as acceptance.
-A corrected candidate still needs two passing fresh boots, the second only if
-the first passes and is safely closed or handed off. Do not weaken interlocks,
-invent a pstore pull or change the acceptance check; a temporary pre-deadline
-radio measurement is not acceptance. (Plan owner, 2026-11-03.)
+Budget: #298's one bounded preservation investigation is spent; it did not
+find a proven route, which is not proof that none exists. Finish the one
+bounded host-only #301 format/ordered-record investigation; do not expand it
+into an open-ended search. The owner authorizes coordinator-owned setup,
+diagnosis and subsequent WLAN measurement boots as needed; make each answer a
+specific question and review the observed result before the next acceptance
+attempt. Run 100 failed and is not a passing repeat. A corrected candidate
+still needs two passing fresh boots, the second only if the first passes and is
+safely closed or handed off. No new pre-radio-only self-post image: that budget
+was spent in run 97.
+
+Fallback: if the host parser correction does not explain the actual guest
+boundary, use the coordinator's proven live session to measure the target radio
+chain and startup failure before proposing another pre-radio fix. If capture,
+identity or practical rescue cannot be established, the coordinator records
+the concrete blocker. The owner accepted possible pstore loss; do not reimpose
+a preservation gate or call the host capture an equivalent pstore pull. Do not
+weaken interlocks, substitute the four deferred architecture projects, or
+change the acceptance check. A temporary pre-deadline radio measurement is not
+acceptance. (Plan owner, 2026-11-03.)
 
 ## Order (binding)
 
@@ -137,10 +150,10 @@ radio measurement is not acceptance. (Plan owner, 2026-11-03.)
 5. Run 100 installed and measured the candidate: first boot failed before
    WLAN/ACK, and no second boot was attempted. Run 101 exposed the pstore
    preservation blocker; #298 found no demonstrated non-overwriting route.
-   The owner later accepted possible loss and lifted that hold. #301 tested the
-   historical format on the host; it did not establish the physical cause.
-6. After #301, diagnose #294 in its retained context with a fresh proven live
-   handoff; correct the measured cause before trying acceptance. Two passing
+   The owner accepted possible pstore loss and lifted that hold; #301 is in
+   progress to test the historical panel format on the host.
+6. Coordinate the #301 host result with #294 diagnosis under a fresh proven
+   live handoff; correct the measured cause before trying acceptance. Two passing
    fresh boots and merged device records remain required.
 
 ## Acceptance (from PLAN.md)
