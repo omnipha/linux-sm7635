@@ -56,15 +56,17 @@ and real ordered-record verification.
 
 ## Host verification
 
-All host test suites passed:
+All host test suites passed, with the fixture boundaries stated:
 - `sh scripts/test-pmos-success-gated-ack.sh`: full generated post and hook
-  tested under mocked external evidence; passes all stage refusals,
-  atomic no-replace publication, staged inode checks, single-link ACK,
-  and same-boot replay refusal.
+  tested under mocked external evidence **and a mocked guard**; passes all
+  stage refusals, atomic no-replace publication, staged inode checks,
+  single-link ACK, and same-boot replay refusal.
 - `sh scripts/test-pmos-success-gate-guard.sh`: isolated ext4 loop-backed
-  guest root; real guard and real contract; verifies that genuine
-  readiness and ordered record allow acceptance, while premature ACK,
-  tampered/missing records, and foreign nonces trigger recovery.
+  guest root; real guard and real contract; verifies that genuine readiness
+  and ordered record allow acceptance, while premature ACK, tampered/missing
+  records, and foreign nonces trigger recovery. This fixture executes only
+  the **generated gate suffix**, not the full generated post; the preceding
+  radio stages are not executed.
 - `python3 -B scripts/test-derive-success-gated-ack.py`: exact derivation pins,
   compiler output validation, and native 62-packet DNS parser tests pass.
 - `python3 -B scripts/test-derive-radio-persistent.py`,
@@ -72,6 +74,25 @@ All host test suites passed:
   `python3 -B scripts/test-derive-radio-postack.py`,
   `python3 -B scripts/test-fresh-hook-exit-report.py`.
 - `sh scripts/test-pmos-boot-record.sh`, `sh scripts/test-pmos-gate-evidence-contract.sh`.
+- `ruff check --no-cache --ignore EXE001` and `mypy --check-untyped-defs` on
+  the generator and its test; `shellcheck -S error` and `sh -n` on the two
+  gate fixtures; `git diff --check`.
+
+No single host fixture yet executes the full generated post together with the
+real guard and the real ordered-record contract; the two above cover those
+halves separately. Combining them faces a concrete obstacle: the generated
+post's PID-1 identity check (`sha256sum /proc/1/exe` equal to
+`sha256sum /bin/busybox`) requires the real guest BusyBox binary, while
+mocking the radio/network evidence invoked through `$BB` requires wrapping
+`/bin/busybox`; the real guard independently compares the same hashes, so a
+wrapped BusyBox forces guard recovery. A combined fixture therefore needs a
+different interception design (for example a private PATH-visible tool
+directory that the post's prefix is derived to use, or a synthetic netns with
+real `ping`), not a merge of the two existing harnesses. A real candidate
+image/carrier pair from the final chain has not been built or verified on
+this host. The installed builder still bundles the pre-cutover diagnostic
+chain by design; the generated gated chain is installed onto the persistent
+root by the coordinator.
 
 ## Limitations and physical acceptance
 
