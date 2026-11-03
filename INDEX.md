@@ -2,6 +2,7 @@
 
 ## Latest 10
 
+- [2026-11-03-202030-wlan-strategy-one-boot-acceptance](records/2026-11-03-202030-wlan-strategy-one-boot-acceptance.md) | wlan run 3 | confirmed | linux-sm7635#311 | wlan strategy one boot acceptance
 - [2026-11-03-201136-verifier-anchors-actual-guard-order](records/2026-11-03-201136-verifier-anchors-actual-guard-order.md) | wlan run 2 | confirmed | linux-sm7635#311 | verifier anchors actual guard order
 - [2026-11-03-200358-preack-guard-interlock-host-integration](records/2026-11-03-200358-preack-guard-interlock-host-integration.md) | wlan run 1 | confirmed | linux-sm7635#311 | preack guard interlock host integration
 - [2026-11-03-143859-run106-radio-pin-mismatch](records/2026-11-03-143859-run106-radio-pin-mismatch.md) | wlan run 106 | confirmed | omnipha/linux-sm7635#294 | Run 106: installed radio pin mismatch and weakened checks
@@ -11,7 +12,6 @@
 - [2026-11-03-104136-run101-panel-parser-live-boundary](records/2026-11-03-104136-run101-panel-parser-live-boundary.md) | wlan run 101 | confirmed | omnipha/linux-sm7635#294 | Run 101: same-boot panel-parser boundary
 - [2026-11-03-093747-boot-id-shape-host-diagnostic](records/2026-11-03-093747-boot-id-shape-host-diagnostic.md) | wlan | confirmed | omnipha/linux-sm7635#301 | Host diagnostic: boot ID shape check
 - [2026-11-03-092218-pstore-preservation-owner-decision](records/2026-11-03-092218-pstore-preservation-owner-decision.md) | wlan | confirmed | omnipha/linux-sm7635#301 | Run-100 pstore preservation decision
-- [2026-11-03-092026-panel-contract-producer-identity-host-diagnostics](records/2026-11-03-092026-panel-contract-producer-identity-host-diagnostics.md) | wlan | confirmed | omnipha/linux-sm7635#301 | Host diagnostics: producer failure and pre-existing panel identity
 
 ## By subsystem (latest 3, total in brackets)
 
@@ -40,15 +40,15 @@
 - [2026-10-30-150709-root-contract-measured-userdata-maximum](records/2026-10-30-150709-root-contract-measured-userdata-maximum.md) | userspace | confirmed | omnipha/linux-sm7635#199 | Measured userdata size accepted by the fail-closed root contract
 - [2026-10-30-142216-persistent-root-contract-size-gate](records/2026-10-30-142216-persistent-root-contract-size-gate.md) | userspace | refuted | omnipha/linux-sm7635#197 | Persistent root blocked by the closed #194 size gate
 
-### wlan [75]
+### wlan [76]
+- [2026-11-03-202030-wlan-strategy-one-boot-acceptance](records/2026-11-03-202030-wlan-strategy-one-boot-acceptance.md) | wlan run 3 | confirmed | linux-sm7635#311 | wlan strategy one boot acceptance
 - [2026-11-03-201136-verifier-anchors-actual-guard-order](records/2026-11-03-201136-verifier-anchors-actual-guard-order.md) | wlan run 2 | confirmed | linux-sm7635#311 | verifier anchors actual guard order
 - [2026-11-03-200358-preack-guard-interlock-host-integration](records/2026-11-03-200358-preack-guard-interlock-host-integration.md) | wlan run 1 | confirmed | linux-sm7635#311 | preack guard interlock host integration
-- [2026-11-03-143859-run106-radio-pin-mismatch](records/2026-11-03-143859-run106-radio-pin-mismatch.md) | wlan run 106 | confirmed | omnipha/linux-sm7635#294 | Run 106: installed radio pin mismatch and weakened checks
 
 ### wlan run 91 [1]
 - [2026-11-01-123812-coordinator-preack-window-missed](records/2026-11-01-123812-coordinator-preack-window-missed.md) | wlan run 91 run 91 | inconclusive | omnipha/linux-sm7635#256 | coordinator preack window missed
 
 ## By month
 
-- [2026-11](records/index-2026-11.md) [43]
+- [2026-11](records/index-2026-11.md) [44]
 - [2026-10](records/index-2026-10.md) [162]

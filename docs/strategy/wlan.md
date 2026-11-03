@@ -55,7 +55,8 @@ or after ACK; do not claim otherwise or weaken an existing interlock.
 
 ## Acceptance
 
-Two fresh boots without a host-run recipe or host ACK start the radio, associate
-`wlan0`, obtain an address, resolve DNS and reach the internet. Linux remains
-up past the recovery deadline. Only attempt the second after the first passes
-and is safely handed off. Host tests and a host-assisted session are not passes.
+One fresh boot without a host-run recipe or host ACK starts the radio, associates
+`wlan0`, obtains an address, resolves DNS and reaches the internet. Linux remains
+up past the recovery deadline. A further boot requires a specific technical
+reason and coordinator authorization. Host tests and a host-assisted session
+are not passes.
