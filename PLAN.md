@@ -17,11 +17,11 @@ blocked by a measurement.
 
 ## Now
 
-- Step: WLAN works on every boot of the installed chain, without a host-run recipe.
+- Step: integrate autonomous WLAN into the boot image and installed chain.
       Check: a fresh boot brings the radio chain up by itself, wlan0
       appears, associates, gets an address and reaches the internet;
       Linux stays up beyond the recovery deadline, and a second boot
-      repeats all of it without a host-run recipe.
+      repeats all of it without a host-run recipe or host ACK.
       How and what was tried: docs/strategy/wlan.md.
 
 ## Then, in order
