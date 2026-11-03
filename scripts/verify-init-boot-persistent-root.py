@@ -270,7 +270,8 @@ def self_test(init_image, carrier, stock_init, base_image, stock_carrier, curren
             b"GUARD_SHA=" + guard_sha in self_stage and
             b"TRANSITION_SHA=" + transition_sha in self_stage and
             b"success_ready()" in guard and b"ordered_record()" in guard and
-            guard.index(b"if ! success_ready || ! ordered_record; then") <
+            guard.index(b"if ! success_ready; then") <
+            guard.index(b"ordered_record || recover") <
             guard.index(b'> "$STATE/accepted"') and
             b'arm "$ROOT" 160' in transition and
             stage.index(b'for service in wpa_supplicant networking; do') <
@@ -409,8 +410,12 @@ def self_test(init_image, carrier, stock_init, base_image, stock_carrier, curren
     bad("helper hash weakened", INIT_MSG, source=changed)
     changed = dict(current)
     changed["pmos-pid1-guard.sh"] = changed["pmos-pid1-guard.sh"].replace(
-        b"if ! success_ready || ! ordered_record; then", b"if false; then", 1)
-    bad("success and ordered-record gates removed", INIT_MSG, source=changed)
+        b"if ! success_ready; then", b"if false; then", 1)
+    bad("success gate removed", INIT_MSG, source=changed)
+    changed = dict(current)
+    changed["pmos-pid1-guard.sh"] = changed["pmos-pid1-guard.sh"].replace(
+        b"ordered_record || recover", b"true", 1)
+    bad("ordered-record gate removed", INIT_MSG, source=changed)
     changed = dict(current)
     changed["pmos-session-stage.sh"] = changed["pmos-session-stage.sh"].replace(
         b'\t\t\t$BB rm "$entry" || die "cannot defer OpenRC service"\n', b"", 1)
