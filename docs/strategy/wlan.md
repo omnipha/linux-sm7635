@@ -42,21 +42,39 @@ Updated with each measured run, merged like any record.
 
 An acked live session can start the full radio chain, but the #291 candidate
 requires an unacknowledged guard and never provides an ACK: without a further
-success-gated transition it returns to fastboot. Run 97's pre-radio record
-append refusal is still unresolved on the phone; #291's dmesg-format fix is
-host-tested only. OpenRC ordering on a fresh boot is unmeasured.
+success-gated transition it returns to fastboot. The owner chose the minimal
+success-gated #294 candidate, now installed and host-tested. On fresh boot
+100 the captured self-post trace stopped at the panel-record pre-check; at
+224 s wlan0 and the gate state were absent and no ACK was accepted. The guard
+returned the phone to fastboot; why the trace stopped or which self-post was
+launched is not proven. The synthetic BusyBox panel-pipeline failure in the
+run-100 record is a hypothesis, not a device diagnosis. Run 97's pre-radio
+record append refusal is still unresolved on the phone; OpenRC ordering on a
+fresh boot is unmeasured.
+
+Run 101 did not boot: no post-run-100 pstore pull is recorded, fastboot fetch
+is unsupported, and the observed recovery route started Linux and could
+overwrite unknown pstore contents. The verified host console is not a pstore
+pull (records/2026-11-03-023259-run101-preboot-pstore-access-blocker.md).
 
 ## Next single variable
 
-Measure the host-tested #294 candidate on the installed chain: whether WLAN
-starts and Linux stays up without a host-run recipe on two fresh boots
-(records/2026-11-03-012122-success-gated-ack-candidate.md). The owner chose the
-existing recovery and evidence mechanisms, superseding the earlier review
-blocker. The candidate uses the real same-boot guard ACK only after association,
-address, DNS and internet succeed, and publishes none on a prior failure. It
-preserves nonce, capture and recovery interlocks. Do not use a competing host
-ACK during measurement; the permitted persistent-root hook and script paths
-can carry the candidate in principle without a new image.
+First resolve the measured preservation blocker with the existing host-only
+#298: find a supported read-only pstore retrieval before any potentially
+overwriting boot, or document a coordinator-verifiable non-overwriting
+alternative. No device operation by the worker and no speculative panel fix.
+The strategist has qualified #298; the supervisor owns its dispatch while the
+#294 context remains preserved. The coordinator alone decides whether the
+proven route satisfies the preboot evidence contract.
+
+After preservation, continue #294 in its retained context: use a newly
+coordinator-proven live capture/handoff to measure the actual same-boot panel
+file, dmesg status/format and launch provenance, then make only the smallest
+evidence-supported correction. Do not repeat the failed boot as acceptance or
+infer its cause from the host fixture. Ultimately measure autonomous WLAN and
+lasting Linux on two fresh boots, without a host-run recipe or competing ACK;
+the second only after the first passes. The candidate publishes a real
+same-boot guard ACK only after association, address, DNS and internet succeed.
 
 The owner's risk choice does not repair the limits in
 `records/2026-11-02-225455-success-gated-ack-owner-review-blockers.md`:
@@ -78,14 +96,23 @@ own. #293 proposed exactly those two boots and is closed for that reason; do
 not dispatch or deploy it. The panel-record dmesg format remains a hypothesis,
 not the measured cause of run 97's append refusal.
 
-Budget: finish the existing host candidate and its fixtures, then at most two
-coordinator-owned fresh boots of the reviewed candidate, the second only if
-the first passes and is safely closed or handed off. No new pre-radio-only
-self-post image: that budget was spent in run 97. If the existing chain cannot
-carry the candidate, stop with the concrete incompatibility and propose the
-smallest reviewed change; do not substitute the four deferred architecture
-projects or change the acceptance check. A temporary pre-deadline radio
-measurement is not acceptance. (Plan owner, 2026-11-03.)
+Budget: one bounded host-only #298 investigation; its outcome is either a
+verified non-overwriting route or a demonstrated lack of one, not an endless
+search. Then at most one coordinator-owned diagnostic session under the
+existing evidence, capture and recovery gates, followed by an evidence-led
+review before any new acceptance attempt. Run 100 spent the first candidate
+boot and failed; the previously budgeted second is not authorized as a passing
+repeat. A future corrected candidate still needs two passing fresh boots,
+the second only if the first passes and is safely closed or handed off. No new
+pre-radio-only self-post image: that budget was spent in run 97.
+
+Fallback: if no non-overwriting path can be demonstrated, stop before boot and
+raise an explicit owner decision on preserving the unknown pstore versus
+accepting its potential loss; the existing device-iteration approval is not a
+pstore-preservation waiver. Do not weaken the interlocks, invent an equivalent
+pstore pull, substitute the four deferred architecture projects, or change the
+acceptance check. A temporary pre-deadline radio measurement is not acceptance.
+(Plan owner, 2026-11-03.)
 
 ## Order (binding)
 
@@ -98,10 +125,12 @@ measurement is not acceptance. (Plan owner, 2026-11-03.)
 4. Done on host only: #294 enabled and fixture-tested the pinned hook and
    success gate under the owner's accepted recovery/evidence limits. Fresh-boot
    service ordering and readiness within the guard budget remain unmeasured.
-5. The coordinator installs the reviewed candidate under existing backup and
-   recovery procedures and measures one fresh boot, then a second only when
-   the first passes and is safely closed or handed off. A merged device record
-   is required for the PLAN check.
+5. Run 100 installed and measured the candidate: first boot failed before
+   WLAN/ACK, and no second boot was attempted. Run 101 exposed the pstore
+   preservation blocker; #298 is the bounded host-only next step.
+6. Once the coordinator verifies preservation, diagnose #294 with a fresh
+   proven live handoff; correct the measured cause before trying acceptance.
+   Two passing fresh boots and merged device records remain required.
 
 ## Acceptance (from PLAN.md)
 
