@@ -35,11 +35,11 @@ The candidate files were generated reproducibly without private inputs:
 - Embedded static AArch64 DNS probe (597,840 bytes):
   SHA-256 `906a3c3f3f5c7a666f394dff434604a4b6a6bf2d683d8e04e3d947316132fe97`
 
-These files are staged in `/tmp/opencode/issue-311-handoff/`.
-The untrusted run-106 radio (`d7b74c24...`) on the phone must be replaced
-with the reviewed `146ed592...` radio; the hook and post must also be
-installed to establish the full success-gated chain with `success-ready`
-and real ordered-record verification.
+These files were staged in `/tmp/opencode/issue-311-handoff/`; they are
+host-derived only and must be re-hashed or reproduced before any later use.
+The run-106 radio (`d7b74c24...`) remains untrusted. No artifact installation
+or physical boot is recommended until the complete chain is integrated and
+verified, and the coordinator has completed the required preflight.
 
 ## Host verification
 
