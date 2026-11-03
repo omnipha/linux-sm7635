@@ -67,19 +67,10 @@ All host test suites passed, with the fixture boundaries stated:
 
 No single host fixture yet executes the full generated post together with the
 real guard and the real ordered-record contract; the two above cover those
-halves separately. Combining them faces a concrete obstacle: the generated
-post's PID-1 identity check (`sha256sum /proc/1/exe` equal to
-`sha256sum /bin/busybox`) requires the real guest BusyBox binary, while
-mocking the radio/network evidence invoked through `$BB` requires wrapping
-`/bin/busybox`; the real guard independently compares the same hashes, so a
-wrapped BusyBox forces guard recovery. A combined fixture therefore needs a
-different interception design (for example a private PATH-visible tool
-directory that the post's prefix is derived to use, or a synthetic netns with
-real `ping`), not a merge of the two existing harnesses. A real candidate
-image/carrier pair from the final chain has not been built or verified on
-this host. The installed builder still bundles the pre-cutover diagnostic
-chain by design; the generated gated chain is installed onto the persistent
-root by the coordinator.
+halves separately. A combined fixture must isolate any hardware and networking
+mocks from the real guard and clearly identify simulated identity evidence.
+A candidate image/carrier pair with the final chain has not been built or
+verified. The builder does not install or pin the generated gated chain.
 
 ## Limitations and physical acceptance
 
