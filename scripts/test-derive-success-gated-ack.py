@@ -19,6 +19,7 @@ sys.path.insert(0, str(HERE))
 
 def load(name, filename):
     spec = importlib.util.spec_from_file_location(name, HERE / filename)
+    assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -83,7 +84,7 @@ def prepare(work):
     selfpost = load('selfpost', 'derive-self-post-fresh-boot.py')
     gate = load('gate', 'derive-success-gated-ack.py')
     radio = fresh.derive(persist.derive(builder.current_scripts()['pmos-radio-bringup.sh'].decode()))
-    prefix, _ = selfpost.derive((HERE / 'pmos-self-post.sh').read_text(), radio.encode())
+    prefix, fresh_hook = selfpost.derive((HERE / 'pmos-self-post.sh').read_text(), radio.encode())
     assert digest(radio.encode()) == 'a0ea867a7fb8ada2fda46fdf94076c44c814e8a8d2a470c200df820529445c21'
     assert digest(prefix.encode()) == 'c9173d6d362a79cd55a92814f2572ba0a111b99a61a84b99b0c3076a7e1fcbc7'
     source, radio_path, post_path, hook_path = (work / name for name in ('prefix', 'radio', 'post', 'hook'))
@@ -103,14 +104,19 @@ def prepare(work):
     expected_gate = gate.GATE.replace('@DNS_BASE64@', '\n'.join(textwrap.wrap(base64.b64encode(probe).decode('ascii'), 96)))
     expected_gate = expected_gate.replace('@DNS_SHA@', digest(probe))
     assert post == prefix + expected_gate
+    assert digest(post.encode()) == '9a8c40adce2f84d61e30fd49f6d0f3be5a08d3a57909e9335c3c02f2751ea97b'
     assert gate.derive(prefix, radio.encode(), probe) == (post, hook)
-    assert digest(post.encode()) in hook and gate.FRESH_RADIO_SHA in hook
-    assert gate.POST_PATH in hook and gate.RADIO_PATH in hook
-    assert hook.index('refusing launch') < hook.index('exit 1') < hook.index('for spec in')
-    assert 'owner review required for pre-guard, watcher, deadline and evidence contracts; refusing launch' in hook
-    assert 'setsid /bin/busybox sh' not in hook
-    result = subprocess.run(['/bin/busybox', 'sh', str(hook_path)], capture_output=True, check=False)
-    assert result.returncode == 1 and b'owner review required' in result.stderr
+    fresh_pin = f'{gate.POST_PATH} {digest(prefix.encode())}'
+    gate_pin = f'{gate.POST_PATH} {digest(post.encode())}'
+    radio_pin = f'{gate.RADIO_PATH} {digest(radio.encode())}'
+    launch = f'( /bin/busybox setsid /bin/busybox sh {gate.POST_PATH} >/dev/null 2>&1 & )\n'
+    assert fresh_hook.count(fresh_pin) == 1 and fresh_hook.count(radio_pin) == 1
+    assert fresh_hook.count(launch) == 1
+    assert hook == fresh_hook.replace(fresh_pin, gate_pin, 1)
+    assert hook.count(gate_pin) == 1 and hook.count(radio_pin) == 1
+    assert hook.count(fresh_pin) == 0 and hook.count(launch) == 1
+    assert hook.index(gate_pin) < hook.index(radio_pin) < hook.index('done\n') < hook.index(launch)
+    assert 'refusing launch' not in hook
     for bad_post, bad_radio in ((prefix + '\n', radio.encode()), (prefix, radio.encode() + b'\n')):
         try:
             gate.derive(bad_post, bad_radio, probe)
@@ -118,6 +124,16 @@ def prepare(work):
             pass
         else:
             raise AssertionError('changed #291 input accepted')
+    radio_assignment = f'RADIO_SHA={gate.FRESH_RADIO_SHA}\n'
+    assert prefix.count(radio_assignment) == 1
+    bad_pin = prefix.replace(radio_assignment, f'RADIO_SHA={"0" * 64}\n', 1)
+    with mock.patch.object(gate, 'FRESH_POST_SHA', digest(bad_pin.encode())):
+        try:
+            gate.derive(bad_pin, radio.encode(), probe)
+        except SystemExit as exc:
+            assert 'fresh post radio pin differs' in str(exc)
+        else:
+            raise AssertionError('wrong radio pin in fresh post accepted')
     for bad_probe in (probe[:-1], probe + b'\x00', probe[:-1] + bytes([probe[-1] ^ 1]), b''):
         for check in (gate.validate_dns_probe, lambda value: gate.derive(prefix, radio.encode(), value)):
             try:

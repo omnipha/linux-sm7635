@@ -38,7 +38,8 @@ for level in sysinit boot default nonetwork shutdown; do $BB mkdir -p "$BASE/etc
 $BB cp /bin/busybox "$BASE/real/busybox"
 $BB cp "$WORK/post" "$BASE/usr/libexec/omnipha/pmos-self-post-fresh-boot.sh"
 $BB cp "$WORK/radio" "$BASE/usr/libexec/omnipha/pmos-radio-bringup-fresh-boot.sh"
-$BB chmod 700 "$BASE/usr/libexec/omnipha/"*.sh "$BASE/run" "$BASE/run/radio-bringup" "$BASE/run/pid1-guard"
+$BB cp "$WORK/hook" "$BASE/hook"
+$BB chmod 700 "$BASE/hook" "$BASE/usr/libexec/omnipha/"*.sh "$BASE/run" "$BASE/run/radio-bringup" "$BASE/run/pid1-guard"
 $BB mknod -m 666 "$BASE/dev/null" c 1 3
 $BB mknod -m 666 "$BASE/dev/zero" c 1 5
 $BB touch "$BASE/dev/kmsg"
@@ -99,6 +100,29 @@ $BB cat > "$BASE/bin/busybox" <<'MOCK'
 #!/real/busybox sh
 BB=/real/busybox
 mode=$($BB cat /tmp/mode)
+if [ "${1:-}" = setsid ]; then
+	printf 'launch\n' >> /tmp/hook-launches
+	[ "${2:-}" = /bin/busybox ] && [ "${3:-}" = sh ] && [ "${4:-}" = /usr/libexec/omnipha/pmos-self-post-fresh-boot.sh ] && [ "$#" = 4 ] || exit 1
+	$BB touch /tmp/hook-at-barrier
+	count=0
+	while [ ! -f /tmp/hook-release ]; do
+		[ "$count" -lt 200 ] || { $BB touch /tmp/hook-barrier-timeout; exit 1; }
+		$BB sleep 0.1
+		count=$((count + 1))
+	done
+	if [ "$mode" = hook-noop ]; then
+		printf '0\n' > /tmp/hook-post-result.new
+		$BB mv /tmp/hook-post-result.new /tmp/hook-post-result
+		exit 0
+	fi
+	$BB setsid "$2" "$3" "$4" &
+	child=$!
+	printf '%s\n' "$child" > /tmp/post.pid
+	if wait "$child"; then result=0; else result=$?; fi
+	printf '%s\n' "$result" > /tmp/hook-post-result.new
+	$BB mv /tmp/hook-post-result.new /tmp/hook-post-result
+	exit "$result"
+fi
 state=/run/radio-bringup
 guard=/run/pid1-guard
 gate=$state/success-gate-294
@@ -131,6 +155,9 @@ mutate() {
 		rmtfs-maps) $BB printf 'wrong\n' > /proc/42/maps;;
 		profile-differs) $BB printf 'other profile\n' > /etc/wpa_supplicant/wpa_supplicant.conf;;
 		service-input) $BB chmod 644 /etc/network/interfaces;;
+		missing-ifquery) $BB rm "$state/ifquery-wlan";;
+		missing-lease-wrapper) $BB rm "$state/lease-wrapper.sh";;
+		missing-lease-helper) $BB rm "$state/wlan-udhcpc-lease.sh";;
 		openrc-level) $BB printf 'boot\n' > /run/openrc/softlevel;;
 		service-config) $BB printf 'other\n' > /etc/conf.d/networking;;
 		supplicant-unsafe) $BB chmod 666 /etc/conf.d/wpa_supplicant;;
@@ -460,6 +487,33 @@ run_post() {
 	$BB printf '%s\n' "$pid" > "$ROOT/tmp/post.pid"
 	if wait "$pid"; then return 0; else return 1; fi
 }
+run_hook() {
+	$BB timeout -k 1 10 $BB chroot "$ROOT" /real/busybox sh /hook > "$ROOT/tmp/hook.out" 2>&1
+}
+wait_hook_file() {
+	hook_file=$1
+	hook_label=$2
+	hook_count=0
+	until [ -f "$hook_file" ]; do
+		[ "$hook_count" -lt 600 ] && [ ! -e "$ROOT/tmp/hook-barrier-timeout" ] || {
+			$BB cat "$ROOT/tmp/hook.out" >&2
+			fail "$hook_label: timed out waiting for $hook_file"
+		}
+		$BB sleep 0.1
+		hook_count=$((hook_count + 1))
+	done
+}
+start_hook() {
+	hook_case=$1
+	run_hook || { $BB cat "$ROOT/tmp/hook.out" >&2; fail "$hook_case: hook did not return success before launch release"; }
+	wait_hook_file "$ROOT/tmp/hook-at-barrier" "$hook_case"
+	[ "$( $BB cat "$ROOT/tmp/hook-launches")" = launch ] || fail "$hook_case: expected one detached launch"
+	[ ! -e "$ROOT/tmp/stages" ] && [ ! -e "$ROOT/run/radio-bringup/success-gate-294" ] && [ ! -e "$ROOT/tmp/hook-post-result" ] || fail "$hook_case: post ran before release"
+	check_no_publication "$hook_case before release"
+	$BB touch "$ROOT/tmp/hook-release"
+	wait_hook_file "$ROOT/tmp/hook-post-result" "$hook_case"
+	[ "$( $BB cat "$ROOT/tmp/hook-launches")" = launch ] || fail "$hook_case: multiple detached launches"
+}
 check_prefix() {
 	[ "$( $BB cat "$ROOT/tmp/stages" 2>/dev/null)" = 'modem
 wpss
@@ -509,6 +563,17 @@ expect_refusal() {
 	if run_post; then fail "$case_name: candidate unexpectedly succeeded"; fi
 	check_prefix "$case_name"
 	check_no_publication "$case_name"
+	case "$case_name" in
+		missing-ifquery|missing-lease-wrapper|missing-lease-helper)
+			case "$case_name" in
+				missing-ifquery) missing=ifquery-wlan;;
+				missing-lease-wrapper) missing=lease-wrapper.sh;;
+				missing-lease-helper) missing=wlan-udhcpc-lease.sh;;
+			esac
+			[ ! -e "$ROOT/run/radio-bringup/$missing" ] && [ ! -L "$ROOT/run/radio-bringup/$missing" ] &&
+				[ ! -e "$ROOT/tmp/publication-attempts" ] && [ ! -e "$ROOT/run/pid1-guard/ack" ] && [ ! -L "$ROOT/run/pid1-guard/ack" ] &&
+				[ ! -e "$ROOT/run/pid1-guard/.success-gated-ack-new" ] && [ ! -L "$ROOT/run/pid1-guard/.success-gated-ack-new" ] || fail "$case_name: missing helper or publication state changed";;
+	esac
 	gate=$ROOT/run/radio-bringup/success-gate-294
 	check_evidence "$gate/started" "boot=$boot stage=initialization result=started phase=before-publication reason=none"
 	check_evidence "$gate/refusal" "boot=$boot stage=$terminal result=refused-or-interrupted phase=before-publication reason=$reason"
@@ -554,6 +619,96 @@ fi
 [ ! -e "$ROOT/run/pid1-guard/ack" ] && [ ! -e "$ROOT/run/pid1-guard/nonce" ] && [ ! -e "$ROOT/run/pid1-guard/.success-gated-ack-new" ] || fail 'mock guard did not consume ACK and nonce'
 check_evidence "$ROOT/run/pid1-guard/accepted" "$boot"
 printf 'pass: complete real generated post, exact ACK bytes and synthetic guard acceptance\n'
+
+reset_case success
+start_hook hook-success
+[ "$( $BB cat "$ROOT/tmp/hook-post-result")" = 0 ] || fail 'hook-success: detached post failed'
+check_prefix hook-success
+check_publication hook-success
+$BB cmp -s "$ROOT/tmp/expected-ack" "$ROOT/tmp/ack-before-consumption" || fail 'hook-success: consumed ACK bytes differ'
+[ "$( $BB cat "$ROOT/tmp/ack-before-consumption.stat")" = "0:600:1:$((${#nonce} + ${#boot} + 2))" ] || fail 'hook-success: consumed ACK metadata differs'
+gate=$ROOT/run/radio-bringup/success-gate-294
+check_evidence "$gate/started" "boot=$boot stage=initialization result=started phase=before-publication reason=none"
+for stage in $stages; do check_evidence "$gate/$stage.ok" "boot=$boot stage=$stage result=pass phase=before-publication reason=none"; done
+check_evidence "$gate/published.ok" "boot=$boot stage=ack-publication result=pass phase=published-awaiting-guard reason=none"
+check_evidence "$gate/accepted.ok" "boot=$boot stage=guard-acceptance result=pass phase=guard-accepted reason=none"
+check_evidence "$ROOT/run/pid1-guard/accepted" "$boot"
+[ ! -e "$gate/refusal" ] && [ ! -e "$ROOT/run/pid1-guard/ack" ] && [ ! -e "$ROOT/run/pid1-guard/nonce" ] && [ ! -e "$ROOT/run/pid1-guard/.success-gated-ack-new" ] || fail 'hook-success: incorrect final guard state'
+printf 'pass: generated hook returned asynchronously and launched complete prefix and gate with one accepted ACK\n'
+
+for script in post radio; do
+	for defect in missing changed mode symlink dangling; do
+		reset_case hook-noop
+		case "$script" in
+			post) pin=$ROOT/usr/libexec/omnipha/pmos-self-post-fresh-boot.sh;;
+			radio) pin=$ROOT/usr/libexec/omnipha/pmos-radio-bringup-fresh-boot.sh;;
+		esac
+		case "$defect" in
+			missing) $BB rm "$pin";;
+			changed) $BB printf '\n' >> "$pin";;
+			mode) $BB chmod 755 "$pin";;
+			symlink) $BB mv "$pin" "$pin.original"; $BB ln -s "${pin##*/}.original" "$pin";;
+			dangling) $BB rm "$pin"; $BB ln -s absent "$pin";;
+		esac
+		if run_hook; then
+			$BB touch "$ROOT/tmp/hook-release"
+			fail "hook-$script-$defect: unsafe pin accepted"
+		else
+			hook_rc=$?
+		fi
+		[ "$hook_rc" = 1 ] || fail "hook-$script-$defect: hook returned $hook_rc instead of pin refusal"
+		$BB sleep 0.2
+		if [ -e "$ROOT/tmp/hook-launches" ] || [ -e "$ROOT/tmp/hook-at-barrier" ]; then
+			$BB touch "$ROOT/tmp/hook-release"
+			fail "hook-$script-$defect: post launched"
+		fi
+		[ ! -e "$ROOT/tmp/stages" ] && [ ! -e "$ROOT/run/radio-bringup/success-gate-294" ] || fail "hook-$script-$defect: post ran"
+		[ ! -e "$ROOT/tmp/publication-attempts" ] && [ ! -e "$ROOT/run/pid1-guard/ack" ] && [ ! -L "$ROOT/run/pid1-guard/ack" ] && [ ! -e "$ROOT/run/pid1-guard/.success-gated-ack-new" ] && [ ! -L "$ROOT/run/pid1-guard/.success-gated-ack-new" ] || fail "hook-$script-$defect: ACK state changed"
+		check_no_publication "hook-$script-$defect"
+		$BB touch "$ROOT/tmp/hook-release"
+		printf 'pass: generated hook refused %s %s pin without launching\n' "$script" "$defect"
+	done
+done
+
+for failed_stage in modem wpss driver scan services; do
+	reset_case "prefix-fail-$failed_stage"
+	start_hook "hook-prefix-fail-$failed_stage"
+	[ "$( $BB cat "$ROOT/tmp/hook-post-result")" != 0 ] || fail "hook-prefix-fail-$failed_stage: detached post succeeded"
+	expected=
+	for stage in modem wpss driver scan services; do
+		if [ -n "$expected" ]; then expected="$expected
+$stage"; else expected=$stage; fi
+		[ "$stage" != "$failed_stage" ] || break
+	done
+	[ "$( $BB cat "$ROOT/tmp/stages")" = "$expected" ] || fail "hook-prefix-fail-$failed_stage: unexpected radio-stage sequence"
+	[ ! -e "$ROOT/run/radio-bringup/success-gate-294" ] && [ ! -e "$ROOT/tmp/publication-attempts" ] && [ ! -e "$ROOT/run/pid1-guard/ack" ] && [ ! -e "$ROOT/run/pid1-guard/.success-gated-ack-new" ] || fail "hook-prefix-fail-$failed_stage: gate or ACK state changed"
+	check_no_publication "hook-prefix-fail-$failed_stage"
+	[ ! -e "$ROOT/run/radio-bringup/wpa_supplicant.conf" ] || fail "hook-prefix-fail-$failed_stage: profile not scrubbed"
+	printf 'pass: generated hook detached prefix refused %s before gate or ACK\n' "$failed_stage"
+done
+
+for mode in association-disconnected address-invalid route-duplicate gateway-ping internet-ping dns-failure final-association; do
+	reset_case "$mode"
+	start_hook "hook-$mode"
+	[ "$( $BB cat "$ROOT/tmp/hook-post-result")" != 0 ] || fail "hook-$mode: detached post succeeded"
+	check_prefix "hook-$mode"
+	check_no_publication "hook-$mode"
+	[ ! -e "$ROOT/tmp/publication-attempts" ] && [ ! -e "$ROOT/run/pid1-guard/ack" ] && [ ! -L "$ROOT/run/pid1-guard/ack" ] && [ ! -e "$ROOT/run/pid1-guard/.success-gated-ack-new" ] && [ ! -L "$ROOT/run/pid1-guard/.success-gated-ack-new" ] || fail "hook-$mode: ACK state changed"
+	case "$mode" in
+		association-disconnected) terminal=association; reason='wlan0 is not associated';;
+		address-invalid) terminal=address; reason='no sane global-scope wlan0 IPv4 address';;
+		route-duplicate) terminal=route; reason='expected one default route via wlan0';;
+		gateway-ping) terminal=gateway; reason='gateway ICMP on wlan0 failed';;
+		internet-ping) terminal=internet; reason='internet ICMP on wlan0 failed';;
+		dns-failure) terminal=dns; reason='bound DNS query returned no valid answer';;
+		final-association) terminal=final-health; reason='association changed during checks';;
+	esac
+	gate=$ROOT/run/radio-bringup/success-gate-294
+	check_evidence "$gate/refusal" "boot=$boot stage=$terminal result=refused-or-interrupted phase=before-publication reason=$reason"
+	check_passes "$terminal"
+	[ ! -e "$gate/published.ok" ] && [ ! -e "$gate/accepted.ok" ] || fail "hook-$mode: false success evidence"
+	printf 'pass: generated hook detached gate refused %s before ACK\n' "$terminal"
+done
 
 snapshot_ok=1
 for mode in mid-clean large-clean large-exact; do
@@ -645,6 +800,9 @@ expect_refusal service-status services 'local is not started'
 expect_refusal service-link services 'networking runlevel link changed'
 expect_refusal service-pin services 'networking service pin changed'
 expect_refusal service-input services 'unsafe service input'
+expect_refusal missing-ifquery services 'unsafe service input'
+expect_refusal missing-lease-wrapper services 'unsafe service input'
+expect_refusal missing-lease-helper services 'unsafe service input'
 expect_refusal supplicant-unsafe services 'unsafe supplicant configuration'
 expect_refusal profile-differs services 'service profile differs'
 expect_refusal lease-pin services 'lease helper pin changed'

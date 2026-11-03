@@ -2,7 +2,7 @@
 set -eu
 HERE=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 SCRIPT=${SCRIPT:-"$HERE/pmos-radio-bringup.sh"}
-if [ "${1:-}" != --inner ]; then
+if [ "${1:-}" != --inner ] && [ "${1:-}" != --inner-291 ]; then
 	[ -f "$SCRIPT" ] || exit 1
 	for variant in "$HERE/pmos-radio-bringup.sh" "$HERE/pmos-radio-bringup-persistent.sh"; do
 		sudo -n unshare --mount --pid --fork --mount-proc env HERE="$HERE" SCRIPT="$variant" /bin/busybox sh "$0" --inner
@@ -23,6 +23,202 @@ radio = load('fresh', 'derive-radio-fresh-boot.py').derive(
 pathlib.Path(os.environ['OUTPUT']).write_text(radio)
 PY
 	sudo -n unshare --mount --pid --fork --mount-proc env HERE="$HERE" SCRIPT="$work/pmos-radio-bringup-fresh.sh" /bin/busybox sh "$0" --inner
+	HERE="$HERE" OUTPUT="$work/pmos-radio-bringup-291.sh" python3 -B - <<'PY'
+import hashlib, importlib.util, os, pathlib
+here = pathlib.Path(os.environ['HERE'])
+def load(name, filename):
+    spec = importlib.util.spec_from_file_location(name, here / filename)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+staged = load('builder', 'build-init-boot-persistent-root.py').current_scripts()['pmos-radio-bringup.sh']
+assert hashlib.sha256(staged).hexdigest() == 'f54b33727cefdf728001e4692d625c0f5a77298694454832e02b6cf0c765764f'
+radio = load('fresh', 'derive-radio-fresh-boot.py').derive(
+    load('persistent', 'derive-radio-persistent.py').derive(staged.decode()))
+assert hashlib.sha256(radio.encode()).hexdigest() == 'a0ea867a7fb8ada2fda46fdf94076c44c814e8a8d2a470c200df820529445c21'
+pathlib.Path(os.environ['OUTPUT']).write_text(radio)
+PY
+	mkdir "$work/radio-291-root"
+	sudo -n unshare --mount --pid --fork --mount-proc env SCRIPT="$work/pmos-radio-bringup-291.sh" /bin/busybox sh "$0" --inner-291
+	exit 0
+fi
+
+if [ "${1:-}" = --inner-291 ]; then
+	[ "$$" -eq 1 ] && [ -f "$SCRIPT" ] || exit 1
+	BB=/bin/busybox
+	BOOT=11111111-2222-3333-4444-555555555555
+	R=${SCRIPT%/*}/radio-291-root
+	fail() { $BB printf 'FAIL: #291 %s\n' "$*" >&2; exit 1; }
+	[ -d "$R" ] && [ ! -L "$R" ] || fail 'fixture root absent or unsafe'
+	$BB mount --make-rprivate /
+	$BB mount -t tmpfs -o mode=0755,size=32m tmpfs "$R"
+	for d in bin sbin etc/init.d etc/conf.d etc/network etc/wpa_supplicant etc/runlevels/sysinit etc/runlevels/boot etc/runlevels/default etc/runlevels/nonetwork etc/runlevels/shutdown dev run/radio-bringup run/openrc run/pid1-guard proc/sys/kernel/random proc/1 proc/452 proc/net sys/class/remoteproc/remoteproc2 sys/class/remoteproc/remoteproc3 sys/class/net/wlan0 sys/class/ieee80211/phy0 vendor/firmware/wlan/qca_cld/qca6750 tmp; do
+		$BB mkdir -p "$R/$d"
+	done
+	$BB cp /bin/busybox "$R/bin/busybox.real"
+	$BB cp "$SCRIPT" "$R/radio.sh"
+	[ "$( $BB sha256sum "$R/radio.sh" | $BB cut -d ' ' -f 1)" = a0ea867a7fb8ada2fda46fdf94076c44c814e8a8d2a470c200df820529445c21 ] || fail 'radio pin differs'
+	$BB mknod -m 666 "$R/dev/null" c 1 3
+	$BB ln -s /bin/busybox "$R/proc/1/exe"
+	$BB printf 'tmpfs / tmpfs rw 0 0\n' > "$R/proc/1/mounts"
+	$BB printf 'ID="postmarketos"\n' > "$R/etc/os-release"
+	$BB printf '4080000.remoteproc-mss\n' > "$R/sys/class/remoteproc/remoteproc2/name"
+	$BB printf '9bb00000.remoteproc-wpss\n' > "$R/sys/class/remoteproc/remoteproc3/name"
+	$BB printf 'running\n' > "$R/sys/class/remoteproc/remoteproc2/state"
+	$BB printf 'running\n' > "$R/sys/class/remoteproc/remoteproc3/state"
+	$BB printf 'synthetic INI\n' > "$R/vendor/firmware/wlan/qca_cld/qca6750/WCNSS_qcom_cfg.ini"
+	$BB printf 'synthetic networking service\n' > "$R/etc/init.d/networking"
+	$BB printf 'synthetic wpa service\n' > "$R/etc/init.d/wpa_supplicant"
+	$BB printf 'wpa_supplicant_args=""\n' > "$R/etc/conf.d/wpa_supplicant"
+	$BB chmod 644 "$R/etc/conf.d/wpa_supplicant"
+	$BB touch "$R/sbin/ip" "$R/sbin/ifup" "$R/sbin/wpa_supplicant"
+	$BB chmod 755 "$R/sbin/ip" "$R/sbin/ifup" "$R/sbin/wpa_supplicant"
+	$BB ln -s /etc/init.d/local "$R/etc/runlevels/default/local"
+	$BB printf '%s\0' dropbear -s -g -j -k -E -r /etc/dropbear/session_host_key -p 172.16.42.2:2222 -P /run/dropbear-session.pid > "$R/proc/452/cmdline"
+	$BB ln -s / "$R/proc/452/root"
+	$BB printf '  0: 022A10AC:08AE 00000000:0000 0A 0 0 0 0 0 0 0\n' > "$R/proc/net/tcp"
+	stage_291_run() {
+		$BB mkdir -p "$R/run/radio-bringup" "$R/run/openrc" "$R/run/pid1-guard"
+		$BB chmod 700 "$R/run/radio-bringup"
+		$BB printf '%s\n' "$BOOT" > "$R/proc/sys/kernel/random/boot_id"
+		$BB touch "$R/run/keep"
+		$BB printf 'default\n' > "$R/run/openrc/softlevel"
+		$BB printf '%s\n' "$BOOT" > "$R/run/pid1-guard/armed"
+		$BB printf '%s\n' "$nonce" > "$R/run/pid1-guard/nonce"
+		$BB printf '452\n' > "$R/run/dropbear-session.pid"
+		$BB printf 'synthetic lease helper\n' > "$R/run/radio-bringup/wlan-udhcpc-lease.sh"
+		$BB chmod 700 "$R/run/radio-bringup/wlan-udhcpc-lease.sh"
+		token="guest-radio-services-$( $BB printf '%s' "$BOOT:$nonce:services" | $BB sha256sum | $BB cut -c 1-16)"
+		$BB printf '%s\n' "$token" > "$R/run/radio-bringup/services.marker"
+		$BB chmod 600 "$R/run/radio-bringup/services.marker"
+		$BB printf 'pmos-self-post: guest radio marker %s\n' "$token" > "$R/tmp/dmesg.txt"
+	}
+	nonce=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+	stage_291_run
+	$BB cat > "$R/bin/busybox" <<'MOCK'
+#!/bin/busybox.real sh
+BB=/bin/busybox.real
+case "${1:-}" in
+	sha256sum)
+		case "${2:-}" in
+			/vendor/firmware/wlan/qca_cld/qca6750/WCNSS_qcom_cfg.ini) digest=57989aba51e98e3c608350bbff78b24b9613242cdf39cd1b8f1e0141659377d4;;
+			/run/radio-bringup/wlan-udhcpc-lease.sh) digest=1fbf50af4658eee252a3fb6b35d32c758106b89d1757d5b9bf10cc0554e03f56;;
+			/etc/init.d/networking) digest=334b685600b13549bb852aa5bc8f7942caf314155a481b5984a557af867df50c;;
+			/etc/init.d/wpa_supplicant) digest=a648c2306b296f8bbba61fcc2d0433c514f45ff4bdda68a88b22948acc9eb75f;;
+			/etc/conf.d/wpa_supplicant)
+				if [ "$( $BB cat "$2")" = 'wpa_supplicant_args=""' ]; then digest=1600be060d3cdebb0663363f791fc1927ca1463f7a09e1f1f26b6e3ce390d1a1; else exec "$BB" "$@"; fi;;
+			*) exec "$BB" "$@";;
+		esac
+		printf '%s  %s\n' "$digest" "$2"
+		exit 0;;
+	dmesg) exec "$BB" cat /tmp/dmesg.txt;;
+	sleep) exit 0;;
+esac
+exec "$BB" "$@"
+MOCK
+	$BB cat > "$R/sbin/rc-service" <<'RC'
+#!/bin/busybox.real sh
+BB=/bin/busybox.real
+case "$1 $2 $3" in
+	'local status ') exit 0;;
+	'networking status '|'wpa_supplicant status ')
+		[ ! -f "/run/radio-bringup/$1.failed" ] || exit 1
+		[ -f "/run/radio-bringup/$1.started" ];;
+	'-D wpa_supplicant start')
+		[ -f /run/radio-bringup/ifquery-wlan ] && [ -f /run/radio-bringup/lease-wrapper.sh ] || exit 1
+		$BB printf 'wpa\n' >> /run/radio-bringup/order
+		$BB rm -f /run/radio-bringup/wpa_supplicant.failed
+		$BB touch /run/radio-bringup/wpa_supplicant.started;;
+	'-D networking start')
+		[ -f /run/radio-bringup/wpa_supplicant.started ] && [ -f /run/radio-bringup/ifquery-wlan ] && [ -f /run/radio-bringup/lease-wrapper.sh ] || exit 1
+		$BB printf 'net\n' >> /run/radio-bringup/order
+		$BB rm -f /run/radio-bringup/networking.failed
+		$BB touch /run/radio-bringup/networking.started;;
+	*) exit 1;;
+esac
+RC
+	$BB cat > "$R/sbin/ifquery" <<'IFQUERY'
+#!/bin/busybox.real sh
+[ "$*" = '-i /etc/network/interfaces --list -a' ] || exit 1
+/bin/busybox.real printf 'lo\nwlan0\n'
+IFQUERY
+	$BB chmod 755 "$R/bin/busybox" "$R/sbin/rc-service" "$R/sbin/ifquery"
+	run_291_services() {
+		$BB printf 'ctrl_interface=/run/wpa_supplicant\nnetwork={\nssid="synthetic"\npsk="synthetic-only"\n}\n' |
+			$BB chroot "$R" /bin/busybox.real sh /radio.sh "$BOOT" services "$token" > "$R/tmp/$1.out" 2>&1
+	}
+	check_291_starts() {
+		[ "$( $BB cat "$R/run/radio-bringup/order")" = 'wpa
+net' ] || fail "$1: starts not ordered"
+		[ "$( $BB cat "$R/run/radio-bringup/services.attempted")" = "$BOOT" ] || fail "$1: attempt not recorded"
+		[ -f "$R/run/radio-bringup/wpa_supplicant.started" ] && [ -f "$R/run/radio-bringup/networking.started" ] &&
+			[ ! -e "$R/run/radio-bringup/wpa_supplicant.failed" ] && [ ! -e "$R/run/radio-bringup/networking.failed" ] || fail "$1: services not started"
+		for helper in ifquery-wlan lease-wrapper.sh; do
+			[ -f "$R/run/radio-bringup/$helper" ] && [ ! -L "$R/run/radio-bringup/$helper" ] &&
+				[ "$( $BB stat -c '%u:%a:%h' "$R/run/radio-bringup/$helper")" = 0:700:1 ] || fail "$1: $helper not recreated root-only"
+		done
+	}
+	$BB printf 'ffffffff-ffff-ffff-ffff-ffffffffffff\n' > "$R/run/pid1-guard/armed"
+	if run_291_services invalid_guard; then fail 'unarmed guard accepted'; fi
+	$BB grep -qF 'PID 1 guard is not armed and unacknowledged' "$R/tmp/invalid_guard.out" || fail 'guard refusal missing'
+	$BB printf '%s\n' "$BOOT" > "$R/run/pid1-guard/armed"
+	$BB printf 'invalid\n' > "$R/run/radio-bringup/services.marker"
+	if run_291_services invalid_marker; then fail 'invalid capture marker accepted'; fi
+	$BB grep -qF 'guest radio marker missing or unsafe' "$R/tmp/invalid_marker.out" || fail 'capture refusal missing'
+	$BB printf '%s\n' "$token" > "$R/run/radio-bringup/services.marker"
+	run_291_services initial || { $BB cat "$R/tmp/initial.out" >&2; fail 'initial services refused'; }
+	check_291_starts initial
+	for path in etc/network/interfaces etc/wpa_supplicant/wpa_supplicant.conf etc/conf.d/networking etc/conf.d/wpa_supplicant run/radio-bringup/ifquery-wlan run/radio-bringup/lease-wrapper.sh; do
+		$BB cp "$R/$path" "$R/tmp/${path##*/}.own"
+	done
+	next_291_boot() {
+		BOOT=$1
+		nonce=$2
+		$BB rm -rf "$R/run"
+		stage_291_run
+		for service in local wpa_supplicant networking; do
+			[ -L "$R/etc/runlevels/default/$service" ] && [ "$( $BB readlink "$R/etc/runlevels/default/$service")" = "/etc/init.d/$service" ] || fail "next boot: $service link lost"
+		done
+		for path in etc/network/interfaces etc/wpa_supplicant/wpa_supplicant.conf etc/conf.d/networking etc/conf.d/wpa_supplicant; do
+			$BB cmp -s "$R/$path" "$R/tmp/${path##*/}.own" || fail "next boot: $path changed"
+			mode=600
+			[ "$path" != etc/conf.d/wpa_supplicant ] || mode=644
+			[ "$( $BB stat -c '%u:%a:%h' "$R/$path")" = "0:$mode:1" ] || fail "next boot: $path metadata changed"
+		done
+		[ -L "$R/bin/run-parts" ] && [ "$( $BB readlink "$R/bin/run-parts")" = busybox ] &&
+			[ -L "$R/sbin/udhcpc" ] && [ "$( $BB readlink "$R/sbin/udhcpc")" = ../bin/busybox ] || fail 'next boot: persistent utility links changed'
+		for path in ifquery-wlan lease-wrapper.sh services.attempted services-stdin order wpa_supplicant.started networking.started; do
+			[ ! -e "$R/run/radio-bringup/$path" ] && [ ! -L "$R/run/radio-bringup/$path" ] || fail "next boot: volatile $path survived"
+		done
+	}
+	next_291_boot 22222222-2222-3333-4444-555555555555 abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789
+	run_291_services stopped || { $BB cat "$R/tmp/stopped.out" >&2; fail 'stopped services refused'; }
+	$BB grep -qF 'OpenRC wpa_supplicant then networking started' "$R/tmp/stopped.out" || fail 'stopped: service summary missing'
+	check_291_starts stopped
+	for path in etc/network/interfaces etc/wpa_supplicant/wpa_supplicant.conf etc/conf.d/networking etc/conf.d/wpa_supplicant run/radio-bringup/ifquery-wlan run/radio-bringup/lease-wrapper.sh; do
+		$BB cmp -s "$R/$path" "$R/tmp/${path##*/}.own" || fail "stopped: $path differs from own output"
+	done
+	next_291_boot 33333333-2222-3333-4444-555555555555 123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0
+	$BB touch "$R/run/radio-bringup/wpa_supplicant.failed" "$R/run/radio-bringup/networking.failed"
+	run_291_services failed || { $BB cat "$R/tmp/failed.out" >&2; fail 'failed services refused'; }
+	$BB grep -qF 'OpenRC wpa_supplicant then networking started' "$R/tmp/failed.out" || fail 'failed: service summary missing'
+	check_291_starts failed
+	for path in run/radio-bringup/ifquery-wlan run/radio-bringup/lease-wrapper.sh; do
+		$BB cmp -s "$R/$path" "$R/tmp/${path##*/}.own" || fail "failed: $path differs from own output"
+	done
+	next_291_boot 44444444-2222-3333-4444-555555555555 fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210
+	$BB touch "$R/run/radio-bringup/wpa_supplicant.started" "$R/run/radio-bringup/networking.started"
+	run_291_services started || { $BB cat "$R/tmp/started.out" >&2; fail 'already-started services refused'; }
+	$BB grep -qF 'persistent OpenRC WLAN services already running; no reinstall' "$R/tmp/started.out" || fail 'already-started early return missing'
+	[ -f "$R/run/radio-bringup/wpa_supplicant.started" ] && [ -f "$R/run/radio-bringup/networking.started" ] || fail 'already-started status changed'
+	for path in ifquery-wlan lease-wrapper.sh services.attempted services-stdin order; do
+		[ ! -e "$R/run/radio-bringup/$path" ] && [ ! -L "$R/run/radio-bringup/$path" ] || fail "already-started unexpectedly created $path"
+	done
+	$BB printf 'invalid\n' > "$R/run/radio-bringup/services.marker"
+	if run_291_services started_invalid_marker; then fail 'already-started bypassed capture marker'; fi
+	$BB grep -qF 'guest radio marker missing or unsafe' "$R/tmp/started_invalid_marker.out" || fail 'already-started capture refusal missing'
+	[ ! -e "$R/run/radio-bringup/order" ] && [ ! -e "$R/run/radio-bringup/ifquery-wlan" ] && [ ! -e "$R/run/radio-bringup/lease-wrapper.sh" ] || fail 'already-started capture refusal changed services'
+	$BB printf 'pass: exact #291 radio; synthetic failed/stopped services recreate helpers and start wpa then networking; already-started early return leaves both helpers absent (limitation)\n'
 	exit 0
 fi
 
