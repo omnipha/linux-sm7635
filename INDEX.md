@@ -2,7 +2,7 @@
 
 ## Latest 10
 
-- [2026-11-03-204849-gated-chain-host-regeneration](records/2026-11-03-204849-gated-chain-host-regeneration.md) | wlan run 5 | confirmed | linux-sm7635#311 | gated chain host regeneration
+- [2026-11-03-204849-gated-chain-host-regeneration](records/2026-11-03-204849-gated-chain-host-regeneration.md) | wlan run 5 | confirmed | linux-sm7635#311 | run 5: gated chain host regeneration
 - [2026-11-03-203655-two-boot-planning-decision](records/2026-11-03-203655-two-boot-planning-decision.md) | wlan run 4 | confirmed | linux-sm7635#311 | two boot planning decision
 - [2026-11-03-202030-wlan-strategy-one-boot-acceptance](records/2026-11-03-202030-wlan-strategy-one-boot-acceptance.md) | wlan run 3 | confirmed | linux-sm7635#311 | wlan strategy one boot acceptance
 - [2026-11-03-201136-verifier-anchors-actual-guard-order](records/2026-11-03-201136-verifier-anchors-actual-guard-order.md) | wlan run 2 | confirmed | linux-sm7635#311 | verifier anchors actual guard order
@@ -41,7 +41,7 @@
 - [2026-10-30-142216-persistent-root-contract-size-gate](records/2026-10-30-142216-persistent-root-contract-size-gate.md) | userspace | refuted | omnipha/linux-sm7635#197 | Persistent root blocked by the closed #194 size gate
 
 ### wlan [78]
-- [2026-11-03-204849-gated-chain-host-regeneration](records/2026-11-03-204849-gated-chain-host-regeneration.md) | wlan run 5 | confirmed | linux-sm7635#311 | gated chain host regeneration
+- [2026-11-03-204849-gated-chain-host-regeneration](records/2026-11-03-204849-gated-chain-host-regeneration.md) | wlan run 5 | confirmed | linux-sm7635#311 | run 5: gated chain host regeneration
 - [2026-11-03-203655-two-boot-planning-decision](records/2026-11-03-203655-two-boot-planning-decision.md) | wlan run 4 | confirmed | linux-sm7635#311 | two boot planning decision
 - [2026-11-03-202030-wlan-strategy-one-boot-acceptance](records/2026-11-03-202030-wlan-strategy-one-boot-acceptance.md) | wlan run 3 | confirmed | linux-sm7635#311 | wlan strategy one boot acceptance
 
