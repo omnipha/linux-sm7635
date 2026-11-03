@@ -93,7 +93,9 @@ def prepare(work):
     command = [sys.executable, '-B', str(HERE / 'derive-success-gated-ack.py')]
     subprocess.run(command + list(map(str, (source, radio_path, post_path, hook_path))), check=True)
     post, hook = post_path.read_text(), hook_path.read_text()
-    assert post.startswith(prefix)
+    assert prefix.count(gate.PANEL_OLD) == 1
+    corrected = prefix.replace(gate.PANEL_OLD, gate.PANEL_NEW, 1)
+    assert post.startswith(corrected)
     encoded = post.split("<<'GATE_DNS_EOF'\n", 1)[1].split('\nGATE_DNS_EOF', 1)[0]
     probe = base64.b64decode(encoded, validate=False)
     assert probe[:6] == b'\x7fELF\x02\x01' and probe[18:20] == b'\xb7\x00'
@@ -103,8 +105,10 @@ def prepare(work):
     assert stat.S_IMODE(hook_path.stat().st_mode) == 0o600
     expected_gate = gate.GATE.replace('@DNS_BASE64@', '\n'.join(textwrap.wrap(base64.b64encode(probe).decode('ascii'), 96)))
     expected_gate = expected_gate.replace('@DNS_SHA@', digest(probe))
-    assert post == prefix + expected_gate
-    assert digest(post.encode()) == '9a8c40adce2f84d61e30fd49f6d0f3be5a08d3a57909e9335c3c02f2751ea97b'
+    assert post == corrected + expected_gate
+    assert digest(post.encode()) == '9f0adb6618524c142f84dee13ffe9871d71fec19653b8c3def8e893ed0ec102f'
+    assert digest(hook.encode()) == '64c3ffdb483d9746432ef5ffafc13979e6fed420d89c6086186907f013f6477b'
+    assert corrected.replace(gate.PANEL_NEW, gate.PANEL_OLD, 1) == prefix
     assert gate.derive(prefix, radio.encode(), probe) == (post, hook)
     fresh_pin = f'{gate.POST_PATH} {digest(prefix.encode())}'
     gate_pin = f'{gate.POST_PATH} {digest(post.encode())}'
@@ -117,6 +121,14 @@ def prepare(work):
     assert hook.count(fresh_pin) == 0 and hook.count(launch) == 1
     assert hook.index(gate_pin) < hook.index(radio_pin) < hook.index('done\n') < hook.index(launch)
     assert 'refusing launch' not in hook
+    for bad_post in (prefix.replace(gate.PANEL_OLD, '', 1), prefix + gate.PANEL_OLD):
+        with mock.patch.object(gate, 'FRESH_POST_SHA', digest(bad_post.encode())):
+            try:
+                gate.derive(bad_post, radio.encode(), probe)
+            except SystemExit as exc:
+                assert 'panel block not found exactly once' in str(exc)
+            else:
+                raise AssertionError('missing or duplicate panel block accepted')
     for bad_post, bad_radio in ((prefix + '\n', radio.encode()), (prefix, radio.encode() + b'\n')):
         try:
             gate.derive(bad_post, bad_radio, probe)

@@ -238,6 +238,8 @@ case "${1:-}" in
 			*) printf '%s\n' "$*" >> /tmp/unexpected-dmesg-arguments; exit 1;;
 		esac
 		case "$mode:$snapshot" in
+			panel-producer-fail:prefix) exit 23;;
+			panel-producer-partial:prefix) $BB cat /tmp/dmesg; exit 23;;
 			kmsg-empty:radio) exit 0;;
 			kmsg-nul:radio) printf 'synthetic\000kmsg\n';;
 			mid-radio-fatal-before:radio|mid-final-fatal-before:final|radio-large-fatal-before:radio|final-large-fatal-before:final) printf 'kernel panic\n';;
@@ -596,6 +598,50 @@ check_publication() {
 	$BB cmp -s "$ROOT/tmp/expected-ack" "$ROOT/tmp/ack-at-link" || fail "$1: ACK bytes differ"
 	[ "$( $BB cat "$ROOT/tmp/ack-at-link.stat")" = "0:600:2:$((${#nonce} + ${#boot} + 2))" ] || fail "$1: published inode metadata differs"
 }
+
+reset_case success
+$BB rm "$ROOT/run/pmos-pre-ssh-panel.record"
+$BB printf '[    1.575233][    T1] usb-init: %s\n' "$panel" > "$ROOT/tmp/dmesg"
+run_post || { $BB cat "$ROOT/tmp/post.out" >&2; fail 'caller-prefixed success case refused'; }
+[ "$( $BB cat "$ROOT/run/pmos-pre-ssh-panel.record")" = "$panel" ] &&
+	[ "$( $BB stat -c '%u:%a:%h' "$ROOT/run/pmos-pre-ssh-panel.record")" = 0:600:1 ] || fail 'caller-prefixed panel was not restored safely'
+check_prefix caller-panel
+check_publication caller-panel
+check_evidence "$ROOT/run/pid1-guard/accepted" "$boot"
+printf 'pass: caller-prefixed panel restored before complete synthetic gate and ACK\n'
+
+reset_case success
+$BB rm "$ROOT/run/pmos-pre-ssh-panel.record"
+$BB printf '<12>usb-init: %s\n[    1.575233][    T1] usb-init: %s\n' "$panel" "$panel" > "$ROOT/tmp/dmesg"
+run_post || { $BB cat "$ROOT/tmp/post.out" >&2; fail 'identical mixed-format panels refused'; }
+check_prefix identical-panel
+check_publication identical-panel
+printf 'pass: identical mixed-format panel evidence restored before synthetic ACK\n'
+
+for mode in panel-producer-fail panel-producer-partial panel-empty panel-foreign panel-mixed-foreign panel-mixed-unsupported panel-conflict panel-mismatch panel-existing-foreign panel-existing-mode panel-existing-link panel-invalid-boot; do
+	reset_case "$mode"
+	case "$mode" in
+		panel-empty) $BB printf 'unrelated\n' > "$ROOT/tmp/dmesg";;
+		panel-foreign) $BB printf '[    1.575233][    T1] usb-init: %s\n' "$( $BB printf '%s' "$panel" | $BB sed "s/$boot/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/")" > "$ROOT/tmp/dmesg";;
+		panel-mixed-foreign) $BB printf '[    1.575233][    T1] usb-init: %s\n[    1.575234][    T1] usb-init: %s\n' "$panel" "$( $BB printf '%s' "$panel" | $BB sed "s/$boot/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/")" > "$ROOT/tmp/dmesg";;
+		panel-mixed-unsupported) $BB printf '[    1.575233][    T1] usb-init: %s\n[unsupported] usb-init: %s\n' "$panel" "$panel" > "$ROOT/tmp/dmesg";;
+		panel-conflict) $BB printf '<12>usb-init: %s\n[    1.575233][    T2] usb-init: %s\n' "$panel" "$( $BB printf '%s' "$panel" | $BB sed 's/node=boe/node=vxn/')" > "$ROOT/tmp/dmesg";;
+		panel-mismatch) $BB sed -i '3s/node=boe/node=vxn/' "$ROOT/.omnipha-boot-record";;
+		panel-existing-foreign) $BB sed -i "s/$boot/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/" "$ROOT/run/pmos-pre-ssh-panel.record";;
+		panel-existing-mode) $BB chmod 644 "$ROOT/run/pmos-pre-ssh-panel.record";;
+		panel-existing-link) $BB ln "$ROOT/run/pmos-pre-ssh-panel.record" "$ROOT/tmp/panel-hardlink";;
+		panel-invalid-boot) $BB printf '11111111-2222-3333-4444-55555555555-\n' > "$ROOT/proc/sys/kernel/random/boot_id"; $BB cp "$ROOT/proc/sys/kernel/random/boot_id" "$ROOT/run/pid1-guard/armed";;
+	esac
+	if run_post; then fail "$mode: unsafe panel accepted"; fi
+	[ ! -e "$ROOT/tmp/stages" ] && [ ! -e "$ROOT/run/radio-bringup/success-gate-294" ] &&
+		[ ! -e "$ROOT/tmp/publication-attempts" ] && [ ! -e "$ROOT/run/pid1-guard/ack" ] || fail "$mode: radio, gate or ACK reached"
+	if [ -f "$ROOT/tmp/synthetic-contract-events" ]; then
+		if $BB grep -qF 'post-cutover PID 1 on boot' "$ROOT/tmp/synthetic-contract-events"; then fail "$mode: success record appended"; fi
+	fi
+	[ -f "$ROOT/run/pid1-guard/nonce" ] && [ ! -e "$ROOT/run/pid1-guard/accepted" ] || fail "$mode: guard state changed"
+	[ ! -e "$ROOT/run/radio-bringup/wpa_supplicant.conf" ] || fail "$mode: staged profile not scrubbed"
+	printf 'pass: %s refused before radio and ACK\n' "$mode"
+done
 
 reset_case success
 run_post || { $BB cat "$ROOT/tmp/post.out" >&2; fail 'success case refused'; }

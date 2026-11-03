@@ -3,8 +3,9 @@
 
 usage: derive-success-gated-ack.py FRESH_POST RADIO POST_OUTPUT HOOK_OUTPUT
 
-The output appends a gate to the unmodified post. It embeds a pinned static
-AArch64 DNS client, built twice with aarch64-linux-gnu-gcc and rejected unless
+The output corrects the measured panel restore in the pinned post, then appends
+an unchanged gate. It embeds a pinned static AArch64 DNS client, built twice
+with aarch64-linux-gnu-gcc and rejected unless
 its bytes match the recorded build. Compiler, linker or libc differences can
 make this fail. Output paths must be new files outside the repository.
 The gate writes volatile, root-only evidence and uses the unchanged guard's
@@ -28,6 +29,55 @@ FRESH_RADIO_SHA = 'a0ea867a7fb8ada2fda46fdf94076c44c814e8a8d2a470c200df820529445
 FRESH_POST_SHA = 'c9173d6d362a79cd55a92814f2572ba0a111b99a61a84b99b0c3076a7e1fcbc7'
 DNS_PROBE_SHA = '906a3c3f3f5c7a666f394dff434604a4b6a6bf2d683d8e04e3d947316132fe97'
 DNS_PROBE_SIZE = 597840
+
+PANEL_OLD = r'''trace 'pre check panel record'
+panel=/run/pmos-pre-ssh-panel.record
+if [ ! -e "$panel" ] && [ ! -L "$panel" ] && [ -f /.omnipha-boot-record ] && [ ! -L /.omnipha-boot-record ]; then
+	panel_hits=$($BB dmesg 2>/dev/null | $BB sed 's/^<[0-9][0-9]*>//; s/^\(\[[ 0-9.]*\] \)\{0,1\}usb-init: //' | $BB grep -E "^usb-init: pre-SSH panel node=(boe|vxn|none) card0=[ -~]* boot $boot\$")
+	panel_line=
+	if [ -n "$panel_hits" ] && [ "$($BB printf '%s\n' "$panel_hits" | $BB sort -u | $BB wc -l)" = 1 ]; then
+		panel_line=$($BB printf '%s\n' "$panel_hits" | $BB sed -n 1p)
+	fi
+	if [ -n "$panel_line" ] && [ "${#panel_line}" -le 400 ] &&
+		[ "${panel_line% boot $boot}" != "$panel_line" ] &&
+		[ "$($BB sed -n 3p /.omnipha-boot-record 2>/dev/null)" = "$panel_line" ]; then
+		( umask 077; set -C; $BB printf '%s\n' "$panel_line" > "$panel" ) || die 'cannot restore the pre-SSH panel record'
+		[ -f "$panel" ] && [ ! -L "$panel" ] && [ "$($BB stat -c '%u:%a:%h' "$panel")" = 0:600:1 ] ||
+			die 'restored pre-SSH panel record is unsafe'
+		trace 'panel record restored from the boot kernel log'
+	fi
+fi
+trace 'post check panel record'
+'''
+PANEL_NEW = r'''trace 'pre check panel record'
+panel=/run/pmos-pre-ssh-panel.record
+case "$boot" in
+	????????-????-????-????-????????????)
+		panel_boot_hex=$(set -o pipefail; $BB printf '%s' "$boot" | $BB tr -d '-') || die 'invalid panel boot identity'
+		[ "${#panel_boot_hex}" = 32 ] || die 'invalid panel boot identity'
+		case "$panel_boot_hex" in *[!0-9a-f]*) die 'invalid panel boot identity';; esac;;
+	*) die 'invalid panel boot identity';;
+esac
+panel_hits=$(set -o pipefail; $BB dmesg 2>/dev/null | $BB sed 's/^<[0-9][0-9]*>//; s/^\(\[[ 0-9.]*\]\(\[ *[TC][0-9][0-9]*\]\)\{0,1\} \)\{0,1\}usb-init: //' | $BB grep -F 'usb-init: pre-SSH panel') || die 'same-boot panel evidence unavailable'
+[ -n "$panel_hits" ] || die 'same-boot panel evidence unavailable'
+panel_unique=$(set -o pipefail; $BB printf '%s\n' "$panel_hits" | $BB sort -u) || die 'cannot validate panel evidence'
+panel_count=$(set -o pipefail; $BB printf '%s\n' "$panel_unique" | $BB wc -l) || die 'cannot count panel evidence'
+panel_payload=${panel_unique% boot "$boot"}
+[ "$panel_count" = 1 ] && [ "${#panel_unique}" -le 400 ] && [ "$panel_payload" != "$panel_unique" ] &&
+	(set -o pipefail; $BB printf '%s\n' "$panel_unique" | $BB grep -Eq "^usb-init: pre-SSH panel node=(boe|vxn|none) card0=[ -~]* boot [0-9a-f-]{36}\$") || die 'ambiguous or invalid same-boot panel evidence'
+panel_line=$($BB sed -n 3p /.omnipha-boot-record 2>/dev/null) || die 'cannot read ordered panel record'
+[ "$panel_line" = "$panel_unique" ] || die 'same-boot panel evidence differs from ordered record'
+if [ -e "$panel" ] || [ -L "$panel" ]; then
+	[ -f "$panel" ] && [ ! -L "$panel" ] && [ "$($BB stat -c '%u:%a:%h:%s' "$panel")" = "0:600:1:$((${#panel_unique} + 1))" ] &&
+		[ "$($BB cat "$panel")" = "$panel_unique" ] || die 'existing pre-SSH panel record is unsafe or differs'
+else
+	( umask 077; set -C; $BB printf '%s\n' "$panel_unique" > "$panel" ) || die 'cannot restore the pre-SSH panel record'
+	[ -f "$panel" ] && [ ! -L "$panel" ] && [ "$($BB stat -c '%u:%a:%h:%s' "$panel")" = "0:600:1:$((${#panel_unique} + 1))" ] &&
+		[ "$($BB cat "$panel")" = "$panel_unique" ] || die 'restored pre-SSH panel record is unsafe'
+	trace 'panel record restored from the boot kernel log'
+fi
+trace 'post check panel record'
+'''
 
 DNS_C = r'''
 #include <arpa/inet.h>
@@ -586,9 +636,12 @@ def derive(text, radio, probe):
     if f'RADIO_SHA={FRESH_RADIO_SHA}\n' not in text:
         raise SystemExit('fresh post radio pin differs')
     validate_dns_probe(probe)
+    if text.count(PANEL_OLD) != 1:
+        raise SystemExit('fresh post panel block not found exactly once')
+    prefix = text.replace(PANEL_OLD, PANEL_NEW, 1)
     encoded = '\n'.join(textwrap.wrap(base64.b64encode(probe).decode('ascii'), 96))
     gate = GATE.replace('@DNS_BASE64@', encoded).replace('@DNS_SHA@', sha(probe))
-    post = text + gate
+    post = prefix + gate
     post_sha = sha(post.encode('utf-8'))
     hook = f'''#!/bin/busybox sh
 BB=/bin/busybox

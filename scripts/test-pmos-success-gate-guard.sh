@@ -562,10 +562,12 @@ int main(int argc, char **argv) {
 C
 HOST_PIDFD_SHA=$(hash "$WORK/pidfd-signal")
 HERE=$HERE WORK=$WORK python3 -B - <<'PY'
+import base64
 import importlib.util
 import os
 import pathlib
 import sys
+import textwrap
 here = pathlib.Path(os.environ['HERE'])
 sys.path.insert(0, str(here))
 def load(name, filename):
@@ -582,12 +584,18 @@ radio = fresh.derive(persist.derive(builder.current_scripts()['pmos-radio-bringu
 post, _ = postgen.derive((here / 'pmos-self-post.sh').read_text(), radio.encode())
 probe = gen.build_dns_probe()
 candidate, hook = gen.derive(post, radio.encode(), probe)
-if not candidate.startswith(post) or not candidate[len(post):].startswith('\nGATE_DIR='):
+if post.count(gen.PANEL_OLD) != 1:
+    raise SystemExit('pinned post panel block differs')
+corrected = post.replace(gen.PANEL_OLD, gen.PANEL_NEW, 1)
+if not candidate.startswith(corrected) or not candidate[len(corrected):].startswith('\nGATE_DIR='):
     raise SystemExit('candidate does not contain the generated gate suffix')
+encoded = '\n'.join(textwrap.wrap(base64.b64encode(probe).decode('ascii'), 96))
+if candidate[len(corrected):] != gen.GATE.replace('@DNS_BASE64@', encoded).replace('@DNS_SHA@', gen.sha(probe)):
+    raise SystemExit('generated gate suffix differs')
 if '@DNS_BASE64@' in candidate or '@DNS_SHA@' in candidate:
     raise SystemExit('candidate contains unresolved probe placeholders')
 work = pathlib.Path(os.environ['WORK'])
-(work / 'gate').write_text(candidate[len(post):])
+(work / 'gate').write_text(candidate[len(corrected):])
 (work / 'radio').write_text(radio)
 (work / 'candidate').write_text(candidate)
 (work / 'hook').write_text(hook)
