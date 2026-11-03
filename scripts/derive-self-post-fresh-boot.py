@@ -48,9 +48,9 @@ done
 ( /bin/busybox setsid /bin/busybox sh -c '
 	/bin/busybox sh "$1" >/dev/null 2>&1
 	result=$?
-	[ "$result" -eq 0 ] || /bin/busybox printf "pmos-self-post-fresh: process exited rc=%s\\n" "$result" >/dev/kmsg 2>/dev/null || true
+	[ "$result" -eq 0 ] || /bin/busybox printf "pmos-self-post-fresh: process exited rc=%s\\n" "$result" 2>/dev/null >/dev/kmsg || true
 	exit "$result"
-' self-post {POST_PATH} & )
+' self-post {POST_PATH} >/dev/null 2>&1 & )
 '''
     return post, hook
 

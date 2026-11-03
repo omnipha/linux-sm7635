@@ -38,7 +38,7 @@ STAGED_SHA = 'f54b33727cefdf728001e4692d625c0f5a77298694454832e02b6cf0c765764f'
 COMMITTED_PERSISTENT_SHA = 'c54c29e1278827bc00faaf506c7ff8e923a8a689a011a2852d5d4b7778d0188d'
 RADIO_FRESH_SHA = 'a0ea867a7fb8ada2fda46fdf94076c44c814e8a8d2a470c200df820529445c21'
 POST_FRESH_SHA = 'c9173d6d362a79cd55a92814f2572ba0a111b99a61a84b99b0c3076a7e1fcbc7'
-HOOK_SHA = '8dce721a650d6cd63df0ff8dd20278f03e4f7b6f2fcbca0b38e1b33bfbe690b2'
+HOOK_SHA = '32ad1e5e4dd1607acc7888d036df2217074a197403e5601df94745ec96a520a1'
 
 
 def sha(text):
@@ -262,7 +262,7 @@ def main():
     installed_hook = '( /bin/busybox setsid /bin/busybox sh /run/radio-bringup/pmos-self-post.sh >/dev/null 2>&1 & )'
     assert installed_hook in (here / 'pmos-self-stage.sh').read_text()
     assert "setsid /bin/busybox sh -c '\n" in hook
-    assert "' self-post /usr/libexec/omnipha/pmos-self-post-fresh-boot.sh & )" in hook
+    assert "' self-post /usr/libexec/omnipha/pmos-self-post-fresh-boot.sh >/dev/null 2>&1 & )" in hook
 
     assert selfpost.NEW_GREP in post and selfpost.OLD_GREP not in post
     test_panel_pipeline(source, post)

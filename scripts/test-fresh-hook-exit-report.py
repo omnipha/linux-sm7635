@@ -6,6 +6,7 @@ import pathlib
 import shutil
 import subprocess
 import tempfile
+import time
 
 HERE = pathlib.Path(__file__).resolve().parent
 
@@ -31,7 +32,7 @@ def main():
     # Extract and execute the actual monitor, not a rewritten model. Device-only
     # paths are replaced by a private test file and the host BusyBox binary.
     prefix = "( /bin/busybox setsid /bin/busybox sh -c '\n"
-    suffix = f"' self-post {postgen.POST_PATH} & )\n"
+    suffix = f"' self-post {postgen.POST_PATH} >/dev/null 2>&1 & )\n"
     assert fresh_hook.count(prefix) == fresh_hook.count(suffix) == 1
     monitor = fresh_hook.split(prefix, 1)[1].split(suffix, 1)[0]
     assert monitor.count('/dev/kmsg') == 1
@@ -65,6 +66,35 @@ def main():
                                  'self-post', str(executable), str(work / 'absent' / 'kmsg')],
                                 capture_output=True, text=True, check=False)
         assert result.returncode == 42, result
+        assert result.stdout == result.stderr == '', (result.stdout, result.stderr)
+
+        # A post waiting at a barrier must not keep the launcher's pipes open.
+        started, release = work / 'started', work / 'release'
+        log.unlink(missing_ok=True)
+        executable.write_text(
+            f'#!/bin/sh\necho started > "{started}"\n'
+            f'while [ ! -f "{release}" ]; do sleep 0.05; done\nexit 42\n'
+        )
+        launch = prefix + fresh_hook.split(prefix, 1)[1].split(suffix, 1)[0] + suffix
+        launch = (launch.replace('/bin/busybox', busybox)
+                        .replace(postgen.POST_PATH, str(executable))
+                        .replace('/dev/kmsg', str(log)))
+        try:
+            result = subprocess.run(['/bin/sh', '-c', launch], capture_output=True,
+                                    text=True, timeout=2, check=False)
+            assert result.returncode == 0, result
+            assert result.stdout == result.stderr == '', (result.stdout, result.stderr)
+            deadline = time.monotonic() + 2
+            while not started.exists() and time.monotonic() < deadline:
+                time.sleep(0.01)
+            assert started.exists(), 'background post did not start'
+        finally:
+            # Also release a child from the old launch if the test times out.
+            release.touch()
+        deadline = time.monotonic() + 2
+        while not log.exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert log.read_text() == 'pmos-self-post-fresh: process exited rc=42\n'
         # Both generators must carry byte-identical monitor logic.
         probe = gate.build_dns_probe()
         candidate, hook = gate.derive(post, radio.encode(), probe)
