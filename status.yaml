@@ -1,11 +1,10 @@
 # Current measured state only. Limit 80 lines. No protocol text: link records.
 # Public claims: omnipha/ports devices/nothing-asteroids/device.yaml (updated separately).
 device: nothing-asteroids
-updated: 2026-11-02
+updated: 2026-11-03
 next_question: >-
-  Owner review: how to preserve independently bounded pre-guard and watcher
-  recovery and exact post-success failure evidence for the host-designed
-  success-gated ACK without weakening the installed interlocks?
+  Can the coordinator observe autonomous WLAN and a lasting guard-accepted
+  Linux boot twice with the reviewed success-gated candidate and no host recipe?
 active_issue: omnipha/linux-sm7635#294
 subsystems:
   boot:
@@ -16,7 +15,7 @@ subsystems:
     record: records/2026-10-30-203515-run-69-second-boot-guard-wlan.md
   wlan:
     state: partial
-    record: records/2026-11-02-225455-success-gated-ack-owner-review-blockers.md
+    record: records/2026-11-03-012122-success-gated-ack-candidate.md
   modem:
     state: partial        # stays running past the EFS request after PID-1 cutover (run 55); no voice/SIM/data claim
     record: records/2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the.md

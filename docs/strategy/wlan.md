@@ -48,16 +48,15 @@ host-tested only. OpenRC ordering on a fresh boot is unmeasured.
 
 ## Next single variable
 
-Complete and test the smallest deployable #294 success-gated candidate from
-PR #295, then measure whether the installed chain starts WLAN and stays in
-Linux without a host-run recipe. On 2026-11-03 01:30 CET the owner explicitly
-chose the existing recovery and evidence mechanisms in issue #294, superseding
-the earlier owner-review blocker. Adapt the fixtures and remove the deliberate
-launch refusal only for the reviewed candidate: use the real same-boot guard
-ACK only after association, address, DNS and internet succeed; publish no ACK
-on a prior failure. Preserve the existing nonce, capture and recovery
-interlocks, and do not use a competing host ACK during measurement. Avoid a
-new image if the installed chain can carry the candidate.
+Measure the host-tested #294 candidate on the installed chain: whether WLAN
+starts and Linux stays up without a host-run recipe on two fresh boots
+(records/2026-11-03-012122-success-gated-ack-candidate.md). The owner chose the
+existing recovery and evidence mechanisms, superseding the earlier review
+blocker. The candidate uses the real same-boot guard ACK only after association,
+address, DNS and internet succeed, and publishes none on a prior failure. It
+preserves nonce, capture and recovery interlocks. Do not use a competing host
+ACK during measurement; the permitted persistent-root hook and script paths
+can carry the candidate in principle without a new image.
 
 The owner's risk choice does not repair the limits in
 `records/2026-11-02-225455-success-gated-ack-owner-review-blockers.md`:
@@ -96,13 +95,13 @@ measurement is not acceptance. (Plan owner, 2026-11-03.)
    association, address, DNS and internet in host-acked sessions.
 3. Done on host only: #291 derived the persistent fresh-boot hook and radio
    candidate; it cannot maintain a no-host boot because it never acknowledges.
-4. #294 derived and fixture-tested the gate, but its hook refuses launch;
-   the owner has now accepted the existing recovery/evidence limits for this
-   experiment. Complete the deployable candidate and adapt its host fixtures;
-   do not treat the prior review request as still blocking it.
+4. Done on host only: #294 enabled and fixture-tested the pinned hook and
+   success gate under the owner's accepted recovery/evidence limits. Fresh-boot
+   service ordering and readiness within the guard budget remain unmeasured.
 5. The coordinator installs the reviewed candidate under existing backup and
    recovery procedures and measures one fresh boot, then a second only when
-   the first passes. A merged device record is required for the PLAN check.
+   the first passes and is safely closed or handed off. A merged device record
+   is required for the PLAN check.
 
 ## Acceptance (from PLAN.md)
 

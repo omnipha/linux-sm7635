@@ -2,6 +2,7 @@
 
 ## Latest 10
 
+- [2026-11-03-012122-success-gated-ack-candidate](records/2026-11-03-012122-success-gated-ack-candidate.md) | wlan | inconclusive | omnipha/linux-sm7635#294 | Host-tested success-gated ACK candidate; two device boots remain
 - [2026-11-02-225455-success-gated-ack-owner-review-blockers](records/2026-11-02-225455-success-gated-ack-owner-review-blockers.md) | wlan | refuted | omnipha/linux-sm7635#294 | Host-only success-gated ACK design; intact recovery/evidence contract refuted
 - [2026-11-02-203443-fresh-boot-candidate](records/2026-11-02-203443-fresh-boot-candidate.md) | wlan | inconclusive | omnipha/linux-sm7635#291 | Host-only fresh-boot candidate: persistent local hook, pre-ack nonce gate
 - [2026-11-02-192316-run99-persistent-services-acked-session](records/2026-11-02-192316-run99-persistent-services-acked-session.md) | wlan run 99 | confirmed | omnipha/linux-sm7635#286 | Run 99: acked live session runs the persistent-root services stage successfully — outcome (A)
@@ -11,7 +12,6 @@
 - [2026-11-02-162351-host-radio-postack-derivation](records/2026-11-02-162351-host-radio-postack-derivation.md) | wlan | confirmed | omnipha/linux-sm7635#280 | Host: post-ack variant of the radio script, derived from the staged copy
 - [2026-11-02-154929-host-radio-live-session-handoff](records/2026-11-02-154929-host-radio-live-session-handoff.md) | wlan | confirmed | omnipha/linux-sm7635#280 | Host handoff: the installed radio script refuses an acked guard before the modem stage; one live probe must confirm outcome C
 - [2026-11-02-150805-append-refusal-run97-correction](records/2026-11-02-150805-append-refusal-run97-correction.md) | wlan run 97 | confirmed | omnipha/linux-sm7635#275 | Run 97 correction: outcome B stands; the panel restore never fired, the nonce wait ran once, and the append failed 0.1 s before the diagnostic
-- [2026-11-02-145742-append-refusal-ordered-sequence-check](records/2026-11-02-145742-append-refusal-ordered-sequence-check.md) | wlan run 97 | confirmed | omnipha/linux-sm7635#275 | Run 97 (#275) outcome B: the append is refused by the ordered-sequence check; the refusing check is now named in kmsg
 
 ## By subsystem (latest 3, total in brackets)
 
@@ -40,15 +40,15 @@
 - [2026-10-30-150709-root-contract-measured-userdata-maximum](records/2026-10-30-150709-root-contract-measured-userdata-maximum.md) | userspace | confirmed | omnipha/linux-sm7635#199 | Measured userdata size accepted by the fail-closed root contract
 - [2026-10-30-142216-persistent-root-contract-size-gate](records/2026-10-30-142216-persistent-root-contract-size-gate.md) | userspace | refuted | omnipha/linux-sm7635#197 | Persistent root blocked by the closed #194 size gate
 
-### wlan [60]
+### wlan [61]
+- [2026-11-03-012122-success-gated-ack-candidate](records/2026-11-03-012122-success-gated-ack-candidate.md) | wlan | inconclusive | omnipha/linux-sm7635#294 | Host-tested success-gated ACK candidate; two device boots remain
 - [2026-11-02-225455-success-gated-ack-owner-review-blockers](records/2026-11-02-225455-success-gated-ack-owner-review-blockers.md) | wlan | refuted | omnipha/linux-sm7635#294 | Host-only success-gated ACK design; intact recovery/evidence contract refuted
 - [2026-11-02-203443-fresh-boot-candidate](records/2026-11-02-203443-fresh-boot-candidate.md) | wlan | inconclusive | omnipha/linux-sm7635#291 | Host-only fresh-boot candidate: persistent local hook, pre-ack nonce gate
-- [2026-11-02-192316-run99-persistent-services-acked-session](records/2026-11-02-192316-run99-persistent-services-acked-session.md) | wlan run 99 | confirmed | omnipha/linux-sm7635#286 | Run 99: acked live session runs the persistent-root services stage successfully — outcome (A)
 
 ### wlan run 91 [1]
 - [2026-11-01-123812-coordinator-preack-window-missed](records/2026-11-01-123812-coordinator-preack-window-missed.md) | wlan run 91 run 91 | inconclusive | omnipha/linux-sm7635#256 | coordinator preack window missed
 
 ## By month
 
-- [2026-11](records/index-2026-11.md) [28]
+- [2026-11](records/index-2026-11.md) [29]
 - [2026-10](records/index-2026-10.md) [162]
