@@ -2,6 +2,7 @@
 
 ## Latest 10
 
+- [2026-11-03-200358-preack-guard-interlock-host-integration](records/2026-11-03-200358-preack-guard-interlock-host-integration.md) | wlan run 1 | confirmed | linux-sm7635#311 | preack guard interlock host integration
 - [2026-11-03-143859-run106-radio-pin-mismatch](records/2026-11-03-143859-run106-radio-pin-mismatch.md) | wlan run 106 | confirmed | omnipha/linux-sm7635#294 | Run 106: installed radio pin mismatch and weakened checks
 - [2026-11-03-134121-run105-handoff-capture-loss](records/2026-11-03-134121-run105-handoff-capture-loss.md) | wlan run 105 | inconclusive | omnipha/linux-sm7635#294 | Run 105: capture readiness lost before worker SSH
 - [2026-11-03-132059-run104-close-next-session-readiness](records/2026-11-03-132059-run104-close-next-session-readiness.md) | wlan run 104 | inconclusive | omnipha/linux-sm7635#294 | Run 104 closure and next-session readiness
@@ -11,7 +12,6 @@
 - [2026-11-03-092218-pstore-preservation-owner-decision](records/2026-11-03-092218-pstore-preservation-owner-decision.md) | wlan | confirmed | omnipha/linux-sm7635#301 | Run-100 pstore preservation decision
 - [2026-11-03-092026-panel-contract-producer-identity-host-diagnostics](records/2026-11-03-092026-panel-contract-producer-identity-host-diagnostics.md) | wlan | confirmed | omnipha/linux-sm7635#301 | Host diagnostics: producer failure and pre-existing panel identity
 - [2026-11-03-084931-panel-format-ordered-host-replay](records/2026-11-03-084931-panel-format-ordered-host-replay.md) | wlan | confirmed | omnipha/linux-sm7635#301 | Host replay: caller-prefixed panel and ordered record
-- [2026-11-03-031528-pstore-preservation-host-evidence](records/2026-11-03-031528-pstore-preservation-host-evidence.md) | wlan | inconclusive | omnipha/linux-sm7635#298 | Run-100 pstore preservation: bounded host-only investigation
 
 ## By subsystem (latest 3, total in brackets)
 
@@ -40,15 +40,15 @@
 - [2026-10-30-150709-root-contract-measured-userdata-maximum](records/2026-10-30-150709-root-contract-measured-userdata-maximum.md) | userspace | confirmed | omnipha/linux-sm7635#199 | Measured userdata size accepted by the fail-closed root contract
 - [2026-10-30-142216-persistent-root-contract-size-gate](records/2026-10-30-142216-persistent-root-contract-size-gate.md) | userspace | refuted | omnipha/linux-sm7635#197 | Persistent root blocked by the closed #194 size gate
 
-### wlan [73]
+### wlan [74]
+- [2026-11-03-200358-preack-guard-interlock-host-integration](records/2026-11-03-200358-preack-guard-interlock-host-integration.md) | wlan run 1 | confirmed | linux-sm7635#311 | preack guard interlock host integration
 - [2026-11-03-143859-run106-radio-pin-mismatch](records/2026-11-03-143859-run106-radio-pin-mismatch.md) | wlan run 106 | confirmed | omnipha/linux-sm7635#294 | Run 106: installed radio pin mismatch and weakened checks
 - [2026-11-03-134121-run105-handoff-capture-loss](records/2026-11-03-134121-run105-handoff-capture-loss.md) | wlan run 105 | inconclusive | omnipha/linux-sm7635#294 | Run 105: capture readiness lost before worker SSH
-- [2026-11-03-132059-run104-close-next-session-readiness](records/2026-11-03-132059-run104-close-next-session-readiness.md) | wlan run 104 | inconclusive | omnipha/linux-sm7635#294 | Run 104 closure and next-session readiness
 
 ### wlan run 91 [1]
 - [2026-11-01-123812-coordinator-preack-window-missed](records/2026-11-01-123812-coordinator-preack-window-missed.md) | wlan run 91 run 91 | inconclusive | omnipha/linux-sm7635#256 | coordinator preack window missed
 
 ## By month
 
-- [2026-11](records/index-2026-11.md) [41]
+- [2026-11](records/index-2026-11.md) [42]
 - [2026-10](records/index-2026-10.md) [162]

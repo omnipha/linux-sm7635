@@ -36,10 +36,10 @@ selfpost = load('selfpost', 'derive-self-post-fresh-boot.py')
 builder = load('builder', 'build-init-boot-persistent-root.py')
 
 STAGED_SHA = 'f54b33727cefdf728001e4692d625c0f5a77298694454832e02b6cf0c765764f'
-COMMITTED_PERSISTENT_SHA = 'c54c29e1278827bc00faaf506c7ff8e923a8a689a011a2852d5d4b7778d0188d'
-RADIO_FRESH_SHA = 'a0ea867a7fb8ada2fda46fdf94076c44c814e8a8d2a470c200df820529445c21'
-POST_FRESH_SHA = 'c9173d6d362a79cd55a92814f2572ba0a111b99a61a84b99b0c3076a7e1fcbc7'
-HOOK_SHA = '32ad1e5e4dd1607acc7888d036df2217074a197403e5601df94745ec96a520a1'
+COMMITTED_PERSISTENT_SHA = '1b6ec7be7db00345b9266ab7687521d0ac68108500498a852ddfb83c173d6fd4'
+RADIO_FRESH_SHA = '146ed59271cde6b593f28212caf8871c0f00062a3c5b1d460c858e4c90271e14'
+POST_FRESH_SHA = 'db82eb4b0efd2b5f94f4665e3ed2c4e766c488816862118bda773d74588695b0'
+HOOK_SHA = 'bab5fcb9afabafa1182ef592a43bb9629d9b220421d15c4ad84ff58391ad644d'
 
 
 def sha(text):
@@ -213,7 +213,7 @@ fi
                     assert panel_path.stat().st_mode & 0o777 == 0o600
                     assert panel_path.stat().st_nlink == 1
 
-    print('pass: exact old and c917 panel pipelines on host BusyBox; caller/nonmatch exits before candidate post-check; '
+    print('pass: exact old and derived panel pipelines on host BusyBox; caller/nonmatch exits before candidate post-check; '
           'matches, duplicates and restore refusals observed; synthetic only, not a fix or device evidence')
 
 
@@ -224,7 +224,7 @@ def test_panel_record_contract(post):
     if os.geteuid() == 0:
         raise SystemExit('the #301 panel contract fixture requires an unprivileged user')
 
-    assert sha(post) == POST_FRESH_SHA, 'the #301 fixture requires the exact c917 prefix'
+    assert sha(post) == POST_FRESH_SHA, 'the #301 fixture requires the exact derived prefix'
     start, end = "trace 'pre check panel record'\n", "trace 'record append entry'\n"
     assert post.count(start) == post.count(end) == 1, 'panel block boundaries changed'
     block = start + post.split(start, 1)[1].split(end, 1)[0]
@@ -430,7 +430,7 @@ fi
     )
     print('caveat #301: synthetic boot ID and dmesg; temporary-user ownership mapped to root; '
           'userdata/mount identity modeled rw; sync is a no-op; real mode, link, size and ordering checks')
-    print('caveat #301: c917 panel block only; full 9a8c candidate not built or run; '
+    print('caveat #301: derived panel block only; full 9a8c candidate not built or run; '
           'no device evidence, radio, gate, guard, capture or ACK execution')
     print('caveat #301: foreign persistent identity deliberately retains the current-boot panel line '
           'to isolate the record identity check')

@@ -116,7 +116,7 @@ def check_carrier(carrier, stock_carrier, blob):
             carrier[builder.CARRIER_OFFSET:end] == blob and
             not any(carrier[end:-64]), CARRIER_MSG)
     digest = hashlib.sha256(carrier).hexdigest()
-    require(digest == builder.INSTALLED_CARRIER, SHA_MSG)
+    require(digest not in refused() and digest != builder.CARRIER_SHA, SHA_MSG)
     return digest
 
 
@@ -183,7 +183,7 @@ def check_pair(init_image, carrier, stock_init, base_image, stock_carrier, curre
             not any(item["name"] == builder.builder.BUNDLE for item in changed), CPIO_MSG)
     require(init_image == vendor.assemble(stock_init, frame)[0], FRAME_MSG)
     carrier_digest = check_carrier(carrier, stock_carrier, blob)
-    require(digest != carrier_digest and digest != builder.CARRIER_SHA, SHA_MSG)
+    builder.check_digests(digest, carrier_digest)
     built = builder.build(stock_init, base_image, current, library, decode_frame, stock_carrier)
     require(built[0] == init_image and built[1] == carrier and built[2] == digest and
             built[3] == carrier_digest and built[4] == len(decoded) and built[5] == size and
@@ -241,16 +241,43 @@ def self_test(init_image, carrier, stock_init, base_image, stock_carrier, curren
               library, decode_frame):
     digest, carrier_digest, _cpio_size, size = check_pair(
         init_image, carrier, stock_init, base_image, stock_carrier, current, library, decode_frame)
-    require(digest not in (RUN69_INIT, RUN72_INIT, RUN73_INIT, RUN78_INIT, RUN76_INIT,
-                           RUN79_INIT, RUN83_INIT) and
-            carrier_digest == builder.INSTALLED_CARRIER,
-            "init must be new and carrier must match the installed image")
+    require(digest not in refused() and carrier_digest not in refused() and
+            carrier_digest != builder.CARRIER_SHA and
+            carrier_digest != builder.INSTALLED_CARRIER,
+            "init and carrier must be new, not previously measured or installed")
+    for old in refused() | {builder.CARRIER_SHA, builder.INSTALLED_CARRIER}:
+        for first, second in ((old, carrier_digest), (digest, old)):
+            try:
+                builder.check_digests(first, second)
+            except ValueError as exc:
+                require(str(exc) == SHA_MSG, SHA_MSG)
+            else:
+                raise ValueError(SHA_MSG)
     git_clean()
     old_image, old_blob, old_members, replayed = omission_fixture(
         base_image, library, decode_frame)
-    _entries, _trailer, found, private = builder.base_state(base_image, library, decode_frame)
-    found = builder.expected_found(found, current)
+    _entries, _trailer, base_found, private = builder.base_state(base_image, library, decode_frame)
+    found = builder.expected_found(base_found, current)
     previous = dict(found)
+    guard = found["pmos-pid1-guard.sh"]
+    transition = found["pmos-pid1-transition.sh"]
+    stage = found["pmos-session-stage.sh"]
+    self_stage = found["pmos-self-stage.sh"]
+    guard_sha = hashlib.sha256(guard).hexdigest().encode()
+    transition_sha = hashlib.sha256(transition).hexdigest().encode()
+    require(guard_sha == b"dcc4124dd404823f891e683d455177613d91afc2bd91582835cc1d6bbe118243" and
+            b"GUARD_SHA256=" + guard_sha in transition and
+            b"GUARD_SHA=" + guard_sha in self_stage and
+            b"TRANSITION_SHA=" + transition_sha in self_stage and
+            b"success_ready()" in guard and b"ordered_record()" in guard and
+            guard.index(b"if ! success_ready || ! ordered_record; then") <
+            guard.index(b'> "$STATE/accepted"') and
+            b'arm "$ROOT" 160' in transition and
+            stage.index(b'for service in wpa_supplicant networking; do') <
+            stage.index(b'cannot enable RAM-only local service') and
+            b'$BB rm "$entry" || die "cannot defer OpenRC service"' in stage and
+            b'[ "$($BB readlink "$entry")" = "/etc/init.d/$service" ]' in stage,
+            DELTA_MSG)
     require(found["pmos-session-stage.sh"].count(b"record_stage") == 5 and
             found["pmos-session-stage.sh"].count(b"boot_record_open") == 1 and
             found["pmos-self-stage.sh"].count(b"record_line") == 4 and
@@ -267,20 +294,7 @@ def self_test(init_image, carrier, stock_init, base_image, stock_carrier, curren
             found["pmos-root-contract.sh"].count(b"boot_record_rotate") == 2 and
             b'$BB mv -n "$br_record" "$br_archive"' in found["pmos-root-contract.sh"] and
             b'[ "$br_old_boot" != "$br_boot" ]' in found["pmos-root-contract.sh"], DELTA_MSG)
-    guard = previous["pmos-pid1-guard.sh"]
-    start = guard.index(b'[ ! -e "$root$STATE" ]')
-    end = guard.index(b'[ -f "$0" ]', start)
-    guard = guard[:start] + (b'[ ! -e "$root$STATE" ] && [ ! -L "$root$STATE" ] &&\n'
-                            b'\t[ ! -e "$root/bin/restart2" ] && [ ! -L "$root/bin/restart2" ] || '
-                            b"fail 'guard or RESTART2 already exists'\n\t") + guard[end:]
-    start = guard.index(b'\tif [ "$mode" = real ]; then\n\t\tif [ ! -e')
-    end = guard.index(b'\telse\n\t\t$BB cp "$mock_source"', start)
-    guard = guard[:start] + (b'\tif [ "$mode" = real ]; then\n'
-                            b'\t\t$BB cp /bin/restart2 "$root/bin/restart2" || fail '\
-                            b"'cannot copy RESTART2'\n"
-                            b'\t\t$BB chmod 755 "$root/bin/restart2"\n'
-                            b'\t\t[ "$(hash "$root/bin/restart2")" = "$HELPER_SHA" ] || '
-                            b"fail 'RESTART2 copy changed'\n") + guard[end:]
+    guard = base_found["pmos-pid1-guard.sh"]
     require(hashlib.sha256(guard).hexdigest() ==
             "2a92fbcfe029ec3be1af8b73d4cd8d0ac317ecd267a9dc9ba9637932207d5da3", OVERFLOW_MSG)
     previous["pmos-pid1-guard.sh"] = guard
@@ -353,7 +367,7 @@ def self_test(init_image, carrier, stock_init, base_image, stock_carrier, curren
     require(not trace_only(traced.replace(b"umask 077", b"umask 022", 1)), DELTA_MSG)
     require(not trace_only(traced.replace(b"[ \"$i\" -lt 60 ]", b"[ \"$i\" -lt 61 ]", 1)), DELTA_MSG)
     require(not trace_only(traced.replace(b"# trace-end\n", b"", 1)), DELTA_MSG)
-    require(not trace_only(re.sub(rb"# trace-begin\n.*?# trace-end\n", b"", traced, flags=re.S)), DELTA_MSG)
+    require(not trace_only(re.sub(rb"# trace-begin\n.*?# trace-end\n", b"", traced, flags=re.DOTALL)), DELTA_MSG)
     for point in (b"'start'", b"'openrc wait enter'", b"'openrc wait exit'", b"'record append entry'",
                   b"'record append exit'", b"'record verify entry'", b"'record verify exit'",
                   b"'pre check run keep'", b"'post check run keep'",
@@ -393,6 +407,14 @@ def self_test(init_image, carrier, stock_init, base_image, stock_carrier, curren
         b"[ \"$(hash \"$root/bin/restart2\")\" = \"$HELPER_SHA\" ]",
         b"true")
     bad("helper hash weakened", INIT_MSG, source=changed)
+    changed = dict(current)
+    changed["pmos-pid1-guard.sh"] = changed["pmos-pid1-guard.sh"].replace(
+        b"if ! success_ready || ! ordered_record; then", b"if false; then", 1)
+    bad("success and ordered-record gates removed", INIT_MSG, source=changed)
+    changed = dict(current)
+    changed["pmos-session-stage.sh"] = changed["pmos-session-stage.sh"].replace(
+        b'\t\t\t$BB rm "$entry" || die "cannot defer OpenRC service"\n', b"", 1)
+    bad("service deferral removed", INIT_MSG, source=changed)
     changed = dict(current)
     changed["pmos-pid1-transition.sh"] = changed["pmos-pid1-transition.sh"].replace(
         b"arm \"$ROOT\" 160", b"arm \"$ROOT\" 161", 1)

@@ -81,6 +81,14 @@ REFUSED = frozenset((*builder.REFUSED, RUN66,
                        INSTALLED_INIT,
                        "27a78a225a840040f5e88b36f0ff75367caef3412ea26ac17ac83e24b4c23ce0",
                        "17531039e2c1bb36eac7c5fb2d4c343d53977950cbd2ade0d9dea6f3dd794bdd"))
+REFUSED = REFUSED | frozenset((
+    "ef476d8cbf3cba31fc143680d53b9aaf687cadd0409ad6dcf93c018bd97a233b",
+    "2f73c94764be3f443ace02fc46001662686512f37f4951bedfb5900cf3d31c28",
+    "f792174c3e886b6f3280d447c3da4704403f713fe24228fb4f52f24e7da11095",
+    "3c97c918ed085d6d72530f00bba81c053130c184d351f372a10ac11b616bc71a",
+    INSTALLED_CARRIER,
+))
+OUTPUT_MSG = "outputs must be separate, outside Git and different from every input"
 
 
 def deinstrument(data):
@@ -168,11 +176,11 @@ def current_scripts():
     expected = {
         "pmos-root-contract.sh": "c76c31ff148ab19ff5b2de6f1e40a036ee6ec275d54b0b5d1eaab0bbf0f06cc6",
         "pmos-session-stage.sh": "be70a27305145cabc15b70469ae7a0434fab352fb9c3d681943f73d22b92938a",
-        "pmos-pid1-transition.sh": "e1dba7135e2335c22aee0a5c0f4edb247fad5acd8100377cba3771abe5044e36",
-        "pmos-pid1-guard.sh": "f72a68a4c3a0e9bb7e72aa88883dcc9087a684985f5af688e34ea13c0226d3ad",
+        "pmos-pid1-transition.sh": "af42a763d6a84a4cae3dddfa576a9affa5b84f57b6e64e2b41636cc690883be7",
+        "pmos-pid1-guard.sh": "dcc4124dd404823f891e683d455177613d91afc2bd91582835cc1d6bbe118243",
         "pmos-self-post.sh": "eb3c2cb6509246c14142bebe4bf4318b159057faff43b03be7588557fcf7323f",
         "pmos-radio-bringup.sh": "7ef6382644c2e07705d2a8df77840031318c298478c8f93e9bbfd05c00b61812",
-        "pmos-self-stage.sh": "92e9045894df3da3db2b093aebc03840a63d8e2b4b89c6cffc835b62d10614c6",
+        "pmos-self-stage.sh": "ae9a0d98c9c7d75f56333c24f1b4b4267ca1ad612efd007698c017d5a9218c90",
     }
     require(hashlib.sha256(plain_post).hexdigest() == expected["pmos-self-post.sh"] and
             {name: hashlib.sha256(data).hexdigest() for name, data in original.items()
@@ -250,6 +258,17 @@ fi
         b'\t\t\tdie "unexpected local startup hook"\n'
         b'\t}')
     stage = replace_once(stage, b'$BB ln -s /etc/init.d/local "$PMOS_ROOT/etc/runlevels/default/local" || die "cannot enable RAM-only local service"',
+        b'if [ "${PMOS_ROOT_KIND:-tmpfs}" = ext4 ]; then\n'
+        b'\tfor service in wpa_supplicant networking; do\n'
+        b'\t\tentry="$PMOS_ROOT/etc/runlevels/default/$service"\n'
+        b'\t\tif [ -e "$entry" ] || [ -L "$entry" ]; then\n'
+        b'\t\t\t[ -L "$entry" ] && [ "$($BB readlink "$entry")" = "/etc/init.d/$service" ] ||\n'
+        b'\t\t\t\tdie "unexpected enabled OpenRC service"\n'
+        b'\t\t\t$BB rm "$entry" || die "cannot defer OpenRC service"\n'
+        b'\t\t\t[ ! -e "$entry" ] && [ ! -L "$entry" ] || die "OpenRC service still enabled"\n'
+        b'\t\tfi\n'
+        b'\tdone\n'
+        b'fi\n'
         b'if [ ! -e "$PMOS_ROOT/etc/runlevels/default/local" ] &&\n'
         b'\t[ ! -L "$PMOS_ROOT/etc/runlevels/default/local" ]; then\n'
         b'\t$BB ln -s /etc/init.d/local "$PMOS_ROOT/etc/runlevels/default/local" || die "cannot enable RAM-only local service"\n'
@@ -728,6 +747,12 @@ def frame_for(cpio, library):
     return frame
 
 
+def check_digests(init_digest, carrier_digest):
+    require(init_digest not in REFUSED and carrier_digest not in REFUSED and
+            init_digest != carrier_digest and init_digest != CARRIER_SHA and
+            carrier_digest != CARRIER_SHA, SHA_MSG)
+
+
 def build(stock, base_image, current, library, decode_frame, stock_carrier):
     vendor.check_stock(stock, library)
     require(base_image[:base.RAMDISK_SIZE_OFFSET] == stock[:base.RAMDISK_SIZE_OFFSET] and
@@ -742,9 +767,59 @@ def build(stock, base_image, current, library, decode_frame, stock_carrier):
     frame = frame_for(cpio, library)
     image, digest = vendor.assemble(stock, frame)
     carrier_digest = hashlib.sha256(carrier).hexdigest()
-    require(digest not in REFUSED and digest != carrier_digest and
-            carrier_digest == INSTALLED_CARRIER, SHA_MSG)
+    check_digests(digest, carrier_digest)
     return image, carrier, digest, carrier_digest, len(cpio), len(frame), entries, trailer, found, private
+
+
+def output_paths(output, carrier_output, inputs):
+    targets = (output.resolve(), carrier_output.resolve())
+    inputs = tuple(path.resolve() for path in inputs)
+    require(len(set(targets)) == 2 and not any(target.is_relative_to(HERE.parent.resolve()) or
+            target in inputs for target in targets) and
+            all(not path.is_symlink() and path.parent.is_dir() and not path.is_dir()
+                for path in (output, carrier_output)), OUTPUT_MSG)
+
+
+def write_pair(output, carrier_output, inputs, image, carrier):
+    output_paths(output, carrier_output, (*inputs, PROFILE))
+    streams = []
+    created = []
+    try:
+        for path in (output, carrier_output):
+            new_file = False
+            try:
+                fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+                new_file = True
+            except FileExistsError:
+                fd = os.open(path, os.O_WRONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            stream = os.fdopen(fd, "wb")
+            streams.append(stream)
+            if new_file:
+                info = os.fstat(fd)
+                created.append((path, info.st_dev, info.st_ino))
+                os.fchmod(fd, 0o600)
+            info = os.fstat(stream.fileno())
+            require(stat.S_ISREG(info.st_mode) and info.st_uid == os.getuid() and
+                    info.st_nlink == 1 and info.st_size == 0 and
+                    stat.S_IMODE(info.st_mode) == 0o600,
+                    "output must be an empty owner-only regular file with one link")
+        for stream, data in zip(streams, (image, carrier)):
+            stream.write(data)
+            stream.flush()
+    except BaseException:
+        for stream in streams:
+            stream.close()
+        for path, device, inode in created:
+            try:
+                info = path.lstat()
+                if info.st_dev == device and info.st_ino == inode:
+                    path.unlink()
+            except FileNotFoundError:
+                pass
+        raise
+    else:
+        for stream in streams:
+            stream.close()
 
 
 def main():
@@ -753,14 +828,9 @@ def main():
             "usage: build-init-boot-persistent-root.py --preflight|--build STOCK_INIT BASE STOCK_VENDOR_B INIT_OUTPUT CARRIER_OUTPUT")
     stock_path, base_path, carrier_path, output, carrier_output = map(pathlib.Path, args[1:])
     require(base_path.resolve() == BASE_IMAGE.resolve(), BASE_MSG)
+    inputs = (stock_path, base_path, carrier_path)
     if args[0] == "--build":
-        targets = (output.resolve(), carrier_output.resolve())
-        inputs = (stock_path.resolve(), base_path.resolve(), carrier_path.resolve())
-        require(len(set(targets)) == 2 and not any(target.is_relative_to(HERE.parent.resolve()) or
-                target in inputs for target in targets) and not output.is_symlink() and
-                not carrier_output.is_symlink() and output.parent.is_dir() and
-                carrier_output.parent.is_dir() and not output.is_dir() and
-                not carrier_output.is_dir(), "outputs must be outside Git and different from every input")
+        output_paths(output, carrier_output, (*inputs, PROFILE))
     current = current_scripts()
     checker = load("verify-init-boot-psoc-hold-wlan-node.py", "persistent_decode")
     image, carrier, digest, carrier_digest, cpio_size, frame_size, *_rest = build(
@@ -770,8 +840,7 @@ def main():
     print(f"init_boot: {len(image)} bytes, SHA-256 {digest}")
     print(f"{CARRIER}: {len(carrier)} bytes, SHA-256 {carrier_digest}")
     if args[0] == "--build":
-        output.write_bytes(image)
-        carrier_output.write_bytes(carrier)
+        write_pair(output, carrier_output, inputs, image, carrier)
 
 
 if __name__ == "__main__":

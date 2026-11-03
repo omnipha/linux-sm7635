@@ -6,6 +6,7 @@ STATE=/run/pid1-guard
 HELPER_SHA=fbe1472929510910b7fbb570d98ad939a2f39fd13786d000bb67ed46434b29f7
 MOCK_SHA=e112e65f2e9a6dc28531b45eda218284e4afb152dc3a02b588f7a25255cce2d1
 MOCK_EXT4_SHA=fe72fe25364a1a08c6482bcecb3175f2c0def38af6fc02967b1edc1d6cf28e71
+CONTRACT_SHA=c76c31ff148ab19ff5b2de6f1e40a036ee6ec275d54b0b5d1eaab0bbf0f06cc6
 MODEL='Qualcomm Technologies, Inc. Volcano QRD Pro'
 umask 077
 
@@ -19,6 +20,11 @@ valid_id() {
 		*) return 1;;
 	esac
 }
+safe_contract() {
+	[ -f "$STATE/root-contract.sh" ] && [ ! -L "$STATE/root-contract.sh" ] &&
+		[ "$($BB stat -c '%u:%a:%h' "$STATE/root-contract.sh" 2>/dev/null)" = 0:600:1 ] &&
+		[ "$(hash "$STATE/root-contract.sh")" = "$CONTRACT_SHA" ]
+}
 post_root() {
 	[ -L /proc/1/exe ] &&
 	[ "$(hash /proc/1/exe)" = "$(hash /bin/busybox)" ] &&
@@ -27,8 +33,7 @@ post_root() {
 	if $BB awk '$2 == "/" {n++; if ($3 != "tmpfs") bad++} END {exit(n != 1 || bad)}' /proc/1/mounts; then
 		return 0
 	else
-		[ -f "$STATE/root-contract.sh" ] && [ ! -L "$STATE/root-contract.sh" ] &&
-		. "$STATE/root-contract.sh" &&
+		safe_contract && . "$STATE/root-contract.sh" &&
 		root_contract_switched_root /proc/1/mounts /proc/1/mountinfo
 	fi
 }
@@ -45,8 +50,29 @@ mock_device() {
 	[ -f "$STATE/mock-restart2" ] && [ ! -L "$STATE/mock-restart2" ] &&
 	[ "$(hash "$STATE/mock-restart2")" = "$mock_sha" ]
 }
+success_ready() {
+	[ -f "$STATE/success-ready" ] && [ ! -L "$STATE/success-ready" ] &&
+		[ "$($BB stat -c '%u:%a:%h:%s' "$STATE/success-ready" 2>/dev/null)" = "0:600:1:$((${#nonce} + ${#id} + 2))" ] &&
+		$BB printf '%s %s\n' "$nonce" "$id" | $BB cmp -s - "$STATE/success-ready"
+}
+ordered_record() (
+	verify_now=$(uptime)
+	case "$verify_now" in ''|*[!0-9]*) exit 1;; esac
+	[ "$verify_now" -ge "$start" ] && [ "$verify_now" -lt "$deadline" ] || exit 1
+	$BB timeout -k 1 "$((deadline - verify_now))" $BB sh -c '
+		set -u
+		BB=/bin/busybox
+		contract=/run/pid1-guard/root-contract.sh
+		[ -f "$contract" ] && [ ! -L "$contract" ] &&
+			[ "$($BB stat -c "%u:%a:%h" "$contract" 2>/dev/null)" = 0:600:1 ] &&
+			[ "$($BB sha256sum "$contract" 2>/dev/null | $BB cut -d " " -f 1)" = "$2" ] &&
+			. "$contract" || exit 1
+		unset ROOT_CONTRACT_OPTS PMOS_PANEL_RECORD
+		boot_record_verify / "pmos-self-post: post-cutover PID 1 on boot $1; guard identity check passed; pid1 identity check passed"
+	' guard-record "$id" "$CONTRACT_SHA"
+)
 recover() {
-	$BB printf 'pid1-guard: deadline reached; requesting bootloader\n' >&2
+	$BB printf 'pid1-guard: recovery required; requesting bootloader\n' >&2
 	if [ "$mode" = real ]; then
 		if real_device; then
 			/bin/restart2 bootloader
@@ -89,11 +115,17 @@ watch() {
 		case "$now" in ''|*[!0-9]*) recover;; esac
 		[ "$now" -ge "$start" ] && [ "$now" -lt "$deadline" ] || recover
 		[ "$(boot_id)" = "$id" ] || recover
+		if [ -n "$nonce" ] && [ -f "$STATE/ack" ] && [ ! -L "$STATE/ack" ] &&
+			[ "$($BB cat "$STATE/ack" 2>/dev/null)" = "$nonce $id" ] && ! success_ready; then
+			recover
+		fi
 		if post_root; then
 			if [ -z "$nonce" ]; then
 				[ ! -e "$STATE/ack" ] && [ ! -L "$STATE/ack" ] &&
 				[ ! -e "$STATE/nonce" ] && [ ! -L "$STATE/nonce" ] &&
-				[ ! -e "$STATE/.ack-new" ] && [ ! -L "$STATE/.ack-new" ] || recover
+				[ ! -e "$STATE/.ack-new" ] && [ ! -L "$STATE/.ack-new" ] &&
+				[ ! -e "$STATE/success-ready" ] && [ ! -L "$STATE/success-ready" ] &&
+				[ ! -e "$STATE/.success-ready-new" ] && [ ! -L "$STATE/.success-ready-new" ] || recover
 				$BB dd if=/dev/urandom of="$STATE/random" bs=32 count=1 2>/dev/null || recover
 				[ "$($BB stat -c %s "$STATE/random" 2>/dev/null)" = 32 ] || recover
 				nonce=$(hash "$STATE/random")
@@ -106,13 +138,23 @@ watch() {
 				$BB mv "$STATE/.nonce-new" "$STATE/nonce" || recover
 			fi
 			if [ -f "$STATE/ack" ] && [ ! -L "$STATE/ack" ] &&
-				[ "$($BB stat -c '%u:%a:%h:%s' "$STATE/ack")" = "0:600:1:$((${#nonce} + ${#id} + 2))" ] &&
-				[ "$($BB cat "$STATE/ack")" = "$nonce $id" ] &&
-				[ -f "$STATE/nonce" ] && [ ! -L "$STATE/nonce" ] &&
-				[ "$($BB cat "$STATE/nonce")" = "$nonce" ] && post_root; then
-				$BB printf '%s\n' "$id" > "$STATE/accepted" || recover
-				$BB rm -f "$STATE/nonce" "$STATE/ack" "$STATE/random"
-				exit 0
+				[ "$($BB cat "$STATE/ack" 2>/dev/null)" = "$nonce $id" ]; then
+				if ! success_ready; then
+					recover
+				fi
+				if [ -f "$STATE/ack" ] && [ ! -L "$STATE/ack" ] &&
+					[ "$($BB stat -c '%u:%a:%h:%s' "$STATE/ack" 2>/dev/null)" = "0:600:1:$((${#nonce} + ${#id} + 2))" ] &&
+					[ "$($BB cat "$STATE/ack" 2>/dev/null)" = "$nonce $id" ] &&
+					[ -f "$STATE/nonce" ] && [ ! -L "$STATE/nonce" ] &&
+					[ "$($BB cat "$STATE/nonce" 2>/dev/null)" = "$nonce" ] && post_root; then
+					ordered_record || recover
+					now=$(uptime)
+					case "$now" in ''|*[!0-9]*) recover;; esac
+					[ "$now" -ge "$start" ] && [ "$now" -lt "$deadline" ] && [ "$(boot_id)" = "$id" ] && success_ready || recover
+					$BB printf '%s\n' "$id" > "$STATE/accepted" || recover
+					$BB rm -f "$STATE/nonce" "$STATE/ack" "$STATE/random"
+					exit 0
+				fi
 			fi
 		fi
 		$BB sleep 1
@@ -140,11 +182,12 @@ arm() {
 	[ ! -L "$root/bin/busybox" ] &&
 	[ -c "$root/dev/urandom" ] &&
 	[ "$($BB stat -c '%t:%T' "$root/dev/urandom")" = 1:9 ] || fail 'new root incomplete'
+	contract=${PMOS_ROOT_CONTRACT:-/run/pmos-root-contract.sh}
+	[ -f "$contract" ] || contract="$(dirname -- "$0")/pmos-root-contract.sh"
+	[ -f "$contract" ] && [ ! -L "$contract" ] &&
+		[ "$(hash "$contract")" = "$CONTRACT_SHA" ] || fail 'root contract missing or corrupt'
 	if ! $BB awk -v path="$root" '$2 == path {n++; if ($3 != "tmpfs") bad++} END {exit(n != 1 || bad)}' /proc/mounts; then
-		contract=${PMOS_ROOT_CONTRACT:-/run/pmos-root-contract.sh}
-		[ -f "$contract" ] || contract="$(dirname -- "$0")/pmos-root-contract.sh"
-		[ -f "$contract" ] && [ ! -L "$contract" ] && . "$contract" &&
-		root_contract_pinned_userdata "$root" || fail 'new root is not mounted tmpfs or pinned userdata ext4'
+		. "$contract" && root_contract_pinned_userdata "$root" || fail 'new root is not mounted tmpfs or pinned userdata ext4'
 	fi
 	$BB awk -v path="$root/proc" '$2 == path {n++; if ($3 != "proc") bad++} END {exit(n != 1 || bad)}' /proc/mounts || fail 'new root has no proc mount'
 	[ -r "$root/proc/uptime" ] && [ -r "$root/proc/1/mounts" ] &&
@@ -181,12 +224,11 @@ arm() {
 	$BB stat -c '%d:%i' "$root" > "$root$STATE/root-identity" || fail 'cannot pin new root'
 	$BB cp "$0" "$root$STATE/guard.sh" || fail 'cannot copy guard'
 	[ "$(hash "$0")" = "$(hash "$root$STATE/guard.sh")" ] || fail 'guard copy changed'
-	contract=${PMOS_ROOT_CONTRACT:-/run/pmos-root-contract.sh}
-	[ -f "$contract" ] || contract="$(dirname -- "$0")/pmos-root-contract.sh"
-	if [ -f "$contract" ] && [ ! -L "$contract" ]; then
-		$BB cp "$contract" "$root$STATE/root-contract.sh" || fail 'cannot copy root contract'
-		[ "$(hash "$contract")" = "$(hash "$root$STATE/root-contract.sh")" ] || fail 'root contract copy changed'
-	fi
+	$BB cp "$contract" "$root$STATE/root-contract.sh" || fail 'cannot copy root contract'
+	$BB chmod 600 "$root$STATE/root-contract.sh" || fail 'cannot protect root contract'
+	[ -f "$root$STATE/root-contract.sh" ] && [ ! -L "$root$STATE/root-contract.sh" ] &&
+		[ "$($BB stat -c '%u:%a:%h' "$root$STATE/root-contract.sh")" = 0:600:1 ] &&
+		[ "$(hash "$root$STATE/root-contract.sh")" = "$CONTRACT_SHA" ] || fail 'root contract copy changed'
 	if [ "$mode" = real ]; then
 		if [ ! -e "$root/bin/restart2" ] && [ ! -L "$root/bin/restart2" ]; then
 			$BB cp /bin/restart2 "$root/bin/restart2" || fail 'cannot copy RESTART2'

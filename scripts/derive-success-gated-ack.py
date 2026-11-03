@@ -25,8 +25,8 @@ import textwrap
 
 RADIO_PATH = '/usr/libexec/omnipha/pmos-radio-bringup-fresh-boot.sh'
 POST_PATH = '/usr/libexec/omnipha/pmos-self-post-fresh-boot.sh'
-FRESH_RADIO_SHA = 'a0ea867a7fb8ada2fda46fdf94076c44c814e8a8d2a470c200df820529445c21'
-FRESH_POST_SHA = 'c9173d6d362a79cd55a92814f2572ba0a111b99a61a84b99b0c3076a7e1fcbc7'
+FRESH_RADIO_SHA = '146ed59271cde6b593f28212caf8871c0f00062a3c5b1d460c858e4c90271e14'
+FRESH_POST_SHA = 'db82eb4b0efd2b5f94f4665e3ed2c4e766c488816862118bda773d74588695b0'
 DNS_PROBE_SHA = '906a3c3f3f5c7a666f394dff434604a4b6a6bf2d683d8e04e3d947316132fe97'
 DNS_PROBE_SIZE = 597840
 
@@ -252,6 +252,9 @@ gate_message started
 
 gate_identity() {
 	[ "$($BB id -u)" = 0 ] &&
+	{ [ -z "${gate_guard_id:-}" ] || [ "$($BB stat -c '%d:%i' "$GUARD" 2>/dev/null)" = "$gate_guard_id" ]; } &&
+	{ [ -z "${gate_armed_id:-}" ] || [ "$($BB stat -c '%d:%i' "$GUARD/armed" 2>/dev/null)" = "$gate_armed_id" ]; } &&
+	{ [ -z "${gate_root_id:-}" ] || [ "$($BB stat -c '%d:%i' "$GUARD/root-identity" 2>/dev/null)" = "$gate_root_id" ]; } &&
 	[ "$($BB cat /proc/sys/kernel/random/boot_id 2>/dev/null)" = "$boot" ] &&
 	[ -d "$GUARD" ] && [ ! -L "$GUARD" ] &&
 	[ "$($BB stat -c '%u:%a' "$GUARD" 2>/dev/null)" = 0:700 ] &&
@@ -271,6 +274,8 @@ gate_identity() {
 		BB=/bin/busybox
 		if $BB awk '\''$2 == "/" {n++; if ($3 != "tmpfs") bad++} END {exit(n != 1 || bad)}'\'' /proc/1/mounts; then exit 0; fi
 		[ -f /run/pid1-guard/root-contract.sh ] && [ ! -L /run/pid1-guard/root-contract.sh ] &&
+		[ "$($BB stat -c '\''%u:%a:%h'\'' /run/pid1-guard/root-contract.sh 2>/dev/null)" = 0:600:1 ] &&
+		[ "$($BB sha256sum /run/pid1-guard/root-contract.sh 2>/dev/null | $BB cut -d '\'' '\'' -f 1)" = c76c31ff148ab19ff5b2de6f1e40a036ee6ec275d54b0b5d1eaab0bbf0f06cc6 ] &&
 		. /run/pid1-guard/root-contract.sh && root_contract_switched_root /proc/1/mounts /proc/1/mountinfo
 	' >/dev/null 2>&1
 }
@@ -280,13 +285,51 @@ gate_live() {
 	[ -f "$GUARD/nonce" ] && [ ! -L "$GUARD/nonce" ] &&
 	[ "$($BB stat -c '%u:%a:%h:%s' "$GUARD/nonce" 2>/dev/null)" = 0:600:1:65 ] &&
 	[ "$($BB cat "$GUARD/nonce" 2>/dev/null)" = "$gate_nonce" ] &&
+	[ "$($BB stat -c '%d:%i' "$GUARD/nonce" 2>/dev/null)" = "$gate_nonce_id" ] &&
 	[ ! -e "$GUARD/ack" ] && [ ! -L "$GUARD/ack" ] &&
 	[ ! -e "$GUARD/accepted" ] && [ ! -L "$GUARD/accepted" ] &&
 	[ -d "$GATE_DIR" ] && [ ! -L "$GATE_DIR" ] &&
-	[ "$($BB stat -c '%u:%a' "$GATE_DIR" 2>/dev/null)" = 0:700 ]
+	[ "$($BB stat -c '%u:%a' "$GATE_DIR" 2>/dev/null)" = 0:700 ] &&
+	[ "$($BB stat -c '%d:%i' "$GATE_DIR" 2>/dev/null)" = "$gate_dir_id" ]
 }
 
-gate_check() { gate_live || gate_fail 'boot, root, nonce or unacknowledged guard changed'; }
+gate_no_ack_stage() {
+	[ ! -e "$GUARD/.ack-new" ] && [ ! -L "$GUARD/.ack-new" ] &&
+	[ ! -e "$GUARD/.success-gated-ack-new" ] && [ ! -L "$GUARD/.success-gated-ack-new" ]
+}
+
+gate_no_ready() {
+	[ ! -e "$GUARD/success-ready" ] && [ ! -L "$GUARD/success-ready" ] &&
+	[ ! -e "$GUARD/.success-ready-new" ] && [ ! -L "$GUARD/.success-ready-new" ]
+}
+
+gate_check() {
+	gate_live || gate_fail 'boot, root, nonce or unacknowledged guard changed'
+	gate_no_ack_stage || gate_fail 'foreign ACK staging path'
+	gate_no_ready || gate_fail 'foreign success-ready or staging path'
+}
+
+gate_ordered_record() (
+	contract=/run/pid1-guard/root-contract.sh
+	[ -f "$contract" ] && [ ! -L "$contract" ] &&
+		[ "$($BB stat -c '%u:%a:%h' "$contract" 2>/dev/null)" = 0:600:1 ] &&
+		[ "$($BB sha256sum "$contract" 2>/dev/null | $BB cut -d ' ' -f 1)" = c76c31ff148ab19ff5b2de6f1e40a036ee6ec275d54b0b5d1eaab0bbf0f06cc6 ] || exit 1
+	. "$contract" || exit 1
+	unset ROOT_CONTRACT_OPTS PMOS_PANEL_RECORD
+	boot_record_verify / "pmos-self-post: post-cutover PID 1 on boot $boot; guard identity check passed; pid1 identity check passed"
+)
+
+gate_ready() {
+	[ -f "$GUARD/success-ready" ] && [ ! -L "$GUARD/success-ready" ] &&
+	[ "$($BB stat -c '%d:%i:%u:%a:%h:%s' "$GUARD/success-ready" 2>/dev/null)" = "$gate_ready_id:0:600:1:$((${#gate_nonce} + ${#boot} + 2))" ] &&
+	(set -o pipefail; $BB printf '%s %s\n' "$gate_nonce" "$boot" | $BB cmp -s - "$GUARD/success-ready")
+}
+
+gate_staged_ack() {
+	[ -f "$GUARD/.success-gated-ack-new" ] && [ ! -L "$GUARD/.success-gated-ack-new" ] &&
+	[ "$($BB stat -c '%d:%i:%u:%a:%h:%s' "$GUARD/.success-gated-ack-new" 2>/dev/null)" = "$gate_ack_id:0:600:1:$((${#gate_nonce} + ${#boot} + 2))" ] &&
+	(set -o pipefail; $BB printf '%s %s\n' "$gate_nonce" "$boot" | $BB cmp -s - "$GUARD/.success-gated-ack-new")
+}
 
 gate_snapshot() {
 	[ -d "$GATE_DIR" ] && [ ! -L "$GATE_DIR" ] &&
@@ -336,6 +379,9 @@ gate_pass() {
 
 gate_stage=nonce-and-radio-markers
 gate_identity || gate_fail 'boot or root identity changed'
+gate_guard_id=$($BB stat -c '%d:%i' "$GUARD" 2>/dev/null)
+gate_armed_id=$($BB stat -c '%d:%i' "$GUARD/armed" 2>/dev/null)
+gate_root_id=$($BB stat -c '%d:%i' "$GUARD/root-identity" 2>/dev/null)
 [ ! -e "$GUARD/.ack-new" ] && [ ! -L "$GUARD/.ack-new" ] || gate_fail 'another ACK publisher is staging'
 [ -f "$GUARD/nonce" ] && [ ! -L "$GUARD/nonce" ] &&
 	[ "$($BB stat -c '%u:%a:%h:%s' "$GUARD/nonce" 2>/dev/null)" = 0:600:1:65 ] || gate_fail 'unsafe nonce'
@@ -344,6 +390,8 @@ case "$gate_nonce" in
 	????????????????????????????????????????????????????????????????) case "$gate_nonce" in *[!0-9a-f]*) gate_fail 'invalid nonce';; esac;;
 	*) gate_fail 'invalid nonce';;
 esac
+gate_nonce_id=$($BB stat -c '%d:%i' "$GUARD/nonce" 2>/dev/null)
+gate_dir_id=$($BB stat -c '%d:%i' "$GATE_DIR" 2>/dev/null)
 gate_check
 gate_snapshot 'cannot read same-boot kmsg'
 for g_stage in modem wpss driver scan services; do
@@ -533,31 +581,50 @@ gate_file all-checks.ok all-checks pass || gate_fail 'cannot record final succes
 gate_message 'all checks passed; no ACK yet'
 gate_stage=ack-publication
 gate_check
-[ ! -e "$GUARD/.ack-new" ] && [ ! -L "$GUARD/.ack-new" ] || gate_fail 'another ACK publisher is staging'
-[ ! -e "$GUARD/.success-gated-ack-new" ] && [ ! -L "$GUARD/.success-gated-ack-new" ] || gate_fail 'stale ACK staging path'
-(umask 077; set -C; $BB printf '%s %s\n' "$gate_nonce" "$boot" > "$GUARD/.success-gated-ack-new") || gate_fail 'cannot stage ACK'
-[ -f "$GUARD/.success-gated-ack-new" ] && [ ! -L "$GUARD/.success-gated-ack-new" ] &&
-	[ "$($BB stat -c '%u:%a:%h:%s' "$GUARD/.success-gated-ack-new" 2>/dev/null)" = "0:600:1:$((${#gate_nonce} + ${#boot} + 2))" ] &&
-	[ "$($BB cat "$GUARD/.success-gated-ack-new" 2>/dev/null)" = "$gate_nonce $boot" ] || gate_fail 'unsafe staged ACK'
+gate_ordered_record || gate_fail 'pinned ordered boot record verification failed'
 gate_check
-[ ! -e "$GUARD/.ack-new" ] && [ ! -L "$GUARD/.ack-new" ] || gate_fail 'another ACK publisher is staging'
+(umask 077; set -C; $BB printf '%s %s\n' "$gate_nonce" "$boot" > "$GUARD/.success-ready-new") || gate_fail 'cannot stage success-ready'
+gate_ready_id=$($BB stat -c '%d:%i' "$GUARD/.success-ready-new" 2>/dev/null) || gate_fail 'unsafe staged success-ready'
+[ -f "$GUARD/.success-ready-new" ] && [ ! -L "$GUARD/.success-ready-new" ] &&
+	[ "$($BB stat -c '%u:%a:%h:%s' "$GUARD/.success-ready-new" 2>/dev/null)" = "0:600:1:$((${#gate_nonce} + ${#boot} + 2))" ] &&
+	(set -o pipefail; $BB printf '%s %s\n' "$gate_nonce" "$boot" | $BB cmp -s - "$GUARD/.success-ready-new") || gate_fail 'unsafe staged success-ready'
+gate_live || gate_fail 'guard changed before readiness'
+gate_no_ack_stage || gate_fail 'foreign ACK staging path'
+[ ! -e "$GUARD/success-ready" ] && [ ! -L "$GUARD/success-ready" ] || gate_fail 'stale success-ready'
+$BB ln "$GUARD/.success-ready-new" "$GUARD/success-ready" 2>/dev/null || gate_fail 'atomic no-replace success-ready publication failed'
+[ -f "$GUARD/success-ready" ] && [ ! -L "$GUARD/success-ready" ] &&
+	[ "$($BB stat -c '%d:%i:%u:%a:%h:%s' "$GUARD/success-ready" 2>/dev/null)" = "$gate_ready_id:0:600:2:$((${#gate_nonce} + ${#boot} + 2))" ] &&
+	[ "$($BB stat -c '%d:%i:%u:%a:%h:%s' "$GUARD/.success-ready-new" 2>/dev/null)" = "$gate_ready_id:0:600:2:$((${#gate_nonce} + ${#boot} + 2))" ] || gate_fail 'published success-ready is not the staged inode'
+$BB rm "$GUARD/.success-ready-new" || gate_fail 'cannot make success-ready single-link'
+gate_live && gate_ready || gate_fail 'guard or success-ready changed'
+gate_no_ack_stage || gate_fail 'foreign ACK staging path'
+[ ! -e "$GUARD/.success-ready-new" ] && [ ! -L "$GUARD/.success-ready-new" ] || gate_fail 'another publisher is staging'
+(umask 077; set -C; $BB printf '%s %s\n' "$gate_nonce" "$boot" > "$GUARD/.success-gated-ack-new") || gate_fail 'cannot stage ACK'
+gate_ack_id=$($BB stat -c '%d:%i' "$GUARD/.success-gated-ack-new" 2>/dev/null) || gate_fail 'unsafe staged ACK'
+gate_staged_ack || gate_fail 'unsafe staged ACK'
+gate_live && gate_ready || gate_fail 'guard or success-ready changed before ACK publication'
+[ ! -e "$GUARD/.ack-new" ] && [ ! -L "$GUARD/.ack-new" ] &&
+	[ ! -e "$GUARD/.success-ready-new" ] && [ ! -L "$GUARD/.success-ready-new" ] || gate_fail 'another publisher is staging'
 gate_phase=publication-uncertain
 $BB ln "$GUARD/.success-gated-ack-new" "$GUARD/ack" 2>/dev/null || gate_fail 'atomic no-replace publication failed'
 [ -f "$GUARD/ack" ] && [ ! -L "$GUARD/ack" ] &&
-[ "$($BB stat -c '%d:%i:%u:%a:%h:%s' "$GUARD/ack" 2>/dev/null)" = "$($BB stat -c '%d:%i:%u:%a:%h:%s' "$GUARD/.success-gated-ack-new" 2>/dev/null)" ] &&
-[ "$($BB stat -c '%u:%a:%h:%s' "$GUARD/ack" 2>/dev/null)" = "0:600:2:$((${#gate_nonce} + ${#boot} + 2))" ] &&
-[ "$($BB cat "$GUARD/ack" 2>/dev/null)" = "$gate_nonce $boot" ] || gate_fail 'published ACK is not the staged inode'
+[ "$($BB stat -c '%d:%i:%u:%a:%h:%s' "$GUARD/ack" 2>/dev/null)" = "$gate_ack_id:0:600:2:$((${#gate_nonce} + ${#boot} + 2))" ] &&
+[ "$($BB stat -c '%d:%i:%u:%a:%h:%s' "$GUARD/.success-gated-ack-new" 2>/dev/null)" = "$gate_ack_id:0:600:2:$((${#gate_nonce} + ${#boot} + 2))" ] &&
+(set -o pipefail; $BB printf '%s %s\n' "$gate_nonce" "$boot" | $BB cmp -s - "$GUARD/ack") || gate_fail 'published ACK is not the staged inode'
 gate_identity && [ -f "$GUARD/nonce" ] && [ ! -L "$GUARD/nonce" ] &&
 	[ "$($BB stat -c '%u:%a:%h:%s' "$GUARD/nonce" 2>/dev/null)" = 0:600:1:65 ] &&
 	[ "$($BB cat "$GUARD/nonce" 2>/dev/null)" = "$gate_nonce" ] &&
+	[ "$($BB stat -c '%d:%i' "$GUARD/nonce" 2>/dev/null)" = "$gate_nonce_id" ] &&
 	[ ! -e "$GUARD/accepted" ] && [ ! -L "$GUARD/accepted" ] &&
-	[ ! -e "$GUARD/.ack-new" ] && [ ! -L "$GUARD/.ack-new" ] || gate_fail 'guard or competing publisher changed during publication'
+	[ ! -e "$GUARD/.ack-new" ] && [ ! -L "$GUARD/.ack-new" ] &&
+	[ ! -e "$GUARD/.success-ready-new" ] && [ ! -L "$GUARD/.success-ready-new" ] &&
+	gate_ready || gate_fail 'guard or competing publisher changed during publication'
 gate_phase=published-awaiting-guard
 $BB rm "$GUARD/.success-gated-ack-new" || gate_fail 'cannot make ACK single-link'
 if [ -e "$GUARD/ack" ] || [ -L "$GUARD/ack" ]; then
 	if ! { [ -f "$GUARD/ack" ] && [ ! -L "$GUARD/ack" ] &&
-		[ "$($BB stat -c '%u:%a:%h:%s' "$GUARD/ack" 2>/dev/null)" = "0:600:1:$((${#gate_nonce} + ${#boot} + 2))" ] &&
-		[ "$($BB cat "$GUARD/ack" 2>/dev/null)" = "$gate_nonce $boot" ]; }; then
+	[ "$($BB stat -c '%u:%a:%h:%s' "$GUARD/ack" 2>/dev/null)" = "0:600:1:$((${#gate_nonce} + ${#boot} + 2))" ] &&
+	(set -o pipefail; $BB printf '%s %s\n' "$gate_nonce" "$boot" | $BB cmp -s - "$GUARD/ack"); }; then
 		if [ -e "$GUARD/ack" ] || [ -L "$GUARD/ack" ]; then
 			gate_fail 'published ACK changed without confirmed consumption'
 		fi
@@ -571,10 +638,11 @@ g_wait=0
 while [ "$g_wait" -lt 15 ]; do
 	gate_identity || gate_fail 'boot or root changed while awaiting guard'
 	if [ -f "$GUARD/accepted" ] && [ ! -L "$GUARD/accepted" ] &&
-		[ "$($BB stat -c '%u:%a:%h:%s' "$GUARD/accepted" 2>/dev/null)" = "0:600:1:$((${#boot} + 1))" ] &&
-		[ "$($BB cat "$GUARD/accepted" 2>/dev/null)" = "$boot" ] &&
+	[ "$($BB stat -c '%u:%a:%h:%s' "$GUARD/accepted" 2>/dev/null)" = "0:600:1:$((${#boot} + 1))" ] &&
+	[ "$($BB cat "$GUARD/accepted" 2>/dev/null)" = "$boot" ] &&
 		[ ! -e "$GUARD/nonce" ] && [ ! -L "$GUARD/nonce" ] &&
-		[ ! -e "$GUARD/ack" ] && [ ! -L "$GUARD/ack" ]; then
+		[ ! -e "$GUARD/ack" ] && [ ! -L "$GUARD/ack" ] &&
+		gate_ready; then
 		gate_phase=guard-accepted
 		gate_file accepted.ok guard-acceptance pass || gate_fail 'guard accepted but evidence write failed'
 		gate_message 'guard accepted and consumed nonce and ACK'
