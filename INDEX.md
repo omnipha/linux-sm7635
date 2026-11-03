@@ -2,6 +2,7 @@
 
 ## Latest 10
 
+- [2026-11-03-124721-coordinator-setup-window-expired](records/2026-11-03-124721-coordinator-setup-window-expired.md) | wlan run 102 | inconclusive | omnipha/linux-sm7635#294 | coordinator setup window expired
 - [2026-11-03-110917-caller-aware-gate-candidate](records/2026-11-03-110917-caller-aware-gate-candidate.md) | wlan | confirmed | omnipha/linux-sm7635#294 | Host candidate for the measured caller-prefixed panel boundary
 - [2026-11-03-104136-run101-panel-parser-live-boundary](records/2026-11-03-104136-run101-panel-parser-live-boundary.md) | wlan run 101 | confirmed | omnipha/linux-sm7635#294 | Run 101: same-boot panel-parser boundary
 - [2026-11-03-093747-boot-id-shape-host-diagnostic](records/2026-11-03-093747-boot-id-shape-host-diagnostic.md) | wlan | confirmed | omnipha/linux-sm7635#301 | Host diagnostic: boot ID shape check
@@ -11,7 +12,6 @@
 - [2026-11-03-031528-pstore-preservation-host-evidence](records/2026-11-03-031528-pstore-preservation-host-evidence.md) | wlan | inconclusive | omnipha/linux-sm7635#298 | Run-100 pstore preservation: bounded host-only investigation
 - [2026-11-03-023259-run101-preboot-pstore-access-blocker](records/2026-11-03-023259-run101-preboot-pstore-access-blocker.md) | wlan run 101 | inconclusive | omnipha/linux-sm7635#294 | run101 preboot pstore access blocker
 - [2026-11-03-014728-run100-candidate-boot1-capture-boundary](records/2026-11-03-014728-run100-candidate-boot1-capture-boundary.md) | wlan run 100 | inconclusive | omnipha/linux-sm7635#294 | Run 100 candidate boot 1: pre-radio trace boundary
-- [2026-11-03-012122-success-gated-ack-candidate](records/2026-11-03-012122-success-gated-ack-candidate.md) | wlan | inconclusive | omnipha/linux-sm7635#294 | Host-tested success-gated ACK candidate; two device boots remain
 
 ## By subsystem (latest 3, total in brackets)
 
@@ -40,15 +40,15 @@
 - [2026-10-30-150709-root-contract-measured-userdata-maximum](records/2026-10-30-150709-root-contract-measured-userdata-maximum.md) | userspace | confirmed | omnipha/linux-sm7635#199 | Measured userdata size accepted by the fail-closed root contract
 - [2026-10-30-142216-persistent-root-contract-size-gate](records/2026-10-30-142216-persistent-root-contract-size-gate.md) | userspace | refuted | omnipha/linux-sm7635#197 | Persistent root blocked by the closed #194 size gate
 
-### wlan [70]
+### wlan [71]
+- [2026-11-03-124721-coordinator-setup-window-expired](records/2026-11-03-124721-coordinator-setup-window-expired.md) | wlan run 102 | inconclusive | omnipha/linux-sm7635#294 | coordinator setup window expired
 - [2026-11-03-110917-caller-aware-gate-candidate](records/2026-11-03-110917-caller-aware-gate-candidate.md) | wlan | confirmed | omnipha/linux-sm7635#294 | Host candidate for the measured caller-prefixed panel boundary
 - [2026-11-03-104136-run101-panel-parser-live-boundary](records/2026-11-03-104136-run101-panel-parser-live-boundary.md) | wlan run 101 | confirmed | omnipha/linux-sm7635#294 | Run 101: same-boot panel-parser boundary
-- [2026-11-03-093747-boot-id-shape-host-diagnostic](records/2026-11-03-093747-boot-id-shape-host-diagnostic.md) | wlan | confirmed | omnipha/linux-sm7635#301 | Host diagnostic: boot ID shape check
 
 ### wlan run 91 [1]
 - [2026-11-01-123812-coordinator-preack-window-missed](records/2026-11-01-123812-coordinator-preack-window-missed.md) | wlan run 91 run 91 | inconclusive | omnipha/linux-sm7635#256 | coordinator preack window missed
 
 ## By month
 
-- [2026-11](records/index-2026-11.md) [38]
+- [2026-11](records/index-2026-11.md) [39]
 - [2026-10](records/index-2026-10.md) [162]
