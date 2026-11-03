@@ -2,6 +2,7 @@
 
 ## Latest 10
 
+- [2026-11-03-023259-run101-preboot-pstore-access-blocker](records/2026-11-03-023259-run101-preboot-pstore-access-blocker.md) | wlan run 101 | inconclusive | omnipha/linux-sm7635#294 | run101 preboot pstore access blocker
 - [2026-11-03-014728-run100-candidate-boot1-capture-boundary](records/2026-11-03-014728-run100-candidate-boot1-capture-boundary.md) | wlan run 100 | inconclusive | omnipha/linux-sm7635#294 | Run 100 candidate boot 1: pre-radio trace boundary
 - [2026-11-03-012122-success-gated-ack-candidate](records/2026-11-03-012122-success-gated-ack-candidate.md) | wlan | inconclusive | omnipha/linux-sm7635#294 | Host-tested success-gated ACK candidate; two device boots remain
 - [2026-11-02-225455-success-gated-ack-owner-review-blockers](records/2026-11-02-225455-success-gated-ack-owner-review-blockers.md) | wlan | refuted | omnipha/linux-sm7635#294 | Host-only success-gated ACK design; intact recovery/evidence contract refuted
@@ -11,7 +12,6 @@
 - [2026-11-02-180959-services-stage-persistent-root-aware](records/2026-11-02-180959-services-stage-persistent-root-aware.md) | wlan | confirmed | omnipha/linux-sm7635#284 | Host-only #284: the services stage becomes persistent-root-aware as a separate pinned variant; the installed script and image pins stay byte-identical
 - [2026-11-02-170048-run98-acked-session-radio-chain-wlan-up](records/2026-11-02-170048-run98-acked-session-radio-chain-wlan-up.md) | wlan run 98 | confirmed | omnipha/linux-sm7635#280 | Run 98: acked live session brings the full radio chain up and reaches the internet; the pinned script refuses as derived, the post-ack variant runs
 - [2026-11-02-162351-host-radio-postack-derivation](records/2026-11-02-162351-host-radio-postack-derivation.md) | wlan | confirmed | omnipha/linux-sm7635#280 | Host: post-ack variant of the radio script, derived from the staged copy
-- [2026-11-02-154929-host-radio-live-session-handoff](records/2026-11-02-154929-host-radio-live-session-handoff.md) | wlan | confirmed | omnipha/linux-sm7635#280 | Host handoff: the installed radio script refuses an acked guard before the modem stage; one live probe must confirm outcome C
 
 ## By subsystem (latest 3, total in brackets)
 
@@ -40,15 +40,15 @@
 - [2026-10-30-150709-root-contract-measured-userdata-maximum](records/2026-10-30-150709-root-contract-measured-userdata-maximum.md) | userspace | confirmed | omnipha/linux-sm7635#199 | Measured userdata size accepted by the fail-closed root contract
 - [2026-10-30-142216-persistent-root-contract-size-gate](records/2026-10-30-142216-persistent-root-contract-size-gate.md) | userspace | refuted | omnipha/linux-sm7635#197 | Persistent root blocked by the closed #194 size gate
 
-### wlan [62]
+### wlan [63]
+- [2026-11-03-023259-run101-preboot-pstore-access-blocker](records/2026-11-03-023259-run101-preboot-pstore-access-blocker.md) | wlan run 101 | inconclusive | omnipha/linux-sm7635#294 | run101 preboot pstore access blocker
 - [2026-11-03-014728-run100-candidate-boot1-capture-boundary](records/2026-11-03-014728-run100-candidate-boot1-capture-boundary.md) | wlan run 100 | inconclusive | omnipha/linux-sm7635#294 | Run 100 candidate boot 1: pre-radio trace boundary
 - [2026-11-03-012122-success-gated-ack-candidate](records/2026-11-03-012122-success-gated-ack-candidate.md) | wlan | inconclusive | omnipha/linux-sm7635#294 | Host-tested success-gated ACK candidate; two device boots remain
-- [2026-11-02-225455-success-gated-ack-owner-review-blockers](records/2026-11-02-225455-success-gated-ack-owner-review-blockers.md) | wlan | refuted | omnipha/linux-sm7635#294 | Host-only success-gated ACK design; intact recovery/evidence contract refuted
 
 ### wlan run 91 [1]
 - [2026-11-01-123812-coordinator-preack-window-missed](records/2026-11-01-123812-coordinator-preack-window-missed.md) | wlan run 91 run 91 | inconclusive | omnipha/linux-sm7635#256 | coordinator preack window missed
 
 ## By month
 
-- [2026-11](records/index-2026-11.md) [30]
+- [2026-11](records/index-2026-11.md) [31]
 - [2026-10](records/index-2026-10.md) [162]

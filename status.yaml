@@ -3,8 +3,8 @@
 device: nothing-asteroids
 updated: 2026-11-03
 next_question: >-
-  What did the same-boot panel restore see before the first candidate boot
-  stopped, and can a proven live session discriminate that boundary safely?
+  Can the failed candidate boot pstore be retrieved without an overwriting
+  boot, so a newly proven #294 panel diagnosis session can be established?
 active_issue: omnipha/linux-sm7635#294
 subsystems:
   boot:
@@ -15,7 +15,7 @@ subsystems:
     record: records/2026-10-30-203515-run-69-second-boot-guard-wlan.md
   wlan:
     state: partial
-    record: records/2026-11-03-014728-run100-candidate-boot1-capture-boundary.md
+    record: records/2026-11-03-023259-run101-preboot-pstore-access-blocker.md
   modem:
     state: partial        # stays running past the EFS request after PID-1 cutover (run 55); no voice/SIM/data claim
     record: records/2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the.md
