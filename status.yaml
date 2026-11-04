@@ -3,8 +3,8 @@
 device: nothing-asteroids
 updated: 2026-11-04
 next_question: >-
-  Which typed verified-pair consumer route and post-run106 pstore proof
-  unblock the #311 pair install before any boot?
+  Why did the autonomous internet destination route resolve away from wlan0
+  on run 113 after association, address and gateway passed?
 active_issue: omnipha/linux-sm7635#311
 subsystems:
   boot:
@@ -15,7 +15,7 @@ subsystems:
     record: records/2026-10-30-203515-run-69-second-boot-guard-wlan.md
   wlan:
     state: partial
-    record: records/2026-11-04-031612-preflight-pinned-carrier-dependency.md
+    record: records/2026-11-04-093054-run113-pair-installed-internet-route-gate-refused.md
   modem:
     state: partial        # stays running past the EFS request after PID-1 cutover (run 55); no voice/SIM/data claim
     record: records/2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the.md
