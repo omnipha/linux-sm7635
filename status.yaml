@@ -4,7 +4,7 @@ device: nothing-asteroids
 updated: 2026-11-04
 next_question: >-
   Can targeted fastboot identity and current rescue provenance be re-established
-  before a captured #311 pair test, with the pstore gap explicit?
+  after device-side recovery before a captured #311 pair test?
 active_issue: omnipha/linux-sm7635#311
 subsystems:
   boot:
@@ -15,7 +15,7 @@ subsystems:
     record: records/2026-10-30-203515-run-69-second-boot-guard-wlan.md
   wlan:
     state: partial
-    record: records/2026-11-04-071619-typed-pair-receipt-gate-held.md
+    record: records/2026-11-04-074017-fastboot-gate-unresponsive.md
   modem:
     state: partial        # stays running past the EFS request after PID-1 cutover (run 55); no voice/SIM/data claim
     record: records/2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the.md
