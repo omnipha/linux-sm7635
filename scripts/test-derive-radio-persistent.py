@@ -52,6 +52,19 @@ current = builder.current_scripts()
 runtime = builder.runtime_scripts()
 verifier = load('persistent_verifier', 'verify-init-boot-persistent-root.py')
 verifier.check_runtime_scripts(runtime)
+variant = load('route_cache_variant_311', 'build-init-boot-route-cache-candidate.py')
+candidate_scripts = variant.runtime_scripts()
+assert variant.verifier.builder is variant.builder
+assert variant.RUN113_INIT in variant.verifier.refused() and variant.RUN113_CARRIER in variant.verifier.refused()
+assert builder.GATED_POST_SHA == variant.route_cache.OLD_POST_SHA
+assert builder.GATED_HOOK_SHA == variant.route_cache.OLD_HOOK_SHA
+for count in (0, -1, 2):
+    try:
+        variant.replace_count(b'old', b'old', b'new', count)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError('invalid variant replacement count accepted')
 staged = current['pmos-radio-bringup.sh'].decode()
 assert hashlib.sha256(staged.encode()).hexdigest() == \
     'f54b33727cefdf728001e4692d625c0f5a77298694454832e02b6cf0c765764f'
@@ -484,7 +497,72 @@ with tempfile.TemporaryDirectory(prefix='chain-install-311.') as tmp:
     ok = run_installer(guest, sources, mountinfo_path)
     assert ok.returncode == 0, ok.stderr
     assert target_radio.read_bytes() == payloads['pmos-radio-bringup-fresh-boot.sh']
+    route_cache = variant.route_cache
+    candidate_post = candidate_scripts['pmos-self-post-fresh-boot.sh']
+    candidate_hook = candidate_scripts['10-omnipha-self-stage.start']
+    assert candidate_post != payloads['pmos-self-post-fresh-boot.sh']
+    assert hashlib.sha256(candidate_post).hexdigest() == route_cache.POST_SHA
+    assert hashlib.sha256(candidate_hook).hexdigest() == route_cache.HOOK_SHA
+    for name in ('pmos-session-stage.sh', 'pmos-self-stage.sh'):
+        assert candidate_scripts[name] != builder.runtime_scripts()[name]
+        subprocess.run(['sh', '-n', '/dev/stdin'], check=True,
+                       input=candidate_scripts[name].decode(), text=True)
+    sources.joinpath('pmos-self-post-fresh-boot.sh').write_bytes(candidate_post)
+    sources.joinpath('pmos-self-post-fresh-boot.sh').chmod(0o700)
+    sources.joinpath('10-omnipha-self-stage.start').write_bytes(candidate_hook)
+    sources.joinpath('10-omnipha-self-stage.start').chmod(0o700)
+    bad = run_installer(guest, sources, mountinfo_path)
+    assert bad.returncode != 0 and 'unpinned carrier payload' in bad.stderr, bad.stderr
+    assert (guest / 'usr/libexec/omnipha/pmos-self-post-fresh-boot.sh').read_bytes() == \
+        payloads['pmos-self-post-fresh-boot.sh']
+    assert (guest / 'etc/local.d/10-omnipha-self-stage.start').read_bytes() == \
+        payloads['10-omnipha-self-stage.start']
+    sources.joinpath('pmos-self-post-fresh-boot.sh').write_bytes(payloads['pmos-self-post-fresh-boot.sh'])
+    sources.joinpath('pmos-self-post-fresh-boot.sh').chmod(0o700)
+    sources.joinpath('10-omnipha-self-stage.start').write_bytes(payloads['10-omnipha-self-stage.start'])
+    sources.joinpath('10-omnipha-self-stage.start').chmod(0o700)
+    post_target = guest / 'usr/libexec/omnipha/pmos-self-post-fresh-boot.sh'
+    post_target.write_bytes(candidate_post)
+    post_target.chmod(0o700)
+    bad = run_installer(guest, sources, mountinfo_path)
+    assert bad.returncode != 0 and 'untrusted persistent chain file' in bad.stderr, bad.stderr
+    post_target.write_bytes(payloads['pmos-self-post-fresh-boot.sh'])
+    post_target.chmod(0o700)
+    hook_target = guest / 'etc/local.d/10-omnipha-self-stage.start'
+    hook_target.write_bytes(candidate_hook)
+    hook_target.chmod(0o700)
+    bad = run_installer(guest, sources, mountinfo_path)
+    assert bad.returncode != 0 and 'untrusted persistent chain file' in bad.stderr, bad.stderr
+    hook_target.write_bytes(payloads['10-omnipha-self-stage.start'])
+    hook_target.chmod(0o700)
+    ok = run_installer(guest, sources, mountinfo_path)
+    assert ok.returncode == 0, ok.stderr
+    variant_installer = variant.builder.persistent_installer().decode()
+    assert variant_installer in candidate_scripts['pmos-self-stage.sh'].decode()
+    candidate_test_installer = 'set -eu\n' + variant_installer.replace(
+        'chain_dir=/run/omnipha-self-stage\n', 'chain_dir="$sources"\n', 1).replace(
+        '/run/pmos-root-contract.sh', '"$sources/fixture-contract"')
+    test_installer = candidate_test_installer
+    for name in ('pmos-self-post-fresh-boot.sh', '10-omnipha-self-stage.start'):
+        sources.joinpath(name).write_bytes(candidate_scripts[name])
+        sources.joinpath(name).chmod(0o700)
+    bad = run_installer(guest, sources, mountinfo_path)
+    assert bad.returncode != 0 and 'untrusted persistent chain file' in bad.stderr, bad.stderr
+    assert post_target.read_bytes() == payloads['pmos-self-post-fresh-boot.sh']
+    assert hook_target.read_bytes() == payloads['10-omnipha-self-stage.start']
+    post_target.unlink()
+    hook_target.unlink()
+    ok = run_installer(guest, sources, mountinfo_path)
+    assert ok.returncode == 0, ok.stderr
+    assert post_target.read_bytes() == candidate_post and hook_target.read_bytes() == candidate_hook
+    ok = run_installer(guest, sources, mountinfo_path)
+    assert ok.returncode == 0, ok.stderr
+    sources.joinpath('pmos-self-post-fresh-boot.sh').write_bytes(payloads['pmos-self-post-fresh-boot.sh'])
+    bad = run_installer(guest, sources, mountinfo_path)
+    assert bad.returncode != 0 and 'unpinned carrier payload' in bad.stderr, bad.stderr
+    assert post_target.read_bytes() == candidate_post and hook_target.read_bytes() == candidate_hook
 print('pass: chain installer atomically installs, preserves, and refuses foreign hooks, untrusted scripts, hardlinks, symlinks, staging collisions and unpinned payloads')
+print('pass: run-113 and route-cache installers refuse each other; candidate installs and repeats on an empty target')
 print('pass: persistent-root services derivation reproduces the committed variant, '
       'fails closed on every removed block, applies to the run-98 staged script, '
       'and composes with the post-ack derivation')
