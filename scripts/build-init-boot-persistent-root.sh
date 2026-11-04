@@ -36,6 +36,8 @@ done
 [ "$(sha256sum "$STOCK_VENDOR_B" | cut -d ' ' -f 1)" = 237259404601045205715a71b88016744c73729d4513349cfe90c754b0dc1253 ] || die 'stock carrier is not vendor_boot_b'
 exec 9>"$WORK/i204-root-contract.lock"
 flock 9 || die 'another root-contract carrier build is in progress'
+MANIFEST=$OUT/root-contract-pair.manifest.json
+python3 -B "$ROOT/scripts/verify-dependent-pair-manifest.py" invalidate "$OUTPUT" "$CARRIER" "$MANIFEST" "$WORK/i204-root-contract.lock" --lock-fd 9
 first=$(mktemp "$OUT/init_boot-root-contract.XXXXXXXX.img")
 second=$(mktemp "$OUT/init_boot-root-contract.XXXXXXXX.img")
 first_carrier=$(mktemp "$OUT/vendor_boot_b-root-contract.XXXXXXXX.img")
@@ -53,4 +55,5 @@ cmp -s "$first" "$second" && cmp -s "$first_carrier" "$second_carrier" || die 't
 mv -f -- "$first" "$OUTPUT"
 mv -f -- "$first_carrier" "$CARRIER"
 python3 -B "$ROOT/scripts/verify-init-boot-persistent-root.py" "$OUTPUT" "$CARRIER" "$STOCK_INIT" "$BASE" "$STOCK_VENDOR_B"
-sha256sum "$OUTPUT" "$CARRIER"
+python3 -B "$ROOT/scripts/verify-dependent-pair-manifest.py" write "$OUTPUT" "$CARRIER" "$MANIFEST" "$STOCK_INIT" "$BASE" "$STOCK_VENDOR_B" "$WORK/i204-root-contract.lock" --lock-fd 9
+sha256sum "$OUTPUT" "$CARRIER" "$MANIFEST"
