@@ -1,6 +1,6 @@
 # Persistent-root migration strategy
 
-Status: **proposal for review**, not implemented or accepted. This document
+Status: **proposal under revision**, not implemented or accepted. This document
 is not evidence and authorizes no installation, flash, reboot or device
 access. The physical coordinator owns every device decision. #324 requires
 PC-style SSH edits that survive reboot without a partition flash, measured
@@ -13,11 +13,11 @@ This is a direction for further host work, **not deployment approval**. The
 [190612 record](../../records/2026-11-04-190612-pair-deliverable-host-proofs.md)
 reports an inconclusive result: no replacement pair was built, and no
 owner-authorized signing keys, signed baseline or embedded trust anchors are
-demonstrated. Only synthetic throwaway-key fixtures exist. The modified
-working-tree migration model and the other host fixtures are described below;
-they do not supply a deployable bootstrap. The record also reports a failed
-host PID 1 `ack` case; that test is modified in this checkout and its current
-result is not established here. The post-cutover ACK path is not claimed green.
+demonstrated. Only synthetic throwaway-key fixtures exist. The migration model
+and the other host fixtures are described below; they do not supply a
+deployable bootstrap. The record also reports a failed host PID 1 `ack` case;
+`test-pmos-pid1.sh` has since been rewritten, but its current result is not
+established. The post-cutover ACK path is not claimed green.
 
 ## Current boundary
 
@@ -140,11 +140,15 @@ is outside this boundary. Root SSH can also execute arbitrary user commands
 and alter other userland: this proposal protects the specified boot chain, not
 the entire operating system against an already privileged root user.
 
-- Embed the offline release public key and a separately controlled rollback
-  authorization public key in the verified initramfs or in the carrier bundle
-  whose exact header and payload digests are pinned by that initramfs. Pin and
-  verify the verifier, hashing tools, static interpreter and updater the same
-  way. Private keys remain offline and never enter the phone or repository.
+- Trust anchor: two offline Ed25519 keys — one release key and one separately
+  controlled rollback-authorization key — embedded as public keys in the
+  verified initramfs, or in the carrier bundle whose exact header and payload
+  digests are pinned by that initramfs. This is the design's trust anchor, not
+  a key or verifier first obtained from userdata. No such keys are approved or
+  generated yet, so no replacement pair can be built; approving or generating
+  them is an explicit owner decision recorded in #324, and private keys stay
+  offline and never enter the phone or repository. Pin and verify the
+  verifier, hashing tools, static interpreter and updater the same way.
   Key rotation or verifier replacement needs a separately reviewed carrier
   cutover; userdata cannot authorize its own trust-root replacement.
 - Before and after `switch_root`, security decisions must use verified
@@ -215,7 +219,7 @@ Realistic replay limits: sequence and selector checks hold only relative to
 intact local state. A privileged actor — or a whole-userdata rollback —
 that rewinds the selector, the matching history, or the locally stored
 rollback authorization is not detected by the sequence check alone; the
-working-tree model prints both limits explicitly, and accepts selector
+host model prints both limits explicitly, and accepts selector
 rewind with identical restored bytes as well as whole-store rewind. There is
 no hardware monotonic guarantee, so these are intentionally scoped
 detections, not anti-rollback hardware semantics.
@@ -382,9 +386,8 @@ candidate pair and release derivations in addition to the model.
 Current host fixture boundaries, as run on this checkout (host-only; no
 device, USB, flash or partition access):
 
-- `scripts/test-persistent-root-migration.py` (modified in the working tree,
-  passes) is a synthetic logical model with disposable `ssh-keygen` Ed25519
-  keys. It exercises canonical-manifest and authorization vectors, a
+- `scripts/test-persistent-root-migration.py` (passes) is a synthetic
+  logical model with disposable `ssh-keygen` Ed25519 keys. It exercises canonical-manifest and authorization vectors, a
   separately keyed and domain-separated higher-sequence rollback, and
   interruption cuts at every modelled publication and recovery step (49
   forward and 52 rollback publication cuts, each with 650 recovery cuts).
@@ -442,6 +445,50 @@ Verify that this policy is compatible with the actual filesystem and with
 interruption recovery before deployment; measure mount options and fsck/journal
 behavior rather than inferring them from `ro,noload` or a host fixture. The
 synthetic journal-fsck fixture above does not replace that measurement.
+
+## Next single variable
+
+Read-only measurement of the **installed** pair, before any replacement exists.
+Every acceptance fact of #324 is still unmeasured on the device, and the
+replacement pair is blocked on an owner key decision plus a bootstrap that does
+not exist yet
+([pair-deliverable proofs](../../records/2026-11-04-190612-pair-deliverable-host-proofs.md)).
+Spending further boots and design rounds on a pair that cannot be built does
+not move the check. The next measurement, coordinator-owned and separately
+authorized, answers with the pair already installed and unchanged:
+
+1. Final root mount mode of `sda13` after cutover: read-only or read-write,
+   and the filesystem features, clean state and error counters, captured with
+   read-only tools. No `fsck -y`, no journal replay, no remount, no write.
+2. Whether one innocuous new file, created over SSH **outside** the three
+   pinned paths, is still there after a reboot with no partition flash and
+   with `init_boot_a` `d7bba454…` and `vendor_boot_b` `221bfd82…` unchanged.
+
+That single boot is the whole budget for this variable. It is not the
+reversible-root-fault rescue test and not an update/rollback test; each of
+those needs its own later technical reason and coordinator approval.
+
+## Budget and fallback
+
+Host-side, the model now implements the separately keyed new-generation
+rollback, and `test-pmos-pid1.sh` is rewritten to supply `success-ready` and an
+ordered boot record on an isolated ext4 root. That rewritten fixture has not
+been run to a green result after its last hardening edits (the one attempt
+failed in the loop-descriptor check), so the host ACK path is not claimed green.
+Still open: the deployable bootstrap reconciled with the model. No image is
+built and no pair is flashed until the owner records a decision on the two
+trust-anchor keys.
+
+If that measurement shows the final root stays read-only, or that an unpinned
+file does not survive the reboot, then persistent PC-style operation is not a
+property of the installed system at all and the migration design alone cannot
+deliver it: stop designing the replacement pair and re-scope #324 around the
+measured mount and persistence behavior instead of assuming it.
+
+Fallback for the privileged-writer problem is the phase separation above. Do
+not spend another fixture round proving that locks, read-only bind mounts or
+mount namespaces exclude root; the 2026-11-04 fixture already refutes all
+three.
 
 This strategy is not a new record or public support claim. Actual decisions
 and measurements belong in new dated `records/` entries via `records.py`;
