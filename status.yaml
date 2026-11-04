@@ -3,8 +3,8 @@
 device: nothing-asteroids
 updated: 2026-11-04
 next_question: >-
-  Can the dependent carrier handoff and pre-boot evidence gates be resolved
-  before installing and measuring the reviewed autonomous WLAN chain?
+  Which typed verified-pair consumer route and post-run106 pstore proof
+  unblock the #311 pair install before any boot?
 active_issue: omnipha/linux-sm7635#311
 subsystems:
   boot:
