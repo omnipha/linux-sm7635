@@ -2,6 +2,7 @@
 
 ## Latest 10
 
+- [2026-11-04-031612-preflight-pinned-carrier-dependency](records/2026-11-04-031612-preflight-pinned-carrier-dependency.md) | wlan run 108 | inconclusive | linux-sm7635#311 | preflight pinned carrier dependency
 - [2026-11-04-005244-host-integrated-gated-chain-and-fail-closed-installer](records/2026-11-04-005244-host-integrated-gated-chain-and-fail-closed-installer.md) | wlan run 6 | confirmed | linux-sm7635#311 | host integrated gated chain and fail closed installer
 - [2026-11-03-204849-gated-chain-host-regeneration](records/2026-11-03-204849-gated-chain-host-regeneration.md) | wlan run 5 | confirmed | linux-sm7635#311 | run 5: gated chain host regeneration
 - [2026-11-03-203655-two-boot-planning-decision](records/2026-11-03-203655-two-boot-planning-decision.md) | wlan run 4 | confirmed | linux-sm7635#311 | two boot planning decision
@@ -11,7 +12,6 @@
 - [2026-11-03-143859-run106-radio-pin-mismatch](records/2026-11-03-143859-run106-radio-pin-mismatch.md) | wlan run 106 | confirmed | omnipha/linux-sm7635#294 | Run 106: installed radio pin mismatch and weakened checks
 - [2026-11-03-134121-run105-handoff-capture-loss](records/2026-11-03-134121-run105-handoff-capture-loss.md) | wlan run 105 | inconclusive | omnipha/linux-sm7635#294 | Run 105: capture readiness lost before worker SSH
 - [2026-11-03-132059-run104-close-next-session-readiness](records/2026-11-03-132059-run104-close-next-session-readiness.md) | wlan run 104 | inconclusive | omnipha/linux-sm7635#294 | Run 104 closure and next-session readiness
-- [2026-11-03-110917-caller-aware-gate-candidate](records/2026-11-03-110917-caller-aware-gate-candidate.md) | wlan | confirmed | omnipha/linux-sm7635#294 | Host candidate for the measured caller-prefixed panel boundary
 
 ## By subsystem (latest 3, total in brackets)
 
@@ -40,15 +40,15 @@
 - [2026-10-30-150709-root-contract-measured-userdata-maximum](records/2026-10-30-150709-root-contract-measured-userdata-maximum.md) | userspace | confirmed | omnipha/linux-sm7635#199 | Measured userdata size accepted by the fail-closed root contract
 - [2026-10-30-142216-persistent-root-contract-size-gate](records/2026-10-30-142216-persistent-root-contract-size-gate.md) | userspace | refuted | omnipha/linux-sm7635#197 | Persistent root blocked by the closed #194 size gate
 
-### wlan [79]
+### wlan [80]
+- [2026-11-04-031612-preflight-pinned-carrier-dependency](records/2026-11-04-031612-preflight-pinned-carrier-dependency.md) | wlan run 108 | inconclusive | linux-sm7635#311 | preflight pinned carrier dependency
 - [2026-11-04-005244-host-integrated-gated-chain-and-fail-closed-installer](records/2026-11-04-005244-host-integrated-gated-chain-and-fail-closed-installer.md) | wlan run 6 | confirmed | linux-sm7635#311 | host integrated gated chain and fail closed installer
 - [2026-11-03-204849-gated-chain-host-regeneration](records/2026-11-03-204849-gated-chain-host-regeneration.md) | wlan run 5 | confirmed | linux-sm7635#311 | run 5: gated chain host regeneration
-- [2026-11-03-203655-two-boot-planning-decision](records/2026-11-03-203655-two-boot-planning-decision.md) | wlan run 4 | confirmed | linux-sm7635#311 | two boot planning decision
 
 ### wlan run 91 [1]
 - [2026-11-01-123812-coordinator-preack-window-missed](records/2026-11-01-123812-coordinator-preack-window-missed.md) | wlan run 91 run 91 | inconclusive | omnipha/linux-sm7635#256 | coordinator preack window missed
 
 ## By month
 
-- [2026-11](records/index-2026-11.md) [47]
+- [2026-11](records/index-2026-11.md) [48]
 - [2026-10](records/index-2026-10.md) [162]

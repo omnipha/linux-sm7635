@@ -1,10 +1,10 @@
 # Current measured state only. Limit 80 lines. No protocol text: link records.
 # Public claims: omnipha/ports devices/nothing-asteroids/device.yaml (updated separately).
 device: nothing-asteroids
-updated: 2026-11-03
+updated: 2026-11-04
 next_question: >-
-  Can the coordinator preflight install the reviewed success-gated chain
-  before two autonomous WLAN and guard-acceptance measurements?
+  Can the dependent carrier handoff and pre-boot evidence gates be resolved
+  before installing and measuring the reviewed autonomous WLAN chain?
 active_issue: omnipha/linux-sm7635#311
 subsystems:
   boot:
@@ -15,7 +15,7 @@ subsystems:
     record: records/2026-10-30-203515-run-69-second-boot-guard-wlan.md
   wlan:
     state: partial
-    record: records/2026-11-03-200358-preack-guard-interlock-host-integration.md
+    record: records/2026-11-04-031612-preflight-pinned-carrier-dependency.md
   modem:
     state: partial        # stays running past the EFS request after PID-1 cutover (run 55); no voice/SIM/data claim
     record: records/2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the.md
