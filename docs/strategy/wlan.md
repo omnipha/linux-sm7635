@@ -35,15 +35,14 @@ installed chain, with no host recipe or host ACK.
 
 ## Next single variable
 
-Finish the host deliverable so the coordinator can independently assess it:
-enable the candidate build CLI and variant manifest write under the reviewed
-separately pinned design, keeping image output disabled until migration
-review. Then the physical coordinator alone decides the one-device-step
-migration: back up and remove only the two old persistent post/hook files
-(matching radio preserved), flash the candidate pair under fresh identity,
-rescue, capture and safety gates. The next target measurement is one fresh
-autonomous boot through DNS and internet; the candidate must also record the
-raw route text on refusal, so the run-113 cause is measured, not assumed.
+Persistent PC-style root operation in #324 is the mission priority; WLAN is
+not a prerequisite. Complete the pending host-only fixture and evidence-record
+work here, then pause #311 implementation. WLAN and any route-cache candidate
+await #324's reviewed migration path. No live-route measurement boot, candidate
+build or flash is planned before that architecture exists; the installed
+measured pair stays untouched. The physical coordinator owns subsequent device
+decisions under the applicable identity, backup, rescue and capture gates.
+[Coordinator decision](https://github.com/omnipha/linux-sm7635/issues/311#issuecomment-6635134969).
 
 [#311](https://github.com/omnipha/linux-sm7635/issues/311) remains the single
 mission issue. No forged record, weakened check, manual remoteproc/radio or
@@ -52,12 +51,11 @@ physical actor. Real guard, identity, nonce and record checks stay binding.
 
 ## Budget and fallback
 
-Budget the host deliverable and one coordinator-gated migration plus at most
-one fresh measurement boot. If the route refusal persists on the candidate,
-the recorded raw route text names the actual cause; do not spend another boot
-on bookkeeping alone. Do not build an image solely to change a hash. Preserve
-SSH, backups, capture, guard and recovery, and never bypass a preflight
-failure.
+After the host checkpoint, pause WLAN implementation until the #324 migration
+architecture exists. Do not build an image solely to change a hash or spend a
+boot on bookkeeping alone. Preserve SSH, backups, capture, guard and recovery,
+and never bypass a preflight failure. Host route reproduction is a sufficient
+possible cause of run 113's refusal, not proof of the unrecorded device output.
 
 The owner accepted possible loss of uncopied comparable WLAN-session pstore;
 host capture is not a pstore copy. [Decision](https://github.com/omnipha/linux-sm7635/issues/294#issuecomment-6603722440).

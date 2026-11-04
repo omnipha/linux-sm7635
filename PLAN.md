@@ -17,13 +17,18 @@ blocked by a measurement.
 
 ## Now
 
-- Step: integrate autonomous WLAN into the boot image and installed chain.
-      Check: a fresh boot brings the radio chain up by itself, wlan0
-      appears, associates, gets an address, resolves DNS and reaches the
-      internet; Linux stays up beyond the recovery deadline without a
-      host-run recipe or host ACK. A second boot needs a technical reason
-      and coordinator approval.
-      How and what was tried: docs/strategy/wlan.md.
+- Step: persistent PC-style root operation (#324). Check that SSH userland
+      edits survive reboot without a partition flash; measure read-write root
+      and its journal/fsck policy, USB SSH rescue after a reversible root fault,
+      and a provenance-checked update path with rollback and equivalent pin
+      protection. The physical coordinator owns device measurements.
+- Fresh-boot WLAN (#311) stays open but is not a prerequisite for this step.
+      WLAN and any route-cache candidate await the #324 reviewed migration path;
+      no live-route measurement boot, candidate build or flash before it exists.
+      Its verified fresh boot must reach DNS and internet, publish a genuine
+      success-gated ACK and remain up past the recovery deadline without a
+      host-run radio recipe or host ACK. A second boot needs a technical reason
+      and coordinator approval. History: docs/strategy/wlan.md.
 
 ## Then, in order
 
@@ -49,6 +54,8 @@ blocked by a measurement.
 
 - No image built to answer a question the running SSH session can answer.
 - No new issue for bookkeeping, a verifier quirk, or a repeated hash.
-- No step started while the one above it is still open.
+- No candidate-image flash loop; no userdata erase without independent owner approval.
+- No later step started while the current step is still open, except the
+  retained #311 worker and its existing host-only checkpoint.
 - No manual remoteproc or radio writes outside the measured scripts;
   the 2026-11-01 manual modem start crashed the whole kernel.
