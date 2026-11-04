@@ -2,6 +2,7 @@
 
 ## Latest 10
 
+- [2026-11-04-074017-fastboot-gate-unresponsive](records/2026-11-04-074017-fastboot-gate-unresponsive.md) | wlan run 111 | inconclusive | linux-sm7635#311 | fastboot gate unresponsive; pair stays pending
 - [2026-11-04-071619-typed-pair-receipt-gate-held](records/2026-11-04-071619-typed-pair-receipt-gate-held.md) | wlan run 110 | inconclusive | linux-sm7635#311 | typed pair receipt gate held
 - [2026-11-04-064200-pair-preflight-fastboot-timeout](records/2026-11-04-064200-pair-preflight-fastboot-timeout.md) | wlan run 109 | inconclusive | linux-sm7635#311 | pair preflight fastboot timeout
 - [2026-11-04-062414-pair-producer-verified-consumer-gate-still-open](records/2026-11-04-062414-pair-producer-verified-consumer-gate-still-open.md) | wlan | inconclusive | linux-sm7635#311 | pair producer verified consumer gate still open
@@ -11,7 +12,6 @@
 - [2026-11-03-204849-gated-chain-host-regeneration](records/2026-11-03-204849-gated-chain-host-regeneration.md) | wlan run 5 | confirmed | linux-sm7635#311 | run 5: gated chain host regeneration
 - [2026-11-03-203655-two-boot-planning-decision](records/2026-11-03-203655-two-boot-planning-decision.md) | wlan run 4 | confirmed | linux-sm7635#311 | two boot planning decision
 - [2026-11-03-202030-wlan-strategy-one-boot-acceptance](records/2026-11-03-202030-wlan-strategy-one-boot-acceptance.md) | wlan run 3 | confirmed | linux-sm7635#311 | wlan strategy one boot acceptance
-- [2026-11-03-201136-verifier-anchors-actual-guard-order](records/2026-11-03-201136-verifier-anchors-actual-guard-order.md) | wlan run 2 | confirmed | linux-sm7635#311 | verifier anchors actual guard order
 
 ## By subsystem (latest 3, total in brackets)
 
@@ -40,15 +40,15 @@
 - [2026-10-30-150709-root-contract-measured-userdata-maximum](records/2026-10-30-150709-root-contract-measured-userdata-maximum.md) | userspace | confirmed | omnipha/linux-sm7635#199 | Measured userdata size accepted by the fail-closed root contract
 - [2026-10-30-142216-persistent-root-contract-size-gate](records/2026-10-30-142216-persistent-root-contract-size-gate.md) | userspace | refuted | omnipha/linux-sm7635#197 | Persistent root blocked by the closed #194 size gate
 
-### wlan [84]
+### wlan [85]
+- [2026-11-04-074017-fastboot-gate-unresponsive](records/2026-11-04-074017-fastboot-gate-unresponsive.md) | wlan run 111 | inconclusive | linux-sm7635#311 | fastboot gate unresponsive; pair stays pending
 - [2026-11-04-071619-typed-pair-receipt-gate-held](records/2026-11-04-071619-typed-pair-receipt-gate-held.md) | wlan run 110 | inconclusive | linux-sm7635#311 | typed pair receipt gate held
 - [2026-11-04-064200-pair-preflight-fastboot-timeout](records/2026-11-04-064200-pair-preflight-fastboot-timeout.md) | wlan run 109 | inconclusive | linux-sm7635#311 | pair preflight fastboot timeout
-- [2026-11-04-062414-pair-producer-verified-consumer-gate-still-open](records/2026-11-04-062414-pair-producer-verified-consumer-gate-still-open.md) | wlan | inconclusive | linux-sm7635#311 | pair producer verified consumer gate still open
 
 ### wlan run 91 [1]
 - [2026-11-01-123812-coordinator-preack-window-missed](records/2026-11-01-123812-coordinator-preack-window-missed.md) | wlan run 91 run 91 | inconclusive | omnipha/linux-sm7635#256 | coordinator preack window missed
 
 ## By month
 
-- [2026-11](records/index-2026-11.md) [52]
+- [2026-11](records/index-2026-11.md) [53]
 - [2026-10](records/index-2026-10.md) [162]
