@@ -7,6 +7,19 @@ PC-style SSH edits that survive reboot without a partition flash, measured
 writable-root and rescue behavior, and provenance-checked updates **and
 rollback** with protection equivalent to the current pins.
 
+Host-side decision: pursue the signed-generation design and phase-separated
+inspection/write sequencing below, without relaxing any existing guard or pin.
+This is a direction for further host work, **not deployment approval**. The
+[190612 record](../../records/2026-11-04-190612-pair-deliverable-host-proofs.md)
+reports an inconclusive result: no replacement pair was built, and no
+owner-authorized signing keys, signed baseline or embedded trust anchors are
+demonstrated. Only synthetic throwaway-key fixtures exist. The migration model
+and the other host fixtures are described below; they do not supply a
+deployable bootstrap. The record also reports a failed host PID 1 `ack` case;
+`test-pmos-pid1.sh` has since been rewritten and passes all six host cases
+against the unchanged guard (fixture-authored `success-ready` and record
+evidence, see the finding below); this is a host result, not a device ACK.
+
 ## Current boundary
 
 [Run 113](../../records/2026-11-04-093054-run113-pair-installed-internet-route-gate-refused.md)
@@ -74,17 +87,50 @@ The new bootstrap would validate the entire selected signed generation before
 any managed file is executed, before guest SSH or PID 1 cutover, and before
 radio `prepare`. Diagnostic key-only USB SSH and rescue must remain available
 on refusal; prove the required sequencing without weakening the present
-rescue path. Concurrent writers are excluded by phase separation, not by a
-lock: the managed store stays mounted read-only with no journal replay
-(`ro,noload`) except during one bounded write window that the bootstrap itself
-enters and leaves, and no other session — including a diagnostic root SSH —
-exists during that window. A cooperative lock is not exclusion: the host
-fixture shows an unprivileged writer that ignores `flock` appends freely, and
-that root can remount or `nsenter` around a read-only bind and a mount
-namespace
-([writer-exclusion fixture](../../records/2026-11-04-190612-pair-deliverable-host-proofs.md)).
-If the phase separation cannot be implemented and tested without compromising
+rescue path. If that cannot be implemented and tested without compromising
 rescue, do not deploy.
+
+### Threat boundary and candidate sequencing
+
+Defensible boundary: **no untrusted privileged writer may exist while a
+bounded transaction write occurs.** "Untrusted privileged writer" means any
+process that can write the userdata filesystem or change its mount state
+without passing the verified updater — explicitly including diagnostic SSH
+sessions and processes spawned earlier in the boot (a shell left running,
+a background job, a child that outlived its parent) and processes in
+alternate mount namespaces, which can hold their own writable view of the
+same filesystem. The boundary is about what exists, not about what is
+connected: disconnecting the SSH client does not terminate a session's
+processes, so it does not by itself exclude root writers.
+
+Neither of the two mechanisms examined can enforce this boundary.
+`scripts/test-pmos-writer-exclusion.sh` demonstrates the negative on a
+synthetic tmpfs: `flock` excludes only cooperating `flock` users (an
+unprivileged non-cooperating writer appended 20 lines under a held lock);
+a `ro` bind mount denies writers going through that mount, including root
+(`EROFS`), but not writers using the still-`rw` original path, and root can
+remount it; root can also `nsenter` into another mount namespace and remount
+its view. `ro,noload` has the same shape as a read-only mount option: it
+constrains opens through the mounts that carry it, and a privileged process
+can remount or use a mount that does not carry it. Cooperative locks plus
+`ro,noload` are therefore necessary hygiene, not the exclusion mechanism.
+
+Candidate sequencing, proposed and not proven: keep userdata read-only from
+mount until a bounded write window; before opening that window, read-only
+inspection must establish that no privileged writer exists — no diagnostic
+or earlier-spawned process able to write, no other mount namespace holding
+the filesystem writable — and the same inspection must hold after the window
+closes and the transaction is reverified. The window itself is the only
+interval in which the verified updater writes, and it must be abortable back
+to the preverified previous generation through the recovery table below,
+with diagnostic recovery and rescue reachable in every phase.
+
+This sequencing is a direction, not a production proof. No mechanism has
+been independently demonstrated to establish that quiescence, to prevent a
+privileged writer from appearing during the window, and to keep rescue and
+abort safe at the same time; asserting the sequence does not make it true.
+Until such a mechanism exists and is demonstrated without weakening rescue,
+the exclusion requirement is unmet and no transaction write is deployable.
 
 The independently verified image pair is the trust anchor, not a key or
 verifier first obtained from userdata. The proposal assumes the coordinator's
@@ -158,24 +204,34 @@ malformed signatures, wrong keys, versions, paths, sizes, modes or digests.
 Each later generation has sequence `previous + 1`. A normal update can only
 advance from the verified current ID; reject stale, skipped, substituted or
 replayed transitions. A rollback is **not** an unsigned selector edit or a
-reuse of an old manifest: it is a new, higher-sequence manifest naming the
-current ID as predecessor and reproducing the exact three payloads from the
-named, verified older generation. It additionally needs a separate detached
-signature by the rollback-authorization key over a domain-separated statement
-binding current ID, new target ID, restored content ID and sequence. Verify
-both signatures and the retained source generation. Recovery of an
-interrupted, uncommitted transaction to its previous generation is not a
-committed release rollback.
+reuse of an old manifest: it is a forward transition in sequencing terms — a
+new, higher-sequence generation naming the current ID as predecessor and
+reproducing the exact three bytes of the named, verified earlier generation —
+while being separately authorized across a separate domain and a different
+public key: a detached rollback-authorization signature by the
+rollback-authorization key covers the rollback namespace and domain with the
+current ID, the new target ID, the restored source content ID and the
+sequence, in addition to the release signature on the manifest. Verify both
+signatures, the identifier and sequence binding, and the retained earlier
+source before installing. Recovery of an interrupted, uncommitted
+transaction to its previous generation is not a committed release rollback.
+
+Realistic replay limits: sequence and selector checks hold only relative to
+intact local state. A privileged actor — or a whole-userdata rollback —
+that rewinds the selector, the matching history, or the locally stored
+rollback authorization is not detected by the sequence check alone; the
+host model prints both limits explicitly, and accepts selector
+rewind with identical restored bytes as well as whole-store rewind. There is
+no hardware monotonic guarantee, so these are intentionally scoped
+detections, not anti-rollback hardware semantics.
 
 Retain the signed baseline and full predecessor chain, with a reviewed bound
 on chain length and storage; check every link back to the image-pinned baseline
 at boot. Capacity exhaustion or missing history stops further updates rather
-than silently pruning trust. Sequence and selector state live on userdata:
-this detects replay relative to an intact local state, **not** a privileged
-attacker who rewinds the selector and matching policy/history, nor a
-whole-userdata rollback. There is no hardware monotonic guarantee here. The
-same limit applies to locally stored rollback authorizations; physical and
-signing-key controls remain necessary.
+than silently pruning trust. Sequence and selector state live on userdata and
+are subject to the replay limits above. The same limit applies to locally
+stored rollback authorizations; physical and signing-key controls remain
+necessary.
 
 Independent release review must derive the radio, post and hook from exact
 reviewed source inputs, not merely sign arbitrary bytes. In each generation,
@@ -203,8 +259,10 @@ executed there. The trusted RAM-side updater applies it only on a later boot,
 before guest startup, after the root contract verifies the single
 `PARTNAME=userdata` ext4 device, size and mount identity. It starts read-only
 with `noload`; any later promotion to writable mode is conditional on the
-filesystem policy below. No mutable userdata verifier or library participates
-in that decision.
+filesystem policy below and on the threat boundary above, and `noload` or the
+read-only flag is not itself the exclusion. No mutable userdata verifier or
+library participates in that decision. All verification, including the
+inspections before and after the write window, is read-only.
 
 Before reading or writing, the verifier must reject:
 
@@ -235,7 +293,9 @@ Ordinary edits elsewhere are outside this three-path mechanism.
 The selector alone cannot atomically change three existing fixed files. The
 proposed updater therefore gates **all** managed startup until a transaction
 has reached a consistent state; no hook-last shortcut is used. With a clean
-filesystem and exclusive access, it performs these steps:
+filesystem and the threat boundary above satisfied by a mechanism that has
+been independently demonstrated (none has), it performs these steps inside
+the bounded write window:
 
 1. Verify the selected previous signed chain, its retained payload copies,
    all three fixed files and their metadata. Verify the target bundle and its
@@ -254,8 +314,8 @@ filesystem and exclusive access, it performs these steps:
    replace only the separately verified previous file with an atomic rename.
    Recheck inode, type, mode, link count and digest after each publication;
    `fsync` each affected directory. Replacement is permitted only inside this
-   recorded, authorized transition and with exclusive writers, never on a
-   mismatch.
+   recorded, authorized transition and with no untrusted privileged writer
+   present, never on a mismatch.
 4. Reverify all three fixed paths as the target together. Write a new regular
    selector to an exclusive temporary name, `fsync` it, atomically rename it
    over the verified previous selector, and `fsync` the selector directory.
@@ -324,6 +384,37 @@ Synthetic keys and fixtures are illustrative only: they are not deployable
 bundles and do not establish device behavior. Independently verify the actual
 candidate pair and release derivations in addition to the model.
 
+Current host fixture boundaries, as run on this checkout (host-only; no
+device, USB, flash or partition access):
+
+- `scripts/test-persistent-root-migration.py` (passes) is a synthetic
+  logical model with disposable `ssh-keygen` Ed25519 keys. It exercises canonical-manifest and authorization vectors, a
+  separately keyed and domain-separated higher-sequence rollback, and
+  interruption cuts at every modelled publication and recovery step (49
+  forward and 52 rollback publication cuts, each with 650 recovery cuts).
+  Recovery coverage is of that abstract state machine, not of ext4, `fsync`
+  or a power cut. Its legacy-fixture sections run on unprivileged host
+  directories with path-based `lstat` checks that have reopen races and no
+  root ownership, ACL, capability, mount, `fsync` or case-insensitive
+  filesystem coverage. It prints that it is not deployable and has no
+  device, durability, concurrency, mount, guard or hardware anti-replay proof.
+- Known gaps the model asserts so a fix is noticed: clean boot ignores
+  leftover temporary objects (stray fixed, selector or journal temporaries)
+  and trusts a boolean "recognized" stage flag; and a recovered transition
+  cannot be retried, because the same target hits a generation or journal
+  history collision. Both must be resolved by the reviewed implementation,
+  not by relaxing the stop-on-unknown rules in the recovery table.
+- `scripts/test-pmos-writer-exclusion.sh` (synthetic tmpfs in a private mount
+  namespace) shows the negatives described in the threat boundary; it
+  establishes no sufficient exclusion for any real block device.
+- `scripts/test-pmos-journal-fsck.sh` (synthetic loop images) checks a strict
+  offline `dumpe2fs` allowlist and a clean `e2fsck -fn` transcript; it is not
+  a production filesystem safety proof or the live `sda13` measurement.
+- `scripts/test-pmos-baseline-provenance.py` (synthetic throwaway keys)
+  derives the three baseline payloads and checks the contract; it provides no
+  authorized device baseline signature, reviewed schema implementation,
+  updater or pair.
+
 The **one planned physical measurement** is a separately authorized,
 coordinator-run baseline cutover boot, not part of this proposal. Preflight
 must establish targeted fastboot identity, checksum-verified backups before
@@ -353,7 +444,8 @@ damaged or ambiguous state pending a separately approved backup and recovery
 plan. No `fsck -y`, journal replay, format or cleanup is authorized here.
 Verify that this policy is compatible with the actual filesystem and with
 interruption recovery before deployment; measure mount options and fsck/journal
-behavior rather than inferring them from `ro,noload` or a host fixture.
+behavior rather than inferring them from `ro,noload` or a host fixture. The
+synthetic journal-fsck fixture above does not replace that measurement.
 
 ## Next single variable
 
@@ -379,12 +471,13 @@ those needs its own later technical reason and coordinator approval.
 
 ## Budget and fallback
 
-Host-side, the assigned worker finishes the three items already in progress:
-the deployable bootstrap reconciled with the host model, the model corrected
-to the separately keyed new-generation rollback (its current rollback is a
-same-key selector flip, which the design does not say), and a green host ACK
-path in `test-pmos-pid1.sh`. No image is built and no pair is flashed until
-the owner records a decision on the two trust-anchor keys.
+Host-side, the model now implements the separately keyed new-generation
+rollback, and `test-pmos-pid1.sh` is rewritten to supply `success-ready` and an
+ordered boot record on an isolated loop-backed ext4 root; it passes all six
+cases on the host with the production scripts unchanged, and that evidence is
+fixture-authored, so it is not a device ACK. Still open: the deployable bootstrap reconciled with the model. No image is
+built and no pair is flashed until the owner records a decision on the two
+trust-anchor keys.
 
 If that measurement shows the final root stays read-only, or that an unpinned
 file does not survive the reboot, then persistent PC-style operation is not a

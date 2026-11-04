@@ -3,7 +3,7 @@ set -eu
 
 BB=/bin/busybox
 PIN=7a76a11062615387af5eac8f67b7f672d5f9004decac89529396d442ab3c6e26
-MOCK_SHA=e112e65f2e9a6dc28531b45eda218284e4afb152dc3a02b588f7a25255cce2d1
+MOCK_SHA=fe72fe25364a1a08c6482bcecb3175f2c0def38af6fc02967b1edc1d6cf28e71
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 hash() { $BB sha256sum "$1" | $BB cut -d ' ' -f 1; }
 mounted() {
@@ -13,7 +13,8 @@ separate() {
 	$BB awk -v a="$1" -v b="$2" '$5 == a {left = $3; na++} $5 == b {right = $3; nb++} END {exit(na != 1 || nb != 1 || left == right)}' /proc/self/mountinfo
 }
 valid_root() {
-	[ -d "$1" ] && [ ! -L "$1" ] && mounted "$1" tmpfs &&
+	[ -d "$1" ] && [ ! -L "$1" ] && mounted "$1" ext4 &&
+		$BB awk -v root="$1" '$1 == "/dev/block/sda13" && $2 == root && $3 == "ext4" && $4 ~ /(^|,)rw(,|$)/ {n++} END {exit(n != 1)}' /proc/mounts &&
 		[ -f "$1/bin/busybox" ] && [ ! -L "$1/bin/busybox" ] &&
 		[ "$(hash "$1/bin/busybox")" = "$NATIVE_SHA" ] &&
 		[ -f "$1/pid1-test.sh" ] && [ "$(hash "$1/pid1-test.sh")" = "$SCRIPT_SHA" ] &&
@@ -23,15 +24,23 @@ valid_root() {
 		[ ! -L "$1/dev" ] && [ ! -L "$1/dev/pts" ] &&
 		[ ! -L "$1/proc" ] && [ ! -L "$1/sys" ] && [ ! -L "$1/run" ] &&
 		mounted "$1/dev" tmpfs && mounted "$1/dev/pts" devpts &&
-		mounted "$1/proc" proc && mounted "$1/sys" sysfs && mounted "$1/run" tmpfs &&
+		mounted "$1/proc" proc && mounted "$1/run" tmpfs &&
 		separate "$1/dev" /dev && separate "$1/dev" "$1" &&
 		separate "$1/run" "$1" && separate "$1/run" "$1/dev" &&
 		$BB awk -v root="$1" '
 			$2 == root || index($2, root "/") == 1 {
 				if ($2 != root && $2 != root "/dev" && $2 != root "/dev/pts" &&
-				    $2 != root "/proc" && $2 != root "/sys" && $2 != root "/run") bad++
+				    $2 != root "/proc" && $2 != root "/run") bad++
 			}
-			END {exit(bad != 0)}' /proc/mounts
+			END {exit(bad != 0)}' /proc/mounts &&
+		[ -b "$1/dev/block/sda13" ] && [ ! -L "$1/dev/block/sda13" ] &&
+		[ "$($BB stat -c '%t:%T' "$1/dev/block/sda13")" = "$($BB printf '%x:%x' "${MAIN_NUMS%%:*}" "${MAIN_NUMS##*:}")" ] &&
+		[ -f "$1/sys/class/block/sda13/uevent" ] && [ ! -L "$1/sys/class/block/sda13/uevent" ] &&
+		[ "$($BB cat "$1/sys/class/block/sda13/uevent")" = 'PARTNAME=userdata' ] &&
+		[ -f "$1/sys/class/block/sda13/dev" ] && [ ! -L "$1/sys/class/block/sda13/dev" ] &&
+		[ "$($BB cat "$1/sys/class/block/sda13/dev")" = "$MAIN_NUMS" ] &&
+		[ -f "$1/sys/class/block/sda13/size" ] && [ ! -L "$1/sys/class/block/sda13/size" ] &&
+		[ "$($BB cat "$1/sys/class/block/sda13/size")" = 524288 ]
 }
 archive_ok() {
 	[ -f "$1" ] && [ ! -L "$1" ] && [ "$(hash "$1")" = "$PIN" ]
@@ -57,6 +66,35 @@ service_state() {
 	case "$start" in ''|*[!0-9]*) return 1;; esac
 	$BB printf '%s %s %s %s %s\n' "$pid" "$start" "$($BB stat -Lc '%d:%i' "$root")" "$(hash "$root/etc/dropbear/session_host_key")" "$inode"
 }
+boot_record_setup() (
+	set -eu
+	case "${1:-}" in full|cutover) :;; *) exit 1;; esac
+	[ -f /run/pmos-root-contract.sh ] && [ ! -L /run/pmos-root-contract.sh ] || exit 1
+	. /run/pmos-root-contract.sh || exit 1
+	boot=$($BB cat /proc/sys/kernel/random/boot_id) || exit 1
+	panel="usb-init: pre-SSH panel node=boe card0=1 boot $boot"
+	(umask 077; set -C; $BB printf '%s\n' "$panel" > /run/pmos-pre-ssh-panel.record) || exit 1
+	[ -f /run/pmos-pre-ssh-panel.record ] && [ ! -L /run/pmos-pre-ssh-panel.record ] &&
+		[ "$($BB stat -c '%u:%a:%h' /run/pmos-pre-ssh-panel.record)" = 0:600:1 ] &&
+		[ "$($BB cat /run/pmos-pre-ssh-panel.record)" = "$panel" ] || exit 1
+	boot_record_open / || exit 1
+	boot_record_append / "pmos-self-stage: diagnostic hold and :22 verified on boot $boot" || exit 1
+	boot_record_append / "$panel" || exit 1
+	boot_record_append / 'pmos-stage: using unpacked persistent postmarketOS root' || exit 1
+	boot_record_append / 'pmos-stage: mounted private proc/sys/configfs and guest-only dev, verified nodes and private devpts' || exit 1
+	boot_record_append / 'pmos-stage: second key-only SSH listening on 172.16.42.2:2222 (diagnostic :22 untouched)' || exit 1
+	boot_record_append / 'pmos-stage: STAGED ok; enter with: ssh -p 2222 root@172.16.42.2 (accept the printed key)' || exit 1
+	boot_record_append / 'pmos-self-stage: mounted pinned persistent root from read-only /dev/block/sda13 (sda13) and verified its root contract' || exit 1
+	boot_record_append / 'pmos-self-stage: guest :2222 public key matches the diagnostic host key; pin [172.16.42.2]:2222 before the PID 1 request' || exit 1
+	boot_record_append / 'radio-bringup: stock INI, one-shot helper and service markers verified and staged in guest RAM before cutover' || exit 1
+	boot_record_append / "pmos-self-stage: staged postmarketOS root and armed PID 1 request for boot $boot" || exit 1
+	boot_record_append / 'usb-init: pid1 transition guard armed; exec switch_root to postmarketOS init' || exit 1
+	boot_record_verify / 'usb-init: pid1 transition guard armed; exec switch_root to postmarketOS init' || exit 1
+	if [ "$1" = full ]; then
+		boot_record_append / "pmos-self-post: post-cutover PID 1 on boot $boot; guard identity check passed; pid1 identity check passed" || exit 1
+		boot_record_verify / "pmos-self-post: post-cutover PID 1 on boot $boot; guard identity check passed; pid1 identity check passed" || exit 1
+	fi
+)
 make_nodes() {
 	for node in null zero random urandom tty; do
 		case "$node" in
@@ -111,7 +149,7 @@ if [ "${1:-}" = --client ]; then
 	ssh_guest bad_key known_hosts true >/dev/null 2>&1 && fail 'post-cutover wrong client identity authenticated'
 	ssh_guest client_key bad-known_hosts true >/dev/null 2>&1 && fail 'post-cutover wrong server identity authenticated'
 	identity=$(ssh_guest client_key known_hosts \
-		'test "$(id -u)" = 0 && test ! -t 0 && test "$(cat /run/dropbear-session.pid)" = '"$server_pid"' && test "$(cat /etc/alpine-release)" = 3.21.9 && grep -q '\''ID="postmarketos"'\'' /etc/os-release && test "$(cat /proc/1/comm)" = busybox && test "$(/bin/busybox sha256sum /proc/1/exe | /bin/busybox cut -d " " -f 1)" = "$(/bin/busybox sha256sum /bin/busybox | /bin/busybox cut -d " " -f 1)" && test "$(cat /run/openrc/softlevel)" = default && /sbin/rc-service local status >/dev/null && test "$(/bin/rc-status --crashed)" = "" && test -c /dev/tty && test -c /dev/pts/ptmx && /bin/busybox awk '\''$2 == "/" && $3 == "tmpfs" {n++} END {exit(n != 1)}'\'' /proc/1/mounts && /usr/bin/qemu-aarch64 -0 sh /bin/distro-busybox -c '\''test "$(/bin/busybox id -u)" = 0 && test "$(/bin/busybox cat /etc/alpine-release)" = 3.21.9'\'' && printf "pmos-pid1-host-ok\n"') || fail 'strict key-only SSH, switched root, OpenRC local or distro BusyBox smoke'
+		'test "$(id -u)" = 0 && test ! -t 0 && test "$(cat /run/dropbear-session.pid)" = '"$server_pid"' && test "$(cat /etc/alpine-release)" = 3.21.9 && grep -q '\''ID="postmarketos"'\'' /etc/os-release && test "$(cat /proc/1/comm)" = busybox && test "$(/bin/busybox sha256sum /proc/1/exe | /bin/busybox cut -d " " -f 1)" = "$(/bin/busybox sha256sum /bin/busybox | /bin/busybox cut -d " " -f 1)" && test "$(cat /run/openrc/softlevel)" = default && /sbin/rc-service local status >/dev/null && test "$(/bin/rc-status --crashed)" = "" && test -c /dev/tty && test -c /dev/pts/ptmx && /bin/busybox awk '\''$2 == "/" && $3 == "ext4" {n++} END {exit(n != 1)}'\'' /proc/1/mounts && /usr/bin/qemu-aarch64 -0 sh /bin/distro-busybox -c '\''test "$(/bin/busybox id -u)" = 0 && test "$(/bin/busybox cat /etc/alpine-release)" = 3.21.9'\'' && printf "pmos-pid1-host-ok\n"') || fail 'strict key-only SSH, switched root, OpenRC local or distro BusyBox smoke'
 	[ "$identity" = pmos-pid1-host-ok ] || fail 'post-cutover distro identity'
 	[ "$before" = "$(service_state /proc/1/root/.)" ] || fail 'post-cutover service restarted after SSH'
 	case "$2" in
@@ -134,6 +172,9 @@ if [ "${1:-}" = --client ]; then
 			sh "$HOST_ACK" "$BOOT_ID" /run/known_hosts /run/client_key || fail 'actual ack script failed'
 			[ "$(ssh_guest client_key known_hosts 'cat /run/pid1-guard/accepted')" = "$BOOT_ID" ] || fail 'ack not accepted'
 			[ ! -e /proc/1/root/run/pid1-guard/recovery-request ] || fail 'ack triggered recovery'
+			[ -f /proc/1/root/run/pid1-guard/success-ready ] && [ ! -L /proc/1/root/run/pid1-guard/success-ready ] &&
+				[ "$($BB stat -c '%u:%a:%h' /proc/1/root/run/pid1-guard/success-ready)" = 0:600:1 ] || fail 'fixture-published success-ready file invalid'
+			$BB grep -qF 'pmos-self-post: post-cutover PID 1 on boot '"$BOOT_ID"'; guard identity check passed; pid1 identity check passed' /proc/1/root/.omnipha-boot-record || fail 'fixture-authored ordered boot record missing'
 			if [ "$2" = late ]; then
 				attempt=0
 				until [ -f /proc/1/root/run/self-post-accepted ]; do
@@ -159,10 +200,14 @@ if [ "${1:-}" = --client ]; then
 			[ ! -e /proc/1/root/run/self-post-accepted ] || fail 'post-cutover waiter accepted a late ack'
 			sh "$HOST_ACK" "$BOOT_ID" /run/known_hosts /run/client_key >/dev/null 2>&1 && fail 'host ack accepted after the deadline'
 			rootfs=$($BB awk '$2 == "/" {print $3}' /proc/1/mounts)
-			if [ "$rootfs" = ext4 ]; then
-				$BB grep -q 'pmos-self-post: FAIL: guard ack not accepted (uptime ' /proc/1/root/.omnipha-boot-record ||
-					{ $BB cat /proc/1/root/.omnipha-boot-record >&2 2>/dev/null; fail 'refusal path left no post-cutover FAIL line'; }
-			fi
+			[ "$rootfs" = ext4 ] || fail 'stale case did not switch to isolated ext4'
+			attempt=0
+			until $BB grep -q 'pmos-self-post: FAIL: guard ack not accepted (uptime ' /proc/1/root/.omnipha-boot-record; do
+				[ "$attempt" -lt 30 ] || { $BB cat /proc/1/root/.omnipha-boot-record >&2 2>/dev/null; fail 'refusal path left no post-cutover FAIL line'; }
+				$BB sleep 1
+				attempt=$((attempt + 1))
+			done
+			[ -f /proc/1/root/run/self-post-failed ] || fail 'post-cutover waiter did not fail'
 			;;
 		timeout)
 			attempt=0
@@ -208,11 +253,22 @@ fi
 
 if [ "${1:-}" = --switched ]; then
 	[ "$$" = 1 ] && [ "$($BB readlink /proc/1/exe)" = /bin/busybox ] || fail 'switch_root did not exec native BusyBox PID 1'
-	mounted / tmpfs && mounted /dev tmpfs && mounted /dev/pts devpts && mounted /proc proc && mounted /sys sysfs && mounted /run tmpfs && separate /run /dev && separate /run / || fail 'switch_root lost private guest mounts'
+	mounted / ext4 && mounted /dev tmpfs && mounted /dev/pts devpts && mounted /proc proc && mounted /run tmpfs && separate /run /dev && separate /run / &&
+		$BB awk '$2 == "/sys" || index($2, "/sys/") == 1 {bad++} END {exit(bad != 0)}' /proc/mounts || fail 'switch_root lost private guest mounts'
+	( . /run/pmos-root-contract.sh && root_contract_switched_root /proc/1/mounts /proc/1/mountinfo ) || fail 'switched ext4 root contract failed'
+	[ -b /dev/block/sda13 ] && [ ! -L /dev/block/sda13 ] &&
+		[ "$($BB stat -c '%t:%T' /dev/block/sda13)" = "$($BB printf '%x:%x' "${MAIN_NUMS%%:*}" "${MAIN_NUMS##*:}")" ] &&
+		[ "$($BB cat /sys/class/block/sda13/uevent)" = 'PARTNAME=userdata' ] &&
+		[ "$($BB cat /sys/class/block/sda13/dev)" = "$MAIN_NUMS" ] &&
+		[ "$($BB cat /sys/class/block/sda13/size)" = 524288 ] || fail 'isolated userdata identity lost'
 	[ ! -e /oldroot ] && [ ! -e /guest ] && [ -f /pid1-test.sh ] && [ "$(hash /pid1-test.sh)" = "$SCRIPT_SHA" ] || fail 'old root retained or switched script invalid'
 	[ "$(hash /bin/busybox)" = "$NATIVE_SHA" ] && [ "$(hash /bin/distro-busybox)" = "$DISTRO_SHA" ] || fail 'native or distro BusyBox changed'
 	[ -c /dev/null ] && [ -c /dev/tty ] && [ "$($BB readlink /dev/ptmx)" = pts/ptmx ] || fail 'guest devices invalid'
 	[ ! -e /run/openrc/softlevel ] && [ "$($BB readlink /etc/runlevels/default/local)" = /etc/init.d/local ] || fail 'unexpected OpenRC state before cutover runlevels'
+	case "$CASE" in
+		ack|late) boot_record_setup full || fail 'real contract could not create ordered record';;
+		stale) boot_record_setup cutover || fail 'real contract could not create pre-cutover record';;
+	esac
 	/sbin/openrc sysinit >/run/openrc.log 2>&1 &&
 		/sbin/openrc boot >>/run/openrc.log 2>&1 &&
 		/sbin/openrc default >>/run/openrc.log 2>&1 &&
@@ -226,6 +282,19 @@ if [ "${1:-}" = --switched ]; then
 	before=$($BB cat /run/service-before)
 	[ "$before" = "$(service_state /proc/1/root/.)" ] || fail 'pre-existing SSH service changed during switch_root'
 	server=${before%% *}
+	case "$CASE" in
+		ack|late)
+			attempt=0
+			until [ -f /run/pid1-guard/nonce ]; do
+				[ "$attempt" -lt 100 ] && [ ! -e /run/pid1-guard/recovery-request ] || fail 'guard did not issue nonce after switch_root'
+				$BB sleep 0.1
+				attempt=$((attempt + 1))
+			done
+			nonce=$($BB cat /run/pid1-guard/nonce) || fail 'guard nonce unreadable'
+			[ "${#nonce}" = 64 ] || fail 'guard nonce invalid'
+			(umask 077; set -C; $BB printf '%s %s\n' "$nonce" "$BOOT_ID" > /run/pid1-guard/success-ready) || fail 'fixture could not publish success-ready'
+			[ "$($BB stat -c '%u:%a:%h:%s' /run/pid1-guard/success-ready)" = "0:600:1:$((${#nonce} + ${#BOOT_ID} + 2))" ] || fail 'success-ready publication invalid';;
+	esac
 	$BB touch /run/switched-ready
 	attempt=0
 	until [ -f /run/client-result ]; do
@@ -241,7 +310,7 @@ if [ "${1:-}" = --switched ]; then
 	[ "$before" = "$(service_state /proc/1/root/.)" ] || fail 'pre-existing SSH service changed after guard result'
 	[ "$$" = 1 ] && [ "$($BB readlink /proc/1/exe)" = /bin/busybox ] || fail 'PID 1 changed'
 	$BB kill "$server" 2>/dev/null || true
-	printf 'pass: %s; real BusyBox PID 1 switch_root to synthetic tmpfs with surviving pre-cutover QEMU Dropbear PID, root, socket and pinned key, strict key-only SSH before/after, actual ack script and real guard with digest-pinned isolated mock recovery; no device recovery\n' "$CASE"
+	printf 'pass: %s; host fixture only, no phone: real BusyBox PID 1 switch_root to a fresh loop-backed ext4 image under a fixture-created synthetic tmpfs root with fixture-written synthetic /sys block files (not real sysfs) and fixture-made device nodes; surviving pre-cutover QEMU Dropbear PID, root, socket and pinned key, strict key-only SSH before/after, actual ack script and real guard with digest-pinned isolated mock recovery; boot record lines and success-ready are fixture-authored through the real contract functions, not production-emitted evidence; no device recovery\n' "$CASE"
 	exit 0
 fi
 
@@ -250,6 +319,51 @@ if [ "${1:-}" = --inner ]; then
 	CASE=$2
 	case "$CASE" in ack|late|stale|timeout|preplanted|symlinked) :;; *) fail 'invalid case';; esac
 	export CASE
+	MAIN_NUMS=${HOST_MAIN_NUMS:-}
+	FS_UUID=${HOST_FS_UUID:-}
+	MAIN_MAJOR=${MAIN_NUMS%%:*}
+	MAIN_MINOR=${MAIN_NUMS##*:}
+	[ "$MAIN_NUMS" = "$MAIN_MAJOR:$MAIN_MINOR" ] && [ "$MAIN_MAJOR" = 7 ] || fail 'invalid loop device identity'
+	case "$MAIN_MINOR" in ''|*[!0-9]*) fail 'invalid loop device minor';; esac
+	case "$FS_UUID" in
+		????????-????-????-????-????????????)
+			case "$FS_UUID" in *[!0-9a-f-]*) fail 'isolated userdata UUID invalid';; esac;;
+		*) fail 'isolated userdata UUID invalid';;
+	esac
+	python3 -I - "${HOST_WORK_IMAGE:-}" "$MAIN_NUMS" "$CASE" <<'PY' || fail 'loop descriptor or backing image mismatch'
+import fcntl
+import os
+import re
+import stat
+import struct
+import sys
+
+path, nums, case = sys.argv[1:]
+if not re.fullmatch(r'/tmp/pmos-pid1\.[A-Za-z0-9_]{8}/userdata-' + re.escape(case) + r'\.img', path):
+    raise SystemExit(1)
+parent = os.stat(os.path.dirname(path), follow_symlinks=False)
+if not stat.S_ISDIR(parent.st_mode) or parent.st_uid != 0 or stat.S_IMODE(parent.st_mode) != 0o700:
+    raise SystemExit(1)
+loop = os.fstat(9)
+if not stat.S_ISBLK(loop.st_mode) or f'{os.major(loop.st_rdev)}:{os.minor(loop.st_rdev)}' != nums:
+    raise SystemExit(1)
+image_fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+image = os.fstat(image_fd)
+if image.st_uid != 0 or stat.S_IMODE(image.st_mode) != 0o600:
+    raise SystemExit(1)
+info = struct.unpack('=QQQQQIIII64s64s32sQQ', fcntl.ioctl(9, 0x4C05, bytes(232)))
+encoded_dev = info[0]
+dev_major = (encoded_dev & 0xFFF00) >> 8
+dev_minor = (encoded_dev & 0xFF) | ((encoded_dev >> 12) & 0xFFF00)
+if (not stat.S_ISREG(image.st_mode) or image.st_nlink != 1 or image.st_size != 268435456
+        or (dev_major, dev_minor) != (os.major(image.st_dev), os.minor(image.st_dev))
+        or info[1] != image.st_ino
+        or info[3] != 0 or info[4] != 0 or info[5] != os.minor(loop.st_rdev)
+        or info[6] != 0 or info[8] != 4):
+    raise SystemExit(1)
+os.close(9)
+PY
+	export MAIN_NUMS
 	$BB mount --make-rprivate / || fail 'private mount namespace unavailable'
 	$BB mount -t tmpfs -o mode=0755 tmpfs /dev || fail 'private host dev'
 	make_nodes /dev
@@ -279,7 +393,17 @@ if [ "${1:-}" = --inner ]; then
 	$BB cp /bin/busybox "$ROOT/bin/busybox"
 	$BB cp "$HOST_SCRIPT" "$ROOT/pid1-test.sh"
 	$BB cp "$HOST_SCRIPT" "$ROOT/init"
-	$BB mount -t tmpfs -o mode=0755,size=512m tmpfs "$ROOT/guest" || fail 'postmarketOS root tmpfs'
+	$BB mkdir -p /dev/block
+	$BB mknod -m 0400 /dev/block/sda13 b "$MAIN_MAJOR" "$MAIN_MINOR" || fail 'isolated userdata node'
+	[ "$($BB blockdev --getsize64 /dev/block/sda13)" = 268435456 ] || fail 'isolated userdata size mismatch'
+	[ "$(blkid -s UUID -o value /dev/block/sda13 2>/dev/null)" = "$FS_UUID" ] || fail 'isolated userdata UUID mismatch'
+	$BB mount -t ext4 -o rw /dev/block/sda13 "$ROOT/guest" || fail 'isolated ext4 guest mount'
+	$BB mount --make-private "$ROOT/guest" || fail 'private guest mount'
+	[ -d "$ROOT/guest/lost+found" ] && [ ! -L "$ROOT/guest/lost+found" ] || fail 'fresh image lacks lost+found'
+	fresh_entries=$($BB ls -A "$ROOT/guest") || fail 'cannot list fresh image'
+	[ "$fresh_entries" = lost+found ] || fail 'fresh image is not empty'
+	fresh_entries=$($BB ls -A "$ROOT/guest/lost+found") || fail 'cannot list fresh lost+found'
+	[ -z "$fresh_entries" ] || fail 'fresh image lost+found is not empty'
 	$BB tar -xzf /run/session.tar.gz -C "$ROOT/guest" || fail 'pinned postmarketOS extraction'
 	DISTRO_SHA=$(hash "$ROOT/guest/bin/busybox")
 	export DISTRO_SHA
@@ -299,15 +423,23 @@ if [ "${1:-}" = --inner ]; then
 	$BB printf 'root:!:0:0:99999:7:::\n' > "$ROOT/guest/etc/shadow"
 	$BB chmod 600 "$ROOT/guest/etc/shadow"
 	$BB mount -t proc -o nosuid,nodev,noexec proc "$ROOT/proc" || fail 'initial proc'
-	$BB mount -t sysfs -o nosuid,nodev,noexec sysfs "$ROOT/sys" || fail 'initial sysfs'
 	$BB mount -t tmpfs -o mode=0755,size=1m tmpfs "$ROOT/dev" || fail 'initial dev'
 	$BB mount -t proc -o nosuid,nodev,noexec proc "$ROOT/guest/proc" || fail 'guest proc'
-	$BB mount -t sysfs -o nosuid,nodev,noexec sysfs "$ROOT/guest/sys" || fail 'guest sysfs'
+	for sys in "$ROOT/sys" "$ROOT/guest/sys"; do
+		$BB mkdir -p "$sys/class/block/sda13"
+		$BB printf 'PARTNAME=userdata\n' > "$sys/class/block/sda13/uevent"
+		$BB printf '%s\n' "$MAIN_NUMS" > "$sys/class/block/sda13/dev"
+		$BB printf '%s\n' 524288 > "$sys/class/block/sda13/size"
+	done
 	$BB mount -t tmpfs -o mode=0755,size=1m tmpfs "$ROOT/guest/dev" || fail 'guest dev'
 	$BB mkdir "$ROOT/guest/dev/pts"
 	$BB mount -t devpts -o newinstance,ptmxmode=0666 devpts "$ROOT/guest/dev/pts" || fail 'guest devpts'
 	make_nodes "$ROOT/dev"
 	make_nodes "$ROOT/guest/dev"
+	for dev in "$ROOT/dev" "$ROOT/guest/dev"; do
+		$BB mkdir -p "$dev/block"
+		$BB mknod -m 0400 "$dev/block/sda13" b "$MAIN_MAJOR" "$MAIN_MINOR" || fail 'isolated userdata node'
+	done
 	$BB ln -s pts/ptmx "$ROOT/guest/dev/ptmx"
 	$BB umount "$ROOT/guest/dev/pts"
 	$BB mount -t tmpfs tmpfs "$ROOT/guest/dev/pts" || fail 'invalid devpts negative setup'
@@ -321,6 +453,8 @@ if [ "${1:-}" = --inner ]; then
 	$BB umount "$ROOT/guest/dev"
 	$BB mount -t tmpfs -o mode=0755,size=1m tmpfs "$ROOT/guest/dev" || fail 'restore private guest dev'
 	make_nodes "$ROOT/guest/dev"
+	$BB mkdir -p "$ROOT/guest/dev/block"
+	$BB mknod -m 0400 "$ROOT/guest/dev/block/sda13" b "$MAIN_MAJOR" "$MAIN_MINOR" || fail 'restore guest userdata node'
 	$BB mkdir "$ROOT/guest/dev/pts"
 	$BB mount -t devpts -o newinstance,ptmxmode=0666 devpts "$ROOT/guest/dev/pts" || fail 'restore private guest devpts'
 	$BB ln -s pts/ptmx "$ROOT/guest/dev/ptmx"
@@ -341,14 +475,15 @@ if [ "${1:-}" = --inner ]; then
 	HOST_KEY_SHA=$(hash "$ROOT/guest/etc/dropbear/session_host_key")
 	$BB chmod 600 /run/known_hosts /run/bad-known_hosts
 	$BB pivot_root "$ROOT" "$ROOT/oldroot" || fail 'pivot to synthetic initial tmpfs'
-	[ "$$" = 1 ] && mounted / tmpfs && mounted /guest tmpfs || fail 'initial root not pivoted'
+	[ "$$" = 1 ] && mounted / tmpfs && mounted /guest ext4 || fail 'initial root not pivoted'
+	( . /oldroot"$HOST_CONTRACT" && root_contract_pinned_userdata /guest ) || fail 'staged ext4 root contract failed'
 	$BB cat > /guest/run/mock <<'MOCK'
 #!/bin/busybox sh
 set -eu
 b=/bin/busybox
 s=/run/pid1-guard
 [ "$#" -eq 1 ] && [ "$1" = bootloader ] || exit 2
-$b awk '$2 == "/" {n++; if ($3 != "tmpfs") bad++} END {exit(n != 1 || bad)}' /proc/mounts || exit 2
+$b awk '$2 == "/" {n++; if ($3 != "tmpfs" && $3 != "ext4") bad++} END {exit(n != 1 || bad)}' /proc/mounts || exit 2
 [ "$($b stat -c '%u:%a' "$s")" = 0:700 ] || exit 2
 [ "$($b stat -c '%d:%i' /)" = "$($b cat "$s/root-identity")" ] || exit 2
 [ ! -e "$s/recovery-request" ] && [ ! -L "$s/recovery-request" ] || exit 2
@@ -444,12 +579,196 @@ fi
 HERE=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 ARCHIVE=${ARCHIVE:-$HOME/sm7635-build/i139-userspace/out/postmarketos-session-aarch64.tar.gz}
 archive_ok "$ARCHIVE" || fail 'missing or corrupt public postmarketOS session archive'
+for host_file in "$HERE/test-pmos-pid1.sh" "$HERE/pmos-pid1-guard.sh" "$HERE/pmos-pid1-ack.sh" \
+	"$HERE/pmos-self-post.sh" "$HERE/pmos-root-contract.sh"; do
+	[ -f "$host_file" ] && [ ! -L "$host_file" ] || fail "missing host fixture file $host_file"
+	[ -r "$host_file" ] || fail "unreadable host fixture file $host_file"
+done
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+for tool in sudo unshare mke2fs blkid python3; do command -v "$tool" >/dev/null 2>&1 || fail "missing $tool"; done
 sudo -n true || fail 'passwordless sudo required'
 for case in ack late stale timeout preplanted symlinked; do
-	sudo -n unshare --mount --pid --net --fork --kill-child --mount-proc \
-		env HOST_ARCHIVE="$ARCHIVE" HOST_SCRIPT="$HERE/test-pmos-pid1.sh" \
-		HOST_GUARD="$HERE/pmos-pid1-guard.sh" HOST_ACK="$HERE/pmos-pid1-ack.sh" \
-		HOST_POST="$HERE/pmos-self-post.sh" \
-		HOST_CONTRACT="$HERE/pmos-root-contract.sh" \
-		/bin/busybox sh "$HERE/test-pmos-pid1.sh" --inner "$case" || fail "$case isolated switch_root fixture"
+	sudo -n /usr/bin/python3 -I - "$case" "$HERE" "$ARCHIVE" <<'PY' || fail "$case isolated switch_root fixture"
+import errno
+import fcntl
+import os
+import signal
+import stat
+import struct
+import subprocess
+import sys
+import tempfile
+import time
+import uuid
+
+case, here, archive = sys.argv[1:]
+if case not in ('ack', 'late', 'stale', 'timeout', 'preplanted', 'symlinked'):
+    raise SystemExit('invalid case')
+if os.geteuid() != 0 or not os.path.isabs(here):
+    raise SystemExit('invalid fixture supervisor')
+
+env = {'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'HOME': '/root'}
+work = None
+image_path = None
+image = None
+number = None
+image_fd = None
+loop_fd = None
+control_fd = None
+proc = None
+loop_path = None
+attached = False
+uncertain = False
+result = 1
+
+
+def interrupted(signum, frame):
+    raise InterruptedError('signal ' + str(signum))
+
+
+for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM):
+    signal.signal(sig, interrupted)
+
+try:
+    work = tempfile.mkdtemp(prefix='pmos-pid1.', dir='/tmp')
+    image_path = os.path.join(work, 'userdata-' + case + '.img')
+    directory = os.stat(work, follow_symlinks=False)
+    if not stat.S_ISDIR(directory.st_mode) or directory.st_uid != 0 or stat.S_IMODE(directory.st_mode) != 0o700:
+        raise RuntimeError('invalid private workdir')
+    image_fd = os.open(image_path, os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+    if image_fd == 9:
+        image_fd = fcntl.fcntl(image_fd, fcntl.F_DUPFD_CLOEXEC, 10)
+        os.close(9)
+    image = os.fstat(image_fd)
+    os.ftruncate(image_fd, 268435456)
+    image = os.fstat(image_fd)
+    if not stat.S_ISREG(image.st_mode) or image.st_uid != 0 or image.st_nlink != 1 or image.st_size != 268435456:
+        raise RuntimeError('invalid fresh image')
+    fs_uuid = str(uuid.uuid4())
+    subprocess.run(['/usr/sbin/mke2fs', '-q', '-F', '-t', 'ext4', '-b', '4096', '-U', fs_uuid,
+                    '/proc/self/fd/' + str(image_fd)], env=env, pass_fds=(image_fd,),
+                   stdin=subprocess.DEVNULL, check=True, timeout=60)
+    control_fd = os.open('/dev/loop-control', os.O_RDWR | os.O_NOFOLLOW | os.O_CLOEXEC)
+    control = os.fstat(control_fd)
+    if not stat.S_ISCHR(control.st_mode) or (os.major(control.st_rdev), os.minor(control.st_rdev)) != (10, 237):
+        raise RuntimeError('invalid loop control')
+    for attempt in range(100):
+        number = fcntl.ioctl(control_fd, 0x4C82)
+        if number < 0 or number > 1048575:
+            raise RuntimeError('invalid loop number')
+        loop_path = '/dev/loop' + str(number)
+        loop_fd = os.open(loop_path, os.O_RDWR | os.O_NOFOLLOW | os.O_CLOEXEC)
+        node = os.fstat(loop_fd)
+        if not stat.S_ISBLK(node.st_mode) or (os.major(node.st_rdev), os.minor(node.st_rdev)) != (7, number):
+            raise RuntimeError('loop node identity mismatch')
+        info = bytearray(232)
+        struct.pack_into('=I', info, 52, 4)
+        config = struct.pack('=II', image_fd, 0) + info + bytes(64)
+        try:
+            uncertain = True
+            fcntl.ioctl(loop_fd, 0x4C0A, config)
+            attached = True
+            uncertain = False
+            break
+        except OSError as exc:
+            try:
+                seen = struct.unpack('=QQQQQIIII64s64s32sQQ', fcntl.ioctl(loop_fd, 0x4C05, bytes(232)))
+                seen_dev = ((seen[0] & 0xFFF00) >> 8, (seen[0] & 0xFF) | ((seen[0] >> 12) & 0xFFF00))
+                if seen_dev != (os.major(image.st_dev), os.minor(image.st_dev)) or seen[1] != image.st_ino:
+                    uncertain = False
+            except OSError as probe_exc:
+                if probe_exc.errno == errno.ENXIO:
+                    uncertain = False
+            if exc.errno != errno.EBUSY or uncertain:
+                raise
+            os.close(loop_fd)
+            loop_fd = None
+            time.sleep(0.05)
+    if not attached:
+        raise RuntimeError('no free loop device after bounded retries')
+    os.close(control_fd)
+    control_fd = None
+    if loop_fd != 9:
+        os.dup2(loop_fd, 9, inheritable=False)
+        os.close(loop_fd)
+        loop_fd = 9
+    info = struct.unpack('=QQQQQIIII64s64s32sQQ', fcntl.ioctl(loop_fd, 0x4C05, bytes(232)))
+    encoded_dev = info[0]
+    backing_dev = ((encoded_dev & 0xFFF00) >> 8, (encoded_dev & 0xFF) | ((encoded_dev >> 12) & 0xFFF00))
+    if (backing_dev != (os.major(image.st_dev), os.minor(image.st_dev)) or info[1] != image.st_ino
+            or info[3] != 0 or info[4] != 0 or info[5] != number or info[6] != 0 or info[8] != 4):
+        raise RuntimeError('loop backing identity mismatch')
+    env.update(HOST_ARCHIVE=archive, HOST_SCRIPT=here + '/test-pmos-pid1.sh',
+               HOST_MAIN_NUMS='7:' + str(number), HOST_FS_UUID=fs_uuid, HOST_WORK_IMAGE=image_path,
+               HOST_GUARD=here + '/pmos-pid1-guard.sh', HOST_ACK=here + '/pmos-pid1-ack.sh',
+               HOST_POST=here + '/pmos-self-post.sh', HOST_CONTRACT=here + '/pmos-root-contract.sh')
+    proc = subprocess.Popen(['/usr/bin/unshare', '--mount', '--pid', '--net', '--fork',
+                             '--kill-child=KILL', '--mount-proc', '/bin/busybox', 'sh',
+                             here + '/test-pmos-pid1.sh', '--inner', case],
+                            env=env, pass_fds=(loop_fd,), stdin=subprocess.DEVNULL, start_new_session=True)
+    if proc.wait(timeout=900) != 0:
+        raise RuntimeError('namespace child failed')
+    result = 0
+except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
+    print('FAIL: ' + case + ': ' + str(exc), file=sys.stderr)
+finally:
+    for sig in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM):
+        signal.signal(sig, signal.SIG_IGN)
+    if proc is not None and proc.poll() is None:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+            proc.wait(timeout=15)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            print('FAIL: child termination unconfirmed: ' + str(exc), file=sys.stderr)
+            uncertain = True
+    if control_fd is not None:
+        os.close(control_fd)
+    if loop_fd is not None:
+        os.close(loop_fd)
+    detached = not attached and not uncertain
+    if attached and not uncertain:
+        for attempt in range(30):
+            try:
+                probe = os.open(loop_path, os.O_RDWR | os.O_NOFOLLOW | os.O_CLOEXEC)
+                try:
+                    node = os.fstat(probe)
+                    if not stat.S_ISBLK(node.st_mode) or (os.major(node.st_rdev), os.minor(node.st_rdev)) != (7, number):
+                        break
+                    try:
+                        seen = struct.unpack('=QQQQQIIII64s64s32sQQ', fcntl.ioctl(probe, 0x4C05, bytes(232)))
+                    except OSError as exc:
+                        if exc.errno == errno.ENXIO:
+                            detached = True
+                            break
+                        raise
+                    seen_dev = ((seen[0] & 0xFFF00) >> 8, (seen[0] & 0xFF) | ((seen[0] >> 12) & 0xFFF00))
+                    if seen_dev != (os.major(image.st_dev), os.minor(image.st_dev)) or seen[1] != image.st_ino:
+                        detached = True
+                        break
+                    if attempt == 5:
+                        fcntl.ioctl(probe, 0x4C01)
+                finally:
+                    os.close(probe)
+            except OSError:
+                break
+            time.sleep(0.1)
+    if image_fd is not None:
+        os.close(image_fd)
+    if detached:
+        try:
+            if os.path.lexists(image_path):
+                current = os.stat(image_path, follow_symlinks=False)
+                if image is None or (current.st_dev, current.st_ino) != (image.st_dev, image.st_ino):
+                    raise RuntimeError('image path changed')
+                os.unlink(image_path)
+            os.rmdir(work)
+        except (OSError, RuntimeError) as exc:
+            print('FAIL: cleanup: ' + str(exc), file=sys.stderr)
+            result = 1
+    else:
+        print('FAIL: loop detach unconfirmed; preserving ' + work, file=sys.stderr)
+        result = 1
+sys.exit(result)
+PY
 done
