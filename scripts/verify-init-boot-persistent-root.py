@@ -29,6 +29,8 @@ RUN83_CARRIER = "e7d5558037b903de3ab817619ce527319f6b54fb4ec97782e729078c666268f
 
 def load(filename, name):
     spec = importlib.util.spec_from_file_location(name, HERE / filename)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load {filename}")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -85,7 +87,10 @@ def member_map(blob):
             require(item.isfile() and not item.issym() and item.name not in found and
                     item.mode == mode and item.uid == 0 and item.gid == 0 and item.mtime == 0 and
                     item.uname == "" and item.gname == "", BUNDLE_MSG)
-            found[item.name] = archive.extractfile(item).read()
+            stream = archive.extractfile(item)
+            if stream is None:
+                raise ValueError(BUNDLE_MSG)
+            found[item.name] = stream.read()
     return found
 
 
@@ -157,24 +162,27 @@ def check_pair(init_image, carrier, stock_init, base_image, stock_carrier, curre
     init = next(item["data"] for item in changed if item["name"] == "init")
     blob = builder.carrier_bundle(found, private)
     members = member_map(blob)
-    names = (*builder.builder.PUBLIC, "pmos-root-contract.sh", builder.builder.PRIVATE)
+    names = (*builder.CARRIER_NAMES, builder.builder.PRIVATE)
     require(set(members) == set(names) and
-            members["pmos-root-contract.sh"] == found["pmos-root-contract.sh"] and
             members[builder.builder.PRIVATE] == private and
-            all(members[name] == found[name] for name in builder.builder.PUBLIC), BUNDLE_MSG)
-    public = {name: found[name] for name in names if name != builder.builder.PRIVATE}
+            all(members[name] == found[name] for name in builder.CARRIER_NAMES) and
+            hashlib.sha256(members[builder.FRESH_RADIO]).hexdigest() == builder.FRESH_RADIO_SHA and
+            hashlib.sha256(members[builder.FRESH_POST]).hexdigest() == builder.GATED_POST_SHA and
+            hashlib.sha256(members[builder.GATED_HOOK]).hexdigest() == builder.GATED_HOOK_SHA and
+            members["pmos-radio-bringup.sh"] == members[builder.FRESH_RADIO], BUNDLE_MSG)
+    public = {name: found[name] for name in builder.CARRIER_NAMES}
     require(builder.builder.checked_bundle(blob, public, private, tuple(public)) == blob, BUNDLE_MSG)
     trace = changed[-1]["data"]
     require(trace == found["pmos-self-post-trace"] and
             builder.without_nonce_wait(builder.deinstrument(trace)) == found["pmos-self-post.sh"] and
-            members["pmos-self-post.sh"] == found["pmos-self-post.sh"] and
-            hashlib.sha256(members["pmos-self-post.sh"]).hexdigest() == builder.SELF_POST_BUNDLE_SHA and
+            "pmos-self-post.sh" not in members and
+            hashlib.sha256(found["pmos-self-post.sh"]).hexdigest() == builder.SELF_POST_BUNDLE_SHA and
             hashlib.sha256(trace).hexdigest() != builder.SELF_POST_BUNDLE_SHA and
             trace.count(b"self-post-trace") >= 5 and
             sum(1 for line in trace.splitlines() if builder.TRACE_LINE.match(line)) >= 25 and
             b"/run/pmos-pre-ssh-panel.record" in trace and
-            b"pmos-pre-ssh-panel.record" not in members["pmos-self-post.sh"] and
-            b"trace_refusal" not in members["pmos-self-post.sh"], DELTA_MSG)
+            b"pmos-pre-ssh-panel.record" not in found["pmos-self-post.sh"] and
+            b"trace_refusal" not in found["pmos-self-post.sh"], DELTA_MSG)
     require(init == builder.expected_init(original, found, blob) and
             builder.carrier_reader(blob) in init and
             init.count(b"/run/pmos-root-contract.sh") >= 1 and
@@ -221,7 +229,7 @@ def omission_fixture(base_image, library, decode_frame):
 
 def overflow_frame(image, library, decode_frame, found, private, replayed):
     _decoded, entries, trailer, _frame, _size = changed_cpio(image, library, decode_frame)
-    names = (*builder.builder.PUBLIC, "pmos-root-contract.sh")
+    names = builder.CARRIER_NAMES
     public = {name: found[name] for name in names}
     raw = lzma.decompress(builder.builder.bundle_bytes(public, private, names), format=lzma.FORMAT_XZ)
     blob = lzma.compress(raw, format=lzma.FORMAT_XZ, check=lzma.CHECK_CRC64, preset=9)
@@ -235,6 +243,68 @@ def overflow_frame(image, library, decode_frame, found, private, replayed):
     block = base.compress_hc(library, cpio, base.HC_LEVEL)
     framed = len(block) + 8
     require(framed > base.MAX_FRAME, OVERFLOW_MSG)
+
+
+def check_runtime_scripts(found):
+    guard = found["pmos-pid1-guard.sh"]
+    transition = found["pmos-pid1-transition.sh"]
+    stage = found["pmos-session-stage.sh"]
+    self_stage = found["pmos-self-stage.sh"]
+    guard_sha = hashlib.sha256(guard).hexdigest().encode()
+    transition_sha = hashlib.sha256(transition).hexdigest().encode()
+    require(guard_sha == b"dcc4124dd404823f891e683d455177613d91afc2bd91582835cc1d6bbe118243" and
+            b"GUARD_SHA256=" + guard_sha in transition and
+            b"GUARD_SHA=" + guard_sha in self_stage and
+            b"TRANSITION_SHA=" + transition_sha in self_stage and
+            b"success_ready()" in guard and b"ordered_record()" in guard and
+            guard.index(b"if ! success_ready; then") <
+            guard.index(b"ordered_record || recover") <
+            guard.index(b'> "$STATE/accepted"') and
+            b'arm "$ROOT" 160' in transition and
+            stage.index(b'for service in wpa_supplicant networking; do') <
+            stage.index(b'cannot enable RAM-only local service') and
+            b'$BB rm "$entry" || die "cannot defer OpenRC service"' in stage and
+            b'[ "$($BB readlink "$entry")" = "/etc/init.d/$service" ]' in stage and
+            builder.GATED_HOOK_SHA.encode() in stage,
+            DELTA_MSG)
+    require(found["pmos-session-stage.sh"].count(b"record_stage") == 5 and
+            found["pmos-session-stage.sh"].count(b"boot_record_open") == 1 and
+            found["pmos-session-stage.sh"].index(b'unexpected local startup hook') <
+            found["pmos-session-stage.sh"].index(b'cannot defer OpenRC service') and
+            found["pmos-self-stage.sh"].index(b"PMOS_ROOT_KIND=ext4 $BB sh /run/pmos-session-stage.sh") <
+            found["pmos-self-stage.sh"].index(b'chain_dir=/run/omnipha-self-stage') <
+            found["pmos-self-stage.sh"].index(b'persistent chain parent metadata') <
+            found["pmos-self-stage.sh"].index(b'untrusted persistent chain file') <
+            found["pmos-self-stage.sh"].index(b'cannot publish chain file without replacement') <
+            found["pmos-self-stage.sh"].index(b'cannot complete chain publication') <
+            found["pmos-self-stage.sh"].index(b'persistent chain changed after installation') <
+            found["pmos-self-stage.sh"].index(b'pmos-radio-bringup prepare failed') <
+            found["pmos-self-stage.sh"].index(b'guest protected profile invalid') <
+            found["pmos-self-stage.sh"].index(b'PID 1 request already exists') and
+            found["pmos-self-stage.sh"].count(b"record_line") == 4 and
+            b'/run/radio-bringup/pmos-radio-bringup.sh' not in found["pmos-self-stage.sh"] and
+            b'10-omnipha-self-stage.start' in found["pmos-self-stage.sh"] and
+            b"/usr/libexec/omnipha/pmos-self-post-fresh-boot.sh" in found["pmos-self-stage.sh"] and
+            hashlib.sha256(found["pmos-radio-bringup.sh"]).hexdigest() ==
+            builder.FRESH_RADIO_SHA and found["pmos-radio-bringup.sh"] ==
+            found["pmos-radio-bringup-fresh-boot.sh"] and
+            hashlib.sha256(found["pmos-self-post-fresh-boot.sh"]).hexdigest() ==
+            builder.GATED_POST_SHA and
+            hashlib.sha256(found["10-omnipha-self-stage.start"]).hexdigest() ==
+            builder.GATED_HOOK_SHA and
+            b"record_line \"pmos-self-stage: mounted pinned persistent root" in
+            found["pmos-self-stage.sh"] and
+            found["pmos-pid1-transition.sh"].count(b"boot_record_verify") == 1 and
+            found["pmos-radio-bringup.sh"].count(b"boot_record_append") == 1 and
+            found["pmos-self-post.sh"].count(b"boot_record_append") == 2 and
+            found["pmos-self-post.sh"].count(b"boot_record_verify") == 1 and
+            b"post-cutover PID 1 on boot" in found["pmos-self-post.sh"] and
+            found["pmos-self-post.sh"].index(b"boot_record_verify") <
+            found["pmos-self-post.sh"].index(b"pinned radio bring-up script missing") and
+            b"boot_record_bound=4096" in found["pmos-root-contract.sh"] and
+            found["pmos-root-contract.sh"].count(b"boot_record_rotate") == 2 and
+            b'$BB mv -n "$br_record" "$br_archive"' in found["pmos-root-contract.sh"] and
+            b'[ "$br_old_boot" != "$br_boot" ]' in found["pmos-root-contract.sh"], DELTA_MSG)
 
 
 def self_test(init_image, carrier, stock_init, base_image, stock_carrier, current,
@@ -259,49 +329,17 @@ def self_test(init_image, carrier, stock_init, base_image, stock_carrier, curren
     _entries, _trailer, base_found, private = builder.base_state(base_image, library, decode_frame)
     found = builder.expected_found(base_found, current)
     previous = dict(found)
-    guard = found["pmos-pid1-guard.sh"]
-    transition = found["pmos-pid1-transition.sh"]
-    stage = found["pmos-session-stage.sh"]
-    self_stage = found["pmos-self-stage.sh"]
-    guard_sha = hashlib.sha256(guard).hexdigest().encode()
-    transition_sha = hashlib.sha256(transition).hexdigest().encode()
-    require(guard_sha == b"dcc4124dd404823f891e683d455177613d91afc2bd91582835cc1d6bbe118243" and
-            b"GUARD_SHA256=" + guard_sha in transition and
-            b"GUARD_SHA=" + guard_sha in self_stage and
-            b"TRANSITION_SHA=" + transition_sha in self_stage and
-            b"success_ready()" in guard and b"ordered_record()" in guard and
-            guard.index(b"if ! success_ready; then") <
-            guard.index(b"ordered_record || recover") <
-            guard.index(b'> "$STATE/accepted"') and
-            b'arm "$ROOT" 160' in transition and
-            stage.index(b'for service in wpa_supplicant networking; do') <
-            stage.index(b'cannot enable RAM-only local service') and
-            b'$BB rm "$entry" || die "cannot defer OpenRC service"' in stage and
-            b'[ "$($BB readlink "$entry")" = "/etc/init.d/$service" ]' in stage,
-            DELTA_MSG)
-    require(found["pmos-session-stage.sh"].count(b"record_stage") == 5 and
-            found["pmos-session-stage.sh"].count(b"boot_record_open") == 1 and
-            found["pmos-self-stage.sh"].count(b"record_line") == 4 and
-            b"record_line \"pmos-self-stage: mounted pinned persistent root" in
-            found["pmos-self-stage.sh"] and
-            found["pmos-pid1-transition.sh"].count(b"boot_record_verify") == 1 and
-            found["pmos-radio-bringup.sh"].count(b"boot_record_append") == 1 and
-            found["pmos-self-post.sh"].count(b"boot_record_append") == 2 and
-            found["pmos-self-post.sh"].count(b"boot_record_verify") == 1 and
-            b"post-cutover PID 1 on boot" in found["pmos-self-post.sh"] and
-            found["pmos-self-post.sh"].index(b"boot_record_verify") <
-            found["pmos-self-post.sh"].index(b"pinned radio bring-up script missing") and
-            b"boot_record_bound=4096" in found["pmos-root-contract.sh"] and
-            found["pmos-root-contract.sh"].count(b"boot_record_rotate") == 2 and
-            b'$BB mv -n "$br_record" "$br_archive"' in found["pmos-root-contract.sh"] and
-            b'[ "$br_old_boot" != "$br_boot" ]' in found["pmos-root-contract.sh"], DELTA_MSG)
+    check_runtime_scripts(found)
     guard = base_found["pmos-pid1-guard.sh"]
-    require(hashlib.sha256(guard).hexdigest() ==
-            "2a92fbcfe029ec3be1af8b73d4cd8d0ac317ecd267a9dc9ba9637932207d5da3", OVERFLOW_MSG)
+    expected_guard = ("2a92fbcfe029ec3be1af8b73d4cd8d0ac317ecd267a9dc9ba9637932207d5da3" if replayed else
+                      "dc37428ec10330c89fa8f559626be735013004b87d0bd9a7271d9b88dfc47fe3")
+    require(hashlib.sha256(guard).hexdigest() == expected_guard, BASE_MSG)
     previous["pmos-pid1-guard.sh"] = guard
     overflow_frame(old_image, library, decode_frame, previous, private, replayed)
     require(set(old_members) == set(builder.builder.PUBLIC) | {builder.builder.PRIVATE} and
-            "pmos-root-contract.sh" not in old_members and
+            "pmos-root-contract.sh" not in old_members and "pmos-radio-bringup-fresh-boot.sh" not in old_members and
+            "pmos-self-post-fresh-boot.sh" not in old_members and "10-omnipha-self-stage.start" not in old_members and
+            "pmos-self-post.sh" in old_members and
             b"pmos-root-contract.sh" not in old_blob, OLD_MSG)
     if not replayed:
         print("ef476d8c image unavailable or hash differs; overflow replay uses original base init")
@@ -382,6 +420,13 @@ def self_test(init_image, carrier, stock_init, base_image, stock_carrier, curren
     changed = dict(current)
     changed["pmos-self-stage.sh"] += b"\n"
     bad("bundle mismatch", INIT_MSG, source=changed)
+    for gated_name in builder.GATED_NAMES:
+        changed = dict(current)
+        changed[gated_name] = changed[gated_name] + b"\n"
+        bad(f"gated artifact changed: {gated_name}", DELTA_MSG, source=changed)
+    changed = dict(current)
+    changed["pmos-radio-bringup.sh"] = changed["pmos-radio-bringup.sh"] + b"\n"
+    bad("fresh radio differs from bundled copy", DELTA_MSG, source=changed)
     changed = dict(current)
     changed["pmos-root-contract.sh"] = changed["pmos-root-contract.sh"].replace(
         b"userdata", b"super")
@@ -537,7 +582,7 @@ def main():
             "INIT CARRIER STOCK_INIT BASE STOCK_VENDOR_B")
     init_image, carrier, stock_init, base_image, stock_carrier = (
         pathlib.Path(path).read_bytes() for path in args)
-    current = builder.current_scripts()
+    current = builder.runtime_scripts()
     checker = load("verify-init-boot-psoc-hold-wlan-node.py", "persistent_checker")
     library = base.lz4()
     decode = checker.hostkey_checker.decode_frame

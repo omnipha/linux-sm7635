@@ -48,16 +48,28 @@ ROOT_NAMES = (
     "pmos-self-stage.sh",
 )
 PRESERVED = ("wlan-udhcpc-lease.sh",)
+STAGED_RADIO_SHA = "f54b33727cefdf728001e4692d625c0f5a77298694454832e02b6cf0c765764f"
+FRESH_RADIO_SHA = "146ed59271cde6b593f28212caf8871c0f00062a3c5b1d460c858e4c90271e14"
+GATED_POST_SHA = "113553dddfc646b77dacb06777cc2c450e4f17d33aaf508e3113c993968ac0f3"
+GATED_HOOK_SHA = "3d317a6937f547565968785dee9984c9d5edd714ac0a8dde4c1dbf2c550b4e67"
+FRESH_POST = "pmos-self-post-fresh-boot.sh"
+FRESH_RADIO = "pmos-radio-bringup-fresh-boot.sh"
+GATED_HOOK = "10-omnipha-self-stage.start"
+GATED_NAMES = (FRESH_RADIO, FRESH_POST, GATED_HOOK)
 
 
 def load(filename, name):
     spec = importlib.util.spec_from_file_location(name, HERE / filename)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load {filename}")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
 builder = load("build-init-boot-self-stage.py", "persistent_self_stage")
+CARRIER_PUBLIC = tuple(name for name in builder.PUBLIC if name != "pmos-self-post.sh")
+CARRIER_NAMES = (*CARRIER_PUBLIC, "pmos-root-contract.sh", *GATED_NAMES)
 modules = builder.modules
 base = builder.base
 vendor = builder.vendor
@@ -167,6 +179,95 @@ done
     return replace_once(replace_once(replace_once(data, wait, b""), fallback, b""), restore_plain, b"")
 
 
+def persistent_installer():
+    body = b'''chain_dir=/run/omnipha-self-stage
+( [ -f /run/pmos-root-contract.sh ] && [ ! -L /run/pmos-root-contract.sh ] &&
+	. /run/pmos-root-contract.sh && root_contract_pinned_userdata "$GUEST" &&
+	case ",$ROOT_CONTRACT_OPTS," in *,rw,*) true;; *) false;; esac ) || die 'persistent chain root is not pinned read-write userdata'
+chain_root_dev=$($BB stat -c '%d' "$GUEST") || die 'cannot inspect chain root'
+for chain_parent in "$GUEST" "$GUEST/usr" "$GUEST/etc" "$GUEST/etc/local.d"; do
+	[ -d "$chain_parent" ] && [ ! -L "$chain_parent" ] || die 'unsafe persistent chain parent'
+	case "$($BB stat -c '%u:%g:%a:%d' "$chain_parent")" in
+		"0:0:700:$chain_root_dev"|"0:0:755:$chain_root_dev") :;;
+		"0:0:775:$chain_root_dev") [ "$chain_parent" = "$GUEST/etc" ] || die 'unsafe persistent chain parent metadata';;
+		*) die 'unsafe persistent chain parent metadata';;
+	esac
+done
+$BB awk -v r="$GUEST" '
+	$5 != r && (index($5, r "/usr/") == 1 || $5 == r "/usr" ||
+		index($5, r "/etc/") == 1 || $5 == r "/etc") {bad++}
+	END {exit(bad != 0)}
+' /proc/self/mountinfo || die 'nested mount in persistent chain parents'
+for chain_parent in "$GUEST/usr/libexec" "$GUEST/usr/libexec/omnipha"; do
+	if [ ! -e "$chain_parent" ] && [ ! -L "$chain_parent" ]; then
+		$BB mkdir -m 700 "$chain_parent" || die 'cannot create persistent chain directory'
+	fi
+	[ -d "$chain_parent" ] && [ ! -L "$chain_parent" ] || die 'unsafe persistent chain directory'
+	case "$($BB stat -c '%u:%g:%a:%d' "$chain_parent")" in
+		"0:0:700:$chain_root_dev"|"0:0:755:$chain_root_dev") :;;
+		*) die 'unsafe persistent chain directory metadata';;
+	esac
+done
+[ -d "$chain_dir" ] && [ ! -L "$chain_dir" ] &&
+	[ "$($BB stat -c '%u:%g:%a' "$chain_dir")" = 0:0:700 ] || die 'unsafe carrier payload directory'
+chain_check() {
+	[ -f "$1" ] && [ ! -L "$1" ] &&
+		[ "$($BB stat -c '%u:%g:%a:%h' "$1")" = "0:0:$2:1" ] &&
+		[ "$($BB sha256sum "$1" 2>/dev/null | $BB cut -d ' ' -f 1)" = "$3" ]
+}
+for chain_spec in \\
+	"pmos-radio-bringup-fresh-boot.sh /usr/libexec/omnipha/pmos-radio-bringup-fresh-boot.sh @RADIO@" \\
+	"pmos-self-post-fresh-boot.sh /usr/libexec/omnipha/pmos-self-post-fresh-boot.sh @POST@" \\
+	"10-omnipha-self-stage.start /etc/local.d/10-omnipha-self-stage.start @HOOK@"; do
+	set -- $chain_spec
+	chain_check "$chain_dir/$1" 700 "$3" || die 'unpinned carrier payload'
+	chain_target="$GUEST$2"
+	if [ -e "$chain_target" ] || [ -L "$chain_target" ]; then
+		chain_check "$chain_target" 700 "$3" || die 'untrusted persistent chain file'
+	fi
+	[ ! -e "$chain_target.omnipha-new" ] && [ ! -L "$chain_target.omnipha-new" ] ||
+		die 'persistent chain staging path already exists'
+done
+for chain_hook in "$GUEST"/etc/local.d/*.start; do
+	[ ! -e "$chain_hook" ] && [ ! -L "$chain_hook" ] && continue
+	[ "$chain_hook" = "$GUEST/etc/local.d/10-omnipha-self-stage.start" ] || die 'unexpected local startup hook'
+done
+for chain_spec in \\
+	"pmos-radio-bringup-fresh-boot.sh /usr/libexec/omnipha/pmos-radio-bringup-fresh-boot.sh @RADIO@" \\
+	"pmos-self-post-fresh-boot.sh /usr/libexec/omnipha/pmos-self-post-fresh-boot.sh @POST@" \\
+	"10-omnipha-self-stage.start /etc/local.d/10-omnipha-self-stage.start @HOOK@"; do
+	set -- $chain_spec
+	chain_target="$GUEST$2"
+	if [ ! -e "$chain_target" ] && [ ! -L "$chain_target" ]; then
+		(umask 077; set -C; $BB cat "$chain_dir/$1" > "$chain_target.omnipha-new") || die 'cannot stage chain file'
+		chain_check "$chain_target.omnipha-new" 600 "$3" || die 'staged chain file invalid'
+		$BB chmod 700 "$chain_target.omnipha-new" || die 'cannot protect staged chain file'
+		chain_check "$chain_target.omnipha-new" 700 "$3" || die 'protected chain file invalid'
+		chain_inode=$($BB stat -c '%d:%i' "$chain_target.omnipha-new") || die 'staged chain inode unavailable'
+		$BB ln -T "$chain_target.omnipha-new" "$chain_target" ||
+			die 'cannot publish chain file without replacement'
+		[ ! -L "$chain_target" ] &&
+			[ "$($BB stat -c '%d:%i:%u:%g:%a:%h' "$chain_target")" = "$chain_inode:0:0:700:2" ] &&
+			[ "$($BB stat -c '%d:%i:%u:%g:%a:%h' "$chain_target.omnipha-new")" = "$chain_inode:0:0:700:2" ] ||
+			die 'published chain inode changed'
+		$BB rm "$chain_target.omnipha-new" || die 'cannot complete chain publication'
+	fi
+	chain_check "$chain_target" 700 "$3" || die 'installed chain file invalid'
+done
+for chain_spec in \\
+	"/usr/libexec/omnipha/pmos-radio-bringup-fresh-boot.sh @RADIO@" \\
+	"/usr/libexec/omnipha/pmos-self-post-fresh-boot.sh @POST@" \\
+	"/etc/local.d/10-omnipha-self-stage.start @HOOK@"; do
+	set -- $chain_spec
+	chain_check "$GUEST$1" 700 "$2" || die 'persistent chain changed after installation'
+done
+'''
+    for token, digest in ((b"@RADIO@", FRESH_RADIO_SHA), (b"@POST@", GATED_POST_SHA),
+                          (b"@HOOK@", GATED_HOOK_SHA)):
+        body = body.replace(token, digest.encode())
+    return body
+
+
 def current_scripts():
     original = {name: script_bytes(name) for name in ROOT_NAMES}
     plain_post = deinstrument(original["pmos-self-post.sh"])
@@ -254,9 +355,11 @@ fi
         b'\t[ ! -e "$hook" ] && [ ! -L "$hook" ] || {\n'
         b'\t\t[ "${PMOS_ROOT_KIND:-tmpfs}" = ext4 ] &&\n'
         b'\t\t\t[ "$hook" = "$PMOS_ROOT/etc/local.d/10-omnipha-self-stage.start" ] &&\n'
-        b'\t\t\t[ -f "$hook" ] && [ ! -L "$hook" ] && [ "$($BB stat -c \'%u:%a\' "$hook")" = 0:700 ] ||\n'
+        b'\t\t\t[ -f "$hook" ] && [ ! -L "$hook" ] && [ "$($BB stat -c \'%u:%g:%a:%h\' "$hook")" = 0:0:700:1 ] &&\n'
+        b'\t\t\t[ "$($BB sha256sum "$hook" | $BB cut -d \' \' -f 1)" = ' + GATED_HOOK_SHA.encode() + b' ] ||\n'
         b'\t\t\tdie "unexpected local startup hook"\n'
         b'\t}')
+
     stage = replace_once(stage, b'$BB ln -s /etc/init.d/local "$PMOS_ROOT/etc/runlevels/default/local" || die "cannot enable RAM-only local service"',
         b'if [ "${PMOS_ROOT_KIND:-tmpfs}" = ext4 ]; then\n'
         b'\tfor service in wpa_supplicant networking; do\n'
@@ -348,6 +451,7 @@ fi''')
 	fi
 	exit 0''')
     require(radio.count(b"boot_record_append") == 1, DELTA_MSG)
+    require(hashlib.sha256(radio).hexdigest() == STAGED_RADIO_SHA, DELTA_MSG)
     found["pmos-radio-bringup.sh"] = radio
     radio_pin = b"RADIO_SHA=" + hashlib.sha256(radio).hexdigest().encode()
     traced_post = replace_once(original["pmos-self-post.sh"],
@@ -429,15 +533,27 @@ record_line "pmos-self-stage: mounted pinned persistent root from read-only $nod
 '''
     self_stage = self_stage[:start] + direct + self_stage[end:]
     self_stage = replace_once(self_stage, b'$BB rm -f "$TARBALL"\n', b'')
-    self_stage = replace_once(self_stage, b'''[ ! -e "$hook" ] && [ ! -L "$hook" ] || die 'local.d startup hook already exists'
+    self_stage = replace_once(self_stage,
+        b'''post_sha=$(hash /run/pmos-self-post.sh)
+$BB cp /run/pmos-radio-bringup.sh /run/pmos/run/radio-bringup/pmos-radio-bringup.sh
+$BB chmod 700 /run/pmos/run/radio-bringup/pmos-radio-bringup.sh
+[ "$(hash /run/pmos/run/radio-bringup/pmos-radio-bringup.sh)" = "$RADIO_SHA" ] ||
+	die 'guest radio script digest mismatch'
+$BB cp /run/pmos-self-post.sh /run/pmos/run/radio-bringup/pmos-self-post.sh
+$BB chmod 700 /run/pmos/run/radio-bringup/pmos-self-post.sh
+[ "$(hash /run/pmos/run/radio-bringup/pmos-self-post.sh)" = "$post_sha" ] ||
+	die 'guest post-cutover helper digest mismatch'
+''', b'')
+    self_stage = replace_once(self_stage, b'''hook=/run/pmos/etc/local.d/10-omnipha-self-stage.start
+[ ! -e "$hook" ] && [ ! -L "$hook" ] || die 'local.d startup hook already exists'
 $BB printf '%s\\n' '#!/bin/busybox sh' '( /bin/busybox setsid /bin/busybox sh /run/radio-bringup/pmos-self-post.sh >/dev/null 2>&1 & )' > "$hook"
-$BB chmod 700 "$hook"''',
-        b'''if [ -e "$hook" ] || [ -L "$hook" ]; then
-	[ -f "$hook" ] && [ ! -L "$hook" ] && [ "$($BB stat -c '%u:%a' "$hook")" = 0:700 ] || die 'persistent local.d startup hook invalid'
-else
-	$BB printf '%s\\n' '#!/bin/busybox sh' '( /bin/busybox setsid /bin/busybox sh /run/radio-bringup/pmos-self-post.sh >/dev/null 2>&1 & )' > "$hook"
-	$BB chmod 700 "$hook"
-fi''')
+$BB chmod 700 "$hook"
+[ "$($BB stat -c '%u:%a' "$hook")" = 0:700 ] || die 'local.d startup hook mode invalid'
+''', b'')
+    self_stage = replace_once(self_stage,
+        b'''$BB sh /run/pmos-radio-bringup.sh "$boot" prepare || die 'pmos-radio-bringup prepare failed'
+''', persistent_installer() + b'''$BB sh /run/pmos-radio-bringup.sh "$boot" prepare || die 'pmos-radio-bringup prepare failed'
+''')
     pins_by_name = {
         "STAGE_SHA": found["pmos-session-stage.sh"],
         "TRANSITION_SHA": found["pmos-pid1-transition.sh"],
@@ -453,7 +569,13 @@ fi''')
             b"PMOS_ROOT_KIND=ext4 " in self_stage and b'"$wait_n" -lt 145' in self_stage and
             self_stage.count(b"record_line") == 4 and
             self_stage.index(b"record_line \"pmos-self-stage: mounted pinned persistent root") <
-            self_stage.index(b"record_line \"pmos-self-stage: staged postmarketOS root"),
+            self_stage.index(b"record_line \"pmos-self-stage: staged postmarketOS root") and
+            self_stage.index(b"pin_session_hostkey\n") <
+            self_stage.index(b"chain_dir=/run/omnipha-self-stage") <
+            self_stage.index(b"pmos-radio-bringup prepare failed") <
+            self_stage.index(b"PID 1 request already exists") and
+            b"/run/wpa_supplicant.conf /run/pmos/run/radio-bringup/wpa_supplicant.conf" in self_stage and
+            b"local.d startup hook already exists" not in self_stage,
             DELTA_MSG)
     found["pmos-self-stage.sh"] = self_stage
     return found
@@ -481,7 +603,10 @@ def bundle_map(blob, names):
         found = {}
         private = b""
         for item in infos:
-            data = archive.extractfile(item).read()
+            stream = archive.extractfile(item)
+            if stream is None:
+                raise ValueError(builder.BUNDLE_MSG)
+            data = stream.read()
             mode = 0o600 if item.name == builder.PRIVATE else 0o700
             require(item.isfile() and not item.issym() and item.mode == mode and item.uid == 0 and
                     item.gid == 0 and item.mtime == 0 and item.uname == "" and item.gname == "" and
@@ -512,6 +637,9 @@ def base_state(base_image, library, decode_frame):
 def expected_found(base_found, current):
     found = dict(base_found)
     found.update(current)
+    for name, digest in ((FRESH_RADIO, FRESH_RADIO_SHA), (FRESH_POST, GATED_POST_SHA),
+                         (GATED_HOOK, GATED_HOOK_SHA), ("pmos-radio-bringup.sh", FRESH_RADIO_SHA)):
+        require(name in found and hashlib.sha256(found[name]).hexdigest() == digest, DELTA_MSG)
     for name in PRESERVED:
         require(found[name] == base_found[name], DELTA_MSG)
     for name in builder.PUBLIC:
@@ -521,14 +649,18 @@ def expected_found(base_found, current):
 
 
 def pins(found):
-    lines = [f"stage {name} {hashlib.sha256(found[name]).hexdigest()} 700" for name in builder.PUBLIC]
+    lines = [f"stage {name} {hashlib.sha256(found[name]).hexdigest()} 700" for name in CARRIER_PUBLIC]
     lines.append(f'stage pmos-root-contract.sh {hashlib.sha256(found["pmos-root-contract.sh"]).hexdigest()} 700')
+    for name in GATED_NAMES:
+        lines.append(f"stage {name} {hashlib.sha256(found[name]).hexdigest()} 700")
     lines.append(f'$BB chmod 600 "$D/{builder.PRIVATE}" || exit 0')
     return "\n".join(lines).encode()
 
 
 def hook(found, blob):
     body = builder.HOOK.replace(b"@PINS@", pins(found), 1)
+    body = replace_once(body,
+        b'$BB mv "$D/pmos-self-post.sh" /run/pmos-self-post.sh || exit 0\n', b'')
     body = body.replace(b'$BB mkdir -m 700 "$D" || exit 0\n',
                         b'$BB mkdir -m 700 "$D" || exit 0\n' + carrier_reader(blob), 1)
     body = body.replace(
@@ -553,13 +685,42 @@ def hook(found, blob):
             body.count(b"151.01") == 0 and body.count(carrier_reader(blob)) == 1 and
             body.index(b'touch /run/keep') < body.index(b'setsid /bin/busybox sh /run/pmos-self-stage.sh') and
             body.count(b'mv "$T" /run/pmos-self-post.sh') == 1 and
-            body.index(b'mv "$T" /run/pmos-self-post.sh') < body.index(b'touch /run/keep'),
+            body.index(b'mv "$T" /run/pmos-self-post.sh') < body.index(b'touch /run/keep') and
+            body.count(b'mv "$D/pmos-self-post.sh"') == 0,
             INIT_MSG)
     return body
 
 
+def gated_artifacts(staged_radio, source_post, probe):
+    require(hashlib.sha256(staged_radio).hexdigest() == STAGED_RADIO_SHA, DELTA_MSG)
+    persist = load("derive-radio-persistent.py", "persistent_radio_derive")
+    fresh = load("derive-radio-fresh-boot.py", "fresh_radio_derive")
+    selfpost = load("derive-self-post-fresh-boot.py", "fresh_post_derive")
+    gate = load("derive-success-gated-ack.py", "gate_derive")
+    radio = fresh.derive(persist.derive(staged_radio.decode())).encode()
+    require(hashlib.sha256(radio).hexdigest() == FRESH_RADIO_SHA, DELTA_MSG)
+    prefix, _ = selfpost.derive(source_post.decode(), radio)
+    post, hook = (value.encode() for value in gate.derive(prefix, radio, probe))
+    require(hashlib.sha256(post).hexdigest() == GATED_POST_SHA and
+            hashlib.sha256(hook).hexdigest() == GATED_HOOK_SHA, DELTA_MSG)
+    return {FRESH_RADIO: radio, FRESH_POST: post, GATED_HOOK: hook}
+
+
+def runtime_scripts():
+    current = current_scripts()
+    gate = load("derive-success-gated-ack.py", "runtime_gate_derive")
+    artifacts = gated_artifacts(current["pmos-radio-bringup.sh"],
+                                script_bytes("pmos-self-post.sh"), gate.build_dns_probe())
+    current["pmos-radio-bringup.sh"] = artifacts[FRESH_RADIO]
+    current["pmos-self-stage.sh"] = replace_once(
+        current["pmos-self-stage.sh"], b"RADIO_SHA=" + STAGED_RADIO_SHA.encode(),
+        b"RADIO_SHA=" + FRESH_RADIO_SHA.encode())
+    current.update(artifacts)
+    return current
+
+
 def carrier_bundle(found, private):
-    names = (*builder.PUBLIC, "pmos-root-contract.sh")
+    names = CARRIER_NAMES
     public = {name: found[name] for name in names}
     return builder.checked_bundle(builder.bundle_bytes(public, private, names), public, private, names)
 
@@ -831,7 +992,7 @@ def main():
     inputs = (stock_path, base_path, carrier_path)
     if args[0] == "--build":
         output_paths(output, carrier_output, (*inputs, PROFILE))
-    current = current_scripts()
+    current = runtime_scripts()
     checker = load("verify-init-boot-psoc-hold-wlan-node.py", "persistent_decode")
     image, carrier, digest, carrier_digest, cpio_size, frame_size, *_rest = build(
         stock_path.read_bytes(), base_path.read_bytes(), current, base.lz4(),

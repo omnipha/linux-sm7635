@@ -388,7 +388,7 @@ esac
 FULLWRAP
 			"$BB" chmod 700 /run/tool
 			printf '%s\n' 'fixture full: real canonical derived post executed after replacing only BB=/bin/busybox with /run/tool; PID 1, the real guard and /bin/busybox stay real BusyBox' \
-				'fixture full: wrapper passes guard, ACK/ready, ordered-record, identity and radio-marker file operations through unchanged; unrecognised applets are refused and recorded' \
+				'fixture full: wrapper passes guard, ACK/ready, ordered-record, identity and radio-marker file operations through unchanged; other invocations use the applet allowlist' \
 				'fixture full: mocked boundaries only: dmesg kmsg replay (synthetic pre-cutover panel line and marker publication), rmtfs/daemon process evidence and pinned hashes, pidof, ping, DNS probe answer, radio stage invocations'
 			: > /run/tool-requests
 			full_result=0
@@ -1034,8 +1034,8 @@ sh -n "$WORK/gate" || fail 'generated gate syntax'
 sh -n "$WORK/derived-post" || fail 'generated full post syntax'
 sh -n "$WORK/full-radio" || fail 'canonical fresh radio syntax'
 printf '%s\n' 'fixture: isolated loop-backed ext4 with synthetic userdata identity; real contract open/append/verify builds each ordered stage; external stage observations and panel evidence are synthetic'
-printf '%s\n' 'fixture: real generated gate suffix publishes success-ready; preceding self-post and radio stages are not executed except in full-self-post cases'
-printf '%s\n' 'fixture: full cases execute the canonical generated post with only its BB line redirected; guard, identity, ACK/ready, ordered-record and marker file operations pass to real BusyBox; unrecognised applets are refused'
+printf '%s\n' 'fixture: gate-only cases run the generated gate suffix; full cases also run the self-post prefix with simulated radio-stage invocations'
+printf '%s\n' 'fixture: full cases execute the canonical generated post with only its BB line redirected; guard, identity, ACK/ready, ordered-record and marker file operations pass to real BusyBox'
 printf '%s\n' 'fixture: mocked radio/process/service evidence, selected hashes, kmsg, network commands and DNS result; real probe bytes are checked but not executed'
 printf '%s\n' 'fixture: dead-watcher uses pidfd SIGKILL; post-interrupt pauses the real watcher and barriers the publisher after single-link ACK publication'
 HOST_mnt_NS=$(readlink /proc/self/ns/mnt)
@@ -1057,4 +1057,4 @@ printf '%s\n' "$result" | "$BB" grep -v '^REPLAY_NONCE='
 for case in premature no-record bad-record record-mode record-symlink record-links record-foreign record-order record-malformed panel-absent panel-record-absent panel-foreign panel-conflict panel-malformed panel-mode panel-symlink panel-links contract-missing contract-corrupt contract-mode contract-symlink contract-links ready-mode ready-symlink ready-links ready-nonce ready-boot ready-newline staging staging-record-invalid gate-staging preplanted-multilink; do run_case "$case" || fail "$case isolated fixture"; done
 for case in partial invalid interrupt post-interrupt dead-watcher replay late; do run_case "$case" || fail "$case isolated fixture"; done
 printf '%s\n' 'pass: host-only isolated ext4 switch_root; digest-pinned guard and real generated gate; real ordered-record contract; mocked external evidence; no network or physical device'
-printf '%s\n' 'pass: full cases self-post the canonical generated radio/post pair; the real guard accepts the successful nonce; failure cases hold no ACK and reach mock recovery at the real deadline'
+printf '%s\n' 'pass: full cases run the generated post with simulated radio stages; the real guard accepts success and requests mock recovery at the real deadline on failure'
