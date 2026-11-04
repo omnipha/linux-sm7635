@@ -2,18 +2,31 @@
 set -eu
 
 HERE=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+ROUTE_POST_SHA=92f6f9cdfa3dcdc8854c7481fe01b500591f1b2b1c9908e97c4cdbfc0ae68d0c
+ROUTE_HOOK_SHA=5bc5b0f4e2820aef8ae11b5b3e1f9264a0c7fe5fc60f8686718fb955b376fc3a
 if [ "${1:-}" != --inner ]; then
-	[ "$#" -eq 0 ] || { printf 'usage: %s\n' "$0" >&2; exit 1; }
+	selection=all
+	if [ "$#" -ne 0 ]; then
+		[ "$#" -eq 1 ] && [ "$1" = --route-cache-only ] || { printf 'usage: %s [--route-cache-only]\n' "$0" >&2; exit 1; }
+		selection=route-cache-only
+	fi
 	work=$(mktemp -d "${TMPDIR:-/tmp}/success-gate-294.XXXXXXXX")
 	chmod 755 "$work"
 	trap 'rm -rf "$work"' EXIT
 	python3 -B "$HERE/test-derive-success-gated-ack.py" "$work"
+	python3 -B "$HERE/derive-route-cache-gated-ack.py" "$work/post" "$work/hook" "$work/route-cache-post" "$work/route-cache-hook"
+	printf '%s  %s\n%s  %s\n' "$ROUTE_POST_SHA" "$work/route-cache-post" "$ROUTE_HOOK_SHA" "$work/route-cache-hook" | sha256sum -c -
+	for candidate in "$work/route-cache-post" "$work/route-cache-hook"; do
+		[ -f "$candidate" ] && [ ! -L "$candidate" ] && [ "$(stat -c '%a:%h' "$candidate")" = 600:1 ] || { printf 'unsafe candidate artifact: %s\n' "$candidate" >&2; exit 1; }
+		sh -n "$candidate"
+	done
 	mkdir "$work/root"
-	sudo -n unshare --mount --pid --fork --net --mount-proc /bin/busybox sh "$0" --inner "$work"
+	sudo -n unshare --mount --pid --fork --net --mount-proc /bin/busybox sh "$0" --inner "$work" "$selection"
 	exit 0
 fi
 
-[ "$#" -eq 2 ] && [ "$$" -eq 1 ] || { printf 'inner fixture requires its private PID namespace\n' >&2; exit 1; }
+[ "$#" -eq 3 ] && [ "$$" -eq 1 ] || { printf 'inner fixture requires its private PID namespace\n' >&2; exit 1; }
+case "$3" in all|route-cache-only) selection=$3;; *) exit 1;; esac
 BB=/bin/busybox
 WORK=$2
 R=$WORK/root
@@ -39,6 +52,8 @@ $BB cp /bin/busybox "$BASE/real/busybox"
 $BB cp "$WORK/post" "$BASE/usr/libexec/omnipha/pmos-self-post-fresh-boot.sh"
 $BB cp "$WORK/radio" "$BASE/usr/libexec/omnipha/pmos-radio-bringup-fresh-boot.sh"
 $BB cp "$WORK/hook" "$BASE/hook"
+$BB cp "$WORK/route-cache-post" "$BASE/route-cache-post"
+$BB cp "$WORK/route-cache-hook" "$BASE/route-cache-hook"
 $BB cp "$HERE/pmos-root-contract.sh" "$BASE/run/pid1-guard/root-contract.sh"
 $BB chmod 600 "$BASE/run/pid1-guard/root-contract.sh"
 $BB chmod 700 "$BASE/hook" "$BASE/usr/libexec/omnipha/"*.sh "$BASE/run" "$BASE/run/radio-bringup" "$BASE/run/pid1-guard"
@@ -364,7 +379,11 @@ case "${1:-}" in
 		fi
 		if [ "${2:-}" = -Fc ] && [ "${4:-}" = "$gate/kmsg" ] && [ "$mode" = kmsg-marker-grep-fail ]; then exit 2; fi;;
 	tr)
-		if [ "${2:-}" = -d ] && [ "$mode" = kmsg-inspect-fail ] && [ -f "$gate/nonce-and-radio-markers.ok" ]; then exit 1; fi;;
+		if [ "${2:-}" = -d ] && [ "$mode" = kmsg-inspect-fail ] && [ -f "$gate/nonce-and-radio-markers.ok" ]; then exit 1; fi
+		if [ "${2:-}" = -d ] && { { [ "$mode" = route-cache-internet-filter-fail ] && [ -f "$gate/gateway.ok" ] && [ ! -f "$gate/internet.ok" ]; } || { [ "$mode" = route-cache-dns-filter-fail ] && [ -f "$gate/internet.ok" ] && [ ! -f "$gate/dns.ok" ]; }; }; then
+			$BB "$@"
+			exit 23
+		fi;;
 	awk)
 		case "$*" in *'/etc/resolv.conf'*) [ "$mode" != resolver-query ] || exit 1;; esac;;
 	chmod)
@@ -517,6 +536,28 @@ $BB cat > "$BASE/sbin/ip" <<'IP'
 #!/real/busybox sh
 BB=/real/busybox
 mode=$($BB cat /tmp/mode)
+case "$mode:$*" in
+	route-cache-*:'-4 route get 1.1.1.1 from 192.0.2.2'|route-cache-*:'-4 route get 192.0.2.53 from 192.0.2.2')
+		case "$*" in
+			'-4 route get 1.1.1.1 from 192.0.2.2') kind=internet; target=1.1.1.1;;
+			*) kind=dns; target=192.0.2.53;;
+		esac
+		printf '%s\n' "$kind" >> /tmp/route-cache-queries
+		case "$mode:$kind" in
+			route-cache-internet-wrong-interface:internet|route-cache-dns-wrong-interface:dns)
+				printf '%s from 192.0.2.2 via 192.0.2.1 dev eth0 uid 0 \n    cache \n' "$target";;
+			route-cache-internet-extra-second-line:internet|route-cache-dns-extra-second-line:dns)
+				printf '%s from 192.0.2.2 via 192.0.2.1 dev wlan0 uid 0 \n    cache foreign\n' "$target";;
+			route-cache-internet-dangling-dev:internet|route-cache-dns-dangling-dev:dns)
+				printf '%s from 192.0.2.2 via 192.0.2.1 dev wlan0 dev\n    cache \n' "$target";;
+			route-cache-internet-nul:internet|route-cache-dns-nul:dns)
+				printf '%s from 192.0.2.2 via 192.0.2.1 dev wlan0 uid 0 \n    cache\000\n' "$target";;
+			route-cache-internet-blank:internet|route-cache-dns-blank:dns)
+				printf '%s from 192.0.2.2 via 192.0.2.1 dev wlan0 uid 0 \n    cache \n\n' "$target";;
+			*) printf '%s from 192.0.2.2 via 192.0.2.1 dev wlan0 uid 0 \n    cache \n' "$target";;
+		esac
+		exit 0;;
+esac
 case "$*" in
 	'-o -4 addr show dev wlan0 scope global')
 		if [ -f /tmp/address.called ]; then final=1; else final=0; $BB touch /tmp/address.called; fi
@@ -552,6 +593,12 @@ reset_case() {
 	$BB cp -a "$BASE" "$ROOT"
 	$BB printf '%s\n' "$1" > "$ROOT/tmp/mode"
 	case "$1" in
+		route-cache-*)
+			$BB cp "$ROOT/route-cache-post" "$ROOT/usr/libexec/omnipha/pmos-self-post-fresh-boot.sh"
+			$BB cp "$ROOT/route-cache-hook" "$ROOT/hook"
+			[ "$( $BB sha256sum "$ROOT/usr/libexec/omnipha/pmos-self-post-fresh-boot.sh" | $BB cut -d ' ' -f 1)" = "$ROUTE_POST_SHA" ] &&
+				[ "$( $BB sha256sum "$ROOT/hook" | $BB cut -d ' ' -f 1)" = "$ROUTE_HOOK_SHA" ] || fail "$1: installed candidate pins differ"
+			;;
 		large-clean|mid-clean|mid-radio-fatal-*|mid-final-fatal-*|radio-large-fatal-*|final-large-fatal-*)
 			case "$1" in mid-*) blocks=256;; *) blocks=900;; esac
 			$BB dd if=/dev/zero bs=1024 count="$blocks" 2>/dev/null | $BB tr '\000' x > "$ROOT/tmp/synthetic-large-kmsg"
@@ -650,6 +697,12 @@ expect_refusal() {
 	check_prefix "$case_name"
 	check_no_publication "$case_name"
 	case "$case_name" in
+		route-cache-*)
+			[ ! -e "$ROOT/tmp/publication-attempts" ] && [ ! -e "$ROOT/tmp/ready-publication-attempts" ] &&
+				[ ! -e "$ROOT/run/pid1-guard/ack" ] && [ ! -L "$ROOT/run/pid1-guard/ack" ] &&
+				[ ! -e "$ROOT/run/pid1-guard/.success-gated-ack-new" ] && [ ! -L "$ROOT/run/pid1-guard/.success-gated-ack-new" ] &&
+				[ ! -e "$ROOT/run/pid1-guard/success-ready" ] && [ ! -L "$ROOT/run/pid1-guard/success-ready" ] &&
+				[ ! -e "$ROOT/run/pid1-guard/accepted" ] && [ -f "$ROOT/run/pid1-guard/nonce" ] || fail "$case_name: guard or publication state changed";;
 		missing-ifquery|missing-lease-wrapper|missing-lease-helper)
 			case "$case_name" in
 				missing-ifquery) missing=ifquery-wlan;;
@@ -685,6 +738,50 @@ check_publication() {
 	[ "$( $BB cat "$ROOT/tmp/ack-at-link.stat")" = "0:600:2:$((${#nonce} + ${#boot} + 2))" ] || fail "$1: published inode metadata differs"
 	[ ! -e "$ROOT/tmp/unsafe-ack-order" ] || fail "$1: ACK preceded readiness"
 }
+
+route_cache_cases() {
+	reset_case route-cache-success
+	start_hook route-cache-hook-success
+	[ "$( $BB cat "$ROOT/tmp/hook-post-result")" = 0 ] || fail 'route-cache-hook-success: detached post failed'
+	check_prefix route-cache-hook-success
+	[ "$( $BB cat "$ROOT/tmp/route-cache-queries")" = 'internet
+dns' ] || fail 'route-cache-hook-success: expected both route lookups'
+	[ "$( $BB cat "$ROOT/tmp/dns-invocations")" = 192.0.2.53 ] || fail 'route-cache-hook-success: expected one DNS invocation'
+	check_publication route-cache-hook-success
+	$BB cmp -s "$ROOT/tmp/expected-ack" "$ROOT/tmp/ack-before-consumption" || fail 'route-cache-hook-success: consumed ACK bytes differ'
+	[ "$( $BB cat "$ROOT/tmp/ack-before-consumption.stat")" = "0:600:1:$((${#nonce} + ${#boot} + 2))" ] || fail 'route-cache-hook-success: consumed ACK metadata differs'
+	gate=$ROOT/run/radio-bringup/success-gate-294
+	check_evidence "$gate/started" "boot=$boot stage=initialization result=started phase=before-publication reason=none"
+	for stage in $stages; do check_evidence "$gate/$stage.ok" "boot=$boot stage=$stage result=pass phase=before-publication reason=none"; done
+	check_evidence "$gate/published.ok" "boot=$boot stage=ack-publication result=pass phase=published-awaiting-guard reason=none"
+	check_evidence "$gate/accepted.ok" "boot=$boot stage=guard-acceptance result=pass phase=guard-accepted reason=none"
+	check_evidence "$ROOT/run/pid1-guard/accepted" "$boot"
+	[ ! -e "$gate/refusal" ] && [ ! -e "$gate/dns-probe" ] && [ ! -e "$gate/kmsg" ] &&
+		[ ! -e "$ROOT/run/radio-bringup/wpa_supplicant.conf" ] && [ ! -e "$ROOT/run/pid1-guard/ack" ] &&
+		[ ! -e "$ROOT/run/pid1-guard/nonce" ] && [ ! -e "$ROOT/run/pid1-guard/.success-gated-ack-new" ] || fail 'route-cache-hook-success: incorrect cleanup or guard state'
+	printf 'pass: route-cache candidate hook detached, both cached routes passed, ACK accepted by fake guard\n'
+
+	for terminal in internet dns; do
+		case "$terminal" in
+			internet) reason='internet route is not wlan0'; expected_queries=internet;;
+			dns) reason='DNS route is not wlan0'; expected_queries='internet
+dns';;
+		esac
+		for defect in wrong-interface extra-second-line dangling-dev nul blank filter-fail; do
+			case_name="route-cache-$terminal-$defect"
+			expect_refusal "$case_name" "$terminal" "$reason"
+			[ "$( $BB cat "$ROOT/tmp/route-cache-queries")" = "$expected_queries" ] || fail "$case_name: unexpected route lookups"
+			[ ! -e "$ROOT/tmp/dns-invocations" ] || fail "$case_name: DNS probe ran after bad route"
+			$BB printf '%s\n' "$expected_queries" > "$ROOT/tmp/expected-queries"
+			$BB cmp -s "$ROOT/tmp/route-cache-queries" "$ROOT/tmp/expected-queries" || fail "$case_name: route queries differ"
+		done
+	done
+}
+
+if [ "$selection" = route-cache-only ]; then
+	route_cache_cases
+	exit 0
+fi
 
 reset_case success
 $BB rm "$ROOT/run/pmos-pre-ssh-panel.record"
@@ -1249,3 +1346,4 @@ $BB cmp -s "$ROOT/tmp/original-refusal" "$ROOT/run/radio-bringup/success-gate-29
 $BB grep -qF 'one-shot gate already exists or cannot be created' "$ROOT/tmp/synthetic-contract-events" || fail 'same-boot replay did not refuse the existing gate in the synthetic contract event'
 printf 'pass: same-boot replay refused without replacing prior evidence\n'
 [ "$snapshot_ok" = 1 ] || fail 'bounded kmsg coverage exposed a size-limit or truncation problem'
+route_cache_cases
