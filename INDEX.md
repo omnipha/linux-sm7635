@@ -2,6 +2,7 @@
 
 ## Latest 10
 
+- [2026-11-04-190612-pair-deliverable-host-proofs](records/2026-11-04-190612-pair-deliverable-host-proofs.md) | userspace | inconclusive | linux-sm7635#324 | pair deliverable host proofs
 - [2026-11-04-172845-pin-replacement-host-design-and-models](records/2026-11-04-172845-pin-replacement-host-design-and-models.md) | userspace | confirmed | linux-sm7635#324 | pin replacement host design and models
 - [2026-11-04-154823-run113-route-attribution-inconclusive](records/2026-11-04-154823-run113-route-attribution-inconclusive.md) | wlan run 113 | inconclusive | linux-sm7635#311 | run113 route refusal attribution remains inconclusive
 - [2026-11-04-141023-route-cache-candidate-provenance](records/2026-11-04-141023-route-cache-candidate-provenance.md) | wlan | confirmed | linux-sm7635#311 | host parser defect reproduced under QEMU
@@ -11,7 +12,6 @@
 - [2026-11-04-062414-pair-producer-verified-consumer-gate-still-open](records/2026-11-04-062414-pair-producer-verified-consumer-gate-still-open.md) | wlan | inconclusive | linux-sm7635#311 | pair producer verified consumer gate still open
 - [2026-11-04-052230-verified-pair-manifest](records/2026-11-04-052230-verified-pair-manifest.md) | wlan | confirmed | linux-sm7635#311 | verified pair manifest
 - [2026-11-04-031612-preflight-pinned-carrier-dependency](records/2026-11-04-031612-preflight-pinned-carrier-dependency.md) | wlan run 108 | inconclusive | linux-sm7635#311 | preflight pinned carrier dependency
-- [2026-11-04-005244-host-integrated-gated-chain-and-fail-closed-installer](records/2026-11-04-005244-host-integrated-gated-chain-and-fail-closed-installer.md) | wlan run 6 | confirmed | linux-sm7635#311 | host integrated gated chain and fail closed installer
 
 ## By subsystem (latest 3, total in brackets)
 
@@ -35,10 +35,10 @@
 - [2026-10-29-2206-host-re-address-of-a-renamed-diagnostic-gadget-2](records/2026-10-29-2206-host-re-address-of-a-renamed-diagnostic-gadget-2.md) | usb | inconclusive | omnipha/linux-sm7635#169 | Host re-address of a renamed diagnostic gadget (2026-10-29, #169)
 - [2026-10-28-2284-run-52-measured-postmarketos-pid-1-cutover-and-u](records/2026-10-28-2284-run-52-measured-postmarketos-pid-1-cutover-and-u.md) | usb run 52 | confirmed | omnipha/linux-sm7635#145 | Run-52 measured postmarketOS PID-1 cutover and USB SSH (#145, live-session finding, 2026-10-28)
 
-### userspace [27]
+### userspace [28]
+- [2026-11-04-190612-pair-deliverable-host-proofs](records/2026-11-04-190612-pair-deliverable-host-proofs.md) | userspace | inconclusive | linux-sm7635#324 | pair deliverable host proofs
 - [2026-11-04-172845-pin-replacement-host-design-and-models](records/2026-11-04-172845-pin-replacement-host-design-and-models.md) | userspace | confirmed | linux-sm7635#324 | pin replacement host design and models
 - [2026-10-30-162851-persistent-userdata-root-pair](records/2026-10-30-162851-persistent-userdata-root-pair.md) | userspace | confirmed | omnipha/linux-sm7635#197 | Persistent userdata root pair
-- [2026-10-30-150709-root-contract-measured-userdata-maximum](records/2026-10-30-150709-root-contract-measured-userdata-maximum.md) | userspace | confirmed | omnipha/linux-sm7635#199 | Measured userdata size accepted by the fail-closed root contract
 
 ### wlan [87]
 - [2026-11-04-154823-run113-route-attribution-inconclusive](records/2026-11-04-154823-run113-route-attribution-inconclusive.md) | wlan run 113 | inconclusive | linux-sm7635#311 | run113 route refusal attribution remains inconclusive
@@ -50,5 +50,5 @@
 
 ## By month
 
-- [2026-11](records/index-2026-11.md) [56]
+- [2026-11](records/index-2026-11.md) [57]
 - [2026-10](records/index-2026-10.md) [162]
