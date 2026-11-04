@@ -3,8 +3,8 @@
 device: nothing-asteroids
 updated: 2026-11-04
 next_question: >-
-  Can targeted fastboot identity and current rescue provenance be re-established
-  after device-side recovery before a captured #311 pair test?
+  Can the recorded no-write-repeat boot be handled by the flash gate,
+  allowing the verified #311 pair to be measured safely?
 active_issue: omnipha/linux-sm7635#311
 subsystems:
   boot:
@@ -15,7 +15,7 @@ subsystems:
     record: records/2026-10-30-203515-run-69-second-boot-guard-wlan.md
   wlan:
     state: partial
-    record: records/2026-11-04-074017-fastboot-gate-unresponsive.md
+    record: records/2026-11-04-083619-setup-rescue-flash-gate-refused.md
   modem:
     state: partial        # stays running past the EFS request after PID-1 cutover (run 55); no voice/SIM/data claim
     record: records/2026-10-29-2290-run-55-measured-post-cutover-modem-hold-past-the.md
