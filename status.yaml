@@ -3,10 +3,11 @@
 device: nothing-asteroids
 updated: 2026-11-04
 next_question: >-
-  Which privileged-writer exclusion (phase separation, capability-dropped
-  diagnostic shells) and owner-approved release/rollback public keys let the
-  replacement pair be built, and what are the measured rw root mode and
-  journal/fsck behavior of sda13? Host proofs: records/2026-11-04-190612-pair-deliverable-host-proofs.md
+  With the host PID 1 ACK fixture green and the signed-generation model
+  aligned (records/2026-11-04-220742-persistent-root-host-blockers.md), which
+  owner-approved release/rollback public keys and demonstrated privileged-writer
+  exclusion let the replacement pair be built; separately, what are the measured
+  rw root mode and journal/fsck behavior of sda13 on the installed pair?
 active_issue: omnipha/linux-sm7635#324
 subsystems:
   boot:

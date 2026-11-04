@@ -16,8 +16,9 @@ owner-authorized signing keys, signed baseline or embedded trust anchors are
 demonstrated. Only synthetic throwaway-key fixtures exist. The migration model
 and the other host fixtures are described below; they do not supply a
 deployable bootstrap. The record also reports a failed host PID 1 `ack` case;
-`test-pmos-pid1.sh` has since been rewritten, but its current result is not
-established. The post-cutover ACK path is not claimed green.
+`test-pmos-pid1.sh` has since been rewritten and passes all six host cases
+against the unchanged guard (fixture-authored `success-ready` and record
+evidence, see the finding below); this is a host result, not a device ACK.
 
 ## Current boundary
 
@@ -472,10 +473,9 @@ those needs its own later technical reason and coordinator approval.
 
 Host-side, the model now implements the separately keyed new-generation
 rollback, and `test-pmos-pid1.sh` is rewritten to supply `success-ready` and an
-ordered boot record on an isolated ext4 root. That rewritten fixture has not
-been run to a green result after its last hardening edits (the one attempt
-failed in the loop-descriptor check), so the host ACK path is not claimed green.
-Still open: the deployable bootstrap reconciled with the model. No image is
+ordered boot record on an isolated loop-backed ext4 root; it passes all six
+cases on the host with the production scripts unchanged, and that evidence is
+fixture-authored, so it is not a device ACK. Still open: the deployable bootstrap reconciled with the model. No image is
 built and no pair is flashed until the owner records a decision on the two
 trust-anchor keys.
 
