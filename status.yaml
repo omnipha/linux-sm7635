@@ -3,9 +3,11 @@
 device: nothing-asteroids
 updated: 2026-11-04
 next_question: >-
-  Why did the autonomous internet destination route resolve away from wlan0
-  on run 113 after association, address and gateway passed?
-active_issue: omnipha/linux-sm7635#311
+  Does the reviewed pin-replacement design (docs/strategy/persistent-root.md,
+  host models only) pass independent review so the coordinator can decide on
+  one different verified pre-SSH pair; what are the measured rw root mode and
+  journal/fsck behavior of sda13?
+active_issue: omnipha/linux-sm7635#324
 subsystems:
   boot:
     state: confirmed
