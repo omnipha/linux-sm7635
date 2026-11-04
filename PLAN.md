@@ -19,9 +19,10 @@ blocked by a measurement.
 
 - Step: integrate autonomous WLAN into the boot image and installed chain.
       Check: a fresh boot brings the radio chain up by itself, wlan0
-      appears, associates, gets an address and reaches the internet;
-      Linux stays up beyond the recovery deadline, and a second boot
-      repeats all of it without a host-run recipe or host ACK.
+      appears, associates, gets an address, resolves DNS and reaches the
+      internet; Linux stays up beyond the recovery deadline without a
+      host-run recipe or host ACK. A second boot needs a technical reason
+      and coordinator approval.
       How and what was tried: docs/strategy/wlan.md.
 
 ## Then, in order
