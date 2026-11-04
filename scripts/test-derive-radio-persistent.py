@@ -550,19 +550,76 @@ with tempfile.TemporaryDirectory(prefix='chain-install-311.') as tmp:
     assert bad.returncode != 0 and 'untrusted persistent chain file' in bad.stderr, bad.stderr
     assert post_target.read_bytes() == payloads['pmos-self-post-fresh-boot.sh']
     assert hook_target.read_bytes() == payloads['10-omnipha-self-stage.start']
+    def file_state(path):
+        data = path.read_bytes()
+        metadata = path.lstat()
+        return data, (metadata.st_dev, metadata.st_ino, metadata.st_mode, metadata.st_uid, metadata.st_gid,
+                      metadata.st_nlink, metadata.st_size, metadata.st_mtime_ns, metadata.st_ctime_ns)
     post_target.unlink()
     hook_target.unlink()
+    assert target_radio.read_bytes() == payloads['pmos-radio-bringup-fresh-boot.sh']
+    assert target_radio.is_file() and not target_radio.is_symlink()
+    radio_metadata = target_radio.stat()
+    assert radio_metadata.st_mode & 0o777 == 0o700 and radio_metadata.st_nlink == 1
+    radio_state = file_state(target_radio)
     ok = run_installer(guest, sources, mountinfo_path)
     assert ok.returncode == 0, ok.stderr
     assert post_target.read_bytes() == candidate_post and hook_target.read_bytes() == candidate_hook
+    assert target_radio.read_bytes() == payloads['pmos-radio-bringup-fresh-boot.sh']
+    assert file_state(target_radio) == radio_state
     ok = run_installer(guest, sources, mountinfo_path)
     assert ok.returncode == 0, ok.stderr
+    assert file_state(target_radio) == radio_state
     sources.joinpath('pmos-self-post-fresh-boot.sh').write_bytes(payloads['pmos-self-post-fresh-boot.sh'])
     bad = run_installer(guest, sources, mountinfo_path)
     assert bad.returncode != 0 and 'unpinned carrier payload' in bad.stderr, bad.stderr
     assert post_target.read_bytes() == candidate_post and hook_target.read_bytes() == candidate_hook
+    assert file_state(target_radio) == radio_state
+
+    def stage_block(stage_text):
+        first = stage_text.index('for level in sysinit boot default nonetwork shutdown; do\n')
+        hooks = stage_text.index('for hook in "$PMOS_ROOT"/etc/local.d/*.start', first)
+        deferral = stage_text.index('if [ "${PMOS_ROOT_KIND:-tmpfs}" = ext4 ]; then\n\tfor service in wpa_supplicant networking; do\n', hooks)
+        return stage_text[first:stage_text.index('if [ ! -e "$PMOS_ROOT/sbin/init" ]', deferral)]
+    def run_stage_block(block, bb=busybox):
+        return subprocess.run([bb, 'sh', '-c', setup + block, 'fixture', bb, str(guest)],
+                              capture_output=True, text=True, check=False)
+    for level in ('sysinit', 'boot', 'default', 'nonetwork', 'shutdown'):
+        (guest / 'etc/runlevels' / level).mkdir(parents=True)
+    (guest / 'etc/init.d').mkdir()
+    (guest / 'etc/init.d/local').write_text('local\n')
+    (guest / 'etc/init.d/local').chmod(0o755)
+    default = guest / 'etc/runlevels/default'
+    local_link = default / 'local'
+    radio_links = tuple(default / name for name in ('wpa_supplicant', 'networking'))
+    canonical_hook = payloads['10-omnipha-self-stage.start']
+    for label, stage_text, own_hook, foreign_hook in (
+            ('canonical', runtime['pmos-session-stage.sh'].decode(), canonical_hook, candidate_hook),
+            ('route-cache', candidate_scripts['pmos-session-stage.sh'].decode(), candidate_hook, canonical_hook)):
+        stage_fragment = stage_block(stage_text)
+        for stage_hook, expected_ok in ((foreign_hook, False), (own_hook, True)):
+            hook_target.write_bytes(stage_hook)
+            hook_target.chmod(0o700)
+            local_link.unlink(missing_ok=True)
+            for path in radio_links:
+                path.unlink(missing_ok=True)
+                path.symlink_to('/etc/init.d/' + path.name)
+            before = tuple(file_state(path) for path in (target_radio, post_target, hook_target))
+            result = run_stage_block(stage_fragment)
+            if expected_ok:
+                assert result.returncode == 0, (label, result.stderr)
+                assert local_link.is_symlink() and os.readlink(local_link) == '/etc/init.d/local', label
+                assert all(not path.exists() and not path.is_symlink() for path in radio_links), label
+            else:
+                assert result.returncode != 0 and 'unexpected local startup hook' in result.stderr, (label, result.stderr)
+                assert not local_link.exists() and not local_link.is_symlink(), label
+                assert all(path.is_symlink() and os.readlink(path) == '/etc/init.d/' + path.name
+                           for path in radio_links), label
+            assert tuple(file_state(path) for path in (target_radio, post_target, hook_target)) == before, label
+            assert file_state(target_radio) == radio_state, label
 print('pass: chain installer atomically installs, preserves, and refuses foreign hooks, untrusted scripts, hardlinks, symlinks, staging collisions and unpinned payloads')
-print('pass: run-113 and route-cache installers refuse each other; candidate installs and repeats on an empty target')
+print('pass: run-113 and route-cache installers refuse each other; candidate installs missing post and hook, preserving radio')
+print('pass: isolated canonical and route-cache session-stage reconciliation accepts its own hook and rejects the other; ownership modeled')
 print('pass: persistent-root services derivation reproduces the committed variant, '
       'fails closed on every removed block, applies to the run-98 staged script, '
       'and composes with the post-ack derivation')
