@@ -537,6 +537,7 @@ with tempfile.TemporaryDirectory(prefix='chain-install-311.') as tmp:
     hook_target.chmod(0o700)
     ok = run_installer(guest, sources, mountinfo_path)
     assert ok.returncode == 0, ok.stderr
+    canonical_test_installer = test_installer
     variant_installer = variant.builder.persistent_installer().decode()
     assert variant_installer in candidate_scripts['pmos-self-stage.sh'].decode()
     candidate_test_installer = 'set -eu\n' + variant_installer.replace(
@@ -575,6 +576,83 @@ with tempfile.TemporaryDirectory(prefix='chain-install-311.') as tmp:
     assert bad.returncode != 0 and 'unpinned carrier payload' in bad.stderr, bad.stderr
     assert post_target.read_bytes() == candidate_post and hook_target.read_bytes() == candidate_hook
     assert file_state(target_radio) == radio_state
+
+    for protected_name, protected_target in specs:
+        test_installer = canonical_test_installer
+        for name, _ in specs:
+            sources.joinpath(name).write_bytes(payloads[name])
+            sources.joinpath(name).chmod(0o700)
+            (guest / _).write_bytes(payloads[name])
+            (guest / _).chmod(0o700)
+        target_path = guest / protected_target
+        original_data = target_path.read_bytes()
+        target_path.write_bytes(b'mismatched protected content\n')
+        target_path.chmod(0o700)
+        bad = run_installer(guest, sources, mountinfo_path)
+        assert bad.returncode != 0 and 'untrusted persistent chain file' in bad.stderr, bad.stderr
+        target_path.write_bytes(original_data)
+        target_path.chmod(0o700)
+        bad_source = sources / protected_name
+        bad_source.write_bytes(b'mismatched carrier payload\n')
+        bad_source.chmod(0o700)
+        bad = run_installer(guest, sources, mountinfo_path)
+        assert bad.returncode != 0 and 'unpinned carrier payload' in bad.stderr, bad.stderr
+        bad_source.write_bytes(payloads[protected_name])
+        bad_source.chmod(0o700)
+        ok = run_installer(guest, sources, mountinfo_path)
+        assert ok.returncode == 0, ok.stderr
+
+    test_installer = canonical_test_installer
+    for name, _ in specs:
+        sources.joinpath(name).write_bytes(payloads[name])
+        sources.joinpath(name).chmod(0o700)
+        (guest / _).write_bytes(payloads[name])
+        (guest / _).chmod(0o700)
+    for auth_name, auth_target, auth_payload in (
+            ('pmos-self-post-fresh-boot.sh', 'usr/libexec/omnipha/pmos-self-post-fresh-boot.sh', candidate_post),
+            ('10-omnipha-self-stage.start', 'etc/local.d/10-omnipha-self-stage.start', candidate_hook)):
+        (guest / auth_target).write_bytes(auth_payload)
+        (guest / auth_target).chmod(0o700)
+        bad = run_installer(guest, sources, mountinfo_path)
+        assert bad.returncode != 0 and 'untrusted persistent chain file' in bad.stderr, bad.stderr
+        (guest / auth_target).write_bytes(payloads[auth_name])
+        (guest / auth_target).chmod(0o700)
+    for auth_name, auth_target, auth_payload in (
+            ('pmos-self-post-fresh-boot.sh', 'usr/libexec/omnipha/pmos-self-post-fresh-boot.sh', candidate_post),
+            ('10-omnipha-self-stage.start', 'etc/local.d/10-omnipha-self-stage.start', candidate_hook)):
+        (guest / auth_target).unlink()
+        sources.joinpath(auth_name).write_bytes(auth_payload)
+        sources.joinpath(auth_name).chmod(0o700)
+        bad = run_installer(guest, sources, mountinfo_path)
+        assert bad.returncode != 0 and 'unpinned carrier payload' in bad.stderr, bad.stderr
+        assert not (guest / auth_target).exists()
+        sources.joinpath(auth_name).write_bytes(payloads[auth_name])
+        sources.joinpath(auth_name).chmod(0o700)
+        (guest / auth_target).write_bytes(payloads[auth_name])
+        (guest / auth_target).chmod(0o700)
+
+    unrelated_file = guest / 'etc/unrelated-unpinned.conf'
+    unrelated_bytes = b'unrelated config data preserved across installer passes\n'
+    unrelated_file.write_bytes(unrelated_bytes)
+    unrelated_file.chmod(0o644)
+    protected_state_before = {spec[1]: file_state(guest / spec[1]) for spec in specs}
+    unrelated_state_before = file_state(unrelated_file)
+    ok = run_installer(guest, sources, mountinfo_path)
+    assert ok.returncode == 0, ok.stderr
+    assert unrelated_file.read_bytes() == unrelated_bytes
+    assert file_state(unrelated_file) == unrelated_state_before
+    for _, spec_target in specs:
+        assert (guest / spec_target).read_bytes() == payloads[_]
+        assert file_state(guest / spec_target) == protected_state_before[spec_target]
+    ok = run_installer(guest, sources, mountinfo_path)
+    assert ok.returncode == 0, ok.stderr
+    assert unrelated_file.read_bytes() == unrelated_bytes
+    assert file_state(unrelated_file) == unrelated_state_before
+    for _, spec_target in specs:
+        assert (guest / spec_target).read_bytes() == payloads[_]
+        assert file_state(guest / spec_target) == protected_state_before[spec_target]
+    unrelated_file.unlink()
+    radio_state = file_state(target_radio)
 
     def stage_block(stage_text):
         first = stage_text.index('for level in sysinit boot default nonetwork shutdown; do\n')
@@ -617,6 +695,20 @@ with tempfile.TemporaryDirectory(prefix='chain-install-311.') as tmp:
                            for path in radio_links), label
             assert tuple(file_state(path) for path in (target_radio, post_target, hook_target)) == before, label
             assert file_state(target_radio) == radio_state, label
+    for label, stage_text, hook_sha in (
+            ('canonical', runtime['pmos-session-stage.sh'].decode(), builder.GATED_HOOK_SHA),
+            ('route-cache', candidate_scripts['pmos-session-stage.sh'].decode(), variant.route_cache.HOOK_SHA)):
+        hook_index = stage_text.index('for hook in "$PMOS_ROOT"/etc/local.d/*.start')
+        pin_index = stage_text.index(hook_sha, hook_index)
+        assert stage_text.count(hook_sha) == 1
+        assert pin_index < stage_text.index('unexpected local startup hook', hook_index)
+        other_sha = variant.route_cache.HOOK_SHA if label == 'canonical' else builder.GATED_HOOK_SHA
+        assert stage_text[stage_text.index('for hook in "$PMOS_ROOT"/etc/local.d/*.start'):
+                          stage_text.index('cannot enable RAM-only local service')].count(other_sha) == 0
+print('pass: actual unchanged installer fails closed on each mismatched protected file, carrier and installed')
+print('pass: old installer cannot adopt newly authorized post or hook generation, present or missing')
+print('pass: unrelated unpinned file and protected files survive two installer passes in isolated temp tree')
+print('pass: generated session-stage hooks independently pinned per variant in reconciliation block')
 print('pass: chain installer atomically installs, preserves, and refuses foreign hooks, untrusted scripts, hardlinks, symlinks, staging collisions and unpinned payloads')
 print('pass: run-113 and route-cache installers refuse each other; candidate installs missing post and hook, preserving radio')
 print('pass: isolated canonical and route-cache session-stage reconciliation accepts its own hook and rejects the other; ownership modeled')
