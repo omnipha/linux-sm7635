@@ -15,12 +15,15 @@ default route and gateway passed. At uptime 199.62 s, that stage refused with
 measurement is recorded in
 `records/2026-11-04-093054-run113-pair-installed-internet-route-gate-refused.md`.
 
-The live `ip route get` output was not preserved in the capture or pstore.
-The independently reproduced two-line `dev wlan0` / `cache` parser defect
-is a sufficient possible explanation, not evidence that this was the actual
-run-113 output or cause. The device attribution therefore remains inconclusive.
-See `records/2026-11-04-141023-route-cache-candidate-provenance.md` for the
-confirmed host-only boundary.
+The live `ip route get` output is not in the captured log, and the prior-boot
+pstore fetch was unsupported, so no pstore was obtained. The independently
+reproduced two-line `dev wlan0` / `cache` parser defect is a sufficient
+possible explanation, not evidence that this was the actual run-113 output or
+cause. The device attribution therefore remains inconclusive. See
+`records/2026-11-04-141023-route-cache-candidate-provenance.md` for the
+confirmed host-only boundary and
+`records/2026-11-04-102445-run113-route-cache-diagnosis.md` for the original
+host diagnosis, whose "confirmed" result covers the host reproduction only.
 
 ## Decision and authorization correction
 
@@ -34,13 +37,11 @@ architecture exists. The physical coordinator retains all device decisions and
 applicable preflight, backup, rescue and capture gates.
 
 The earlier integration record
-`records/2026-11-04-113000-route-cache-variant-integration.md` incorrectly
-called removal of old post/hook files "human-gated". The supervisor clarified
-that `full_autonomy_device_iteration` is standing approval within its scope,
-including coordinator-owned removal of old files; no separate ad-hoc human
-approval should be inferred for that operation. This does not authorize an
-operation in this record, override mission-shift gates or alter the current
-hold.
+`records/2026-11-04-113000-route-cache-variant-integration.md` describes
+removal of the old post/hook files as human-gated. This record does not
+reinterpret that boundary or any approval scope. Whether and how that removal
+is gated is decided by the physical coordinator under the mission-shift state,
+not by this record, and no device operation is authorized here.
 
 ## Status
 
