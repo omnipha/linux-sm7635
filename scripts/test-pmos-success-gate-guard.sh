@@ -10,7 +10,7 @@ hash() { "$BB" sha256sum "$1" | "$BB" cut -d ' ' -f 1; }
 
 if [ "${1:-}" = --switched ]; then
 	[ "$#" = 2 ] && [ "$$" = 1 ] || fail 'switched process is not PID 1'
-	case "$2" in success|partial|invalid|interrupt|post-interrupt|dead-watcher|replay|late|premature|no-record|bad-record|record-mode|record-symlink|record-links|record-foreign|record-order|record-malformed|panel-absent|panel-record-absent|panel-foreign|panel-conflict|panel-malformed|panel-mode|panel-symlink|panel-links|contract-missing|contract-corrupt|contract-mode|contract-symlink|contract-links|ready-mode|ready-symlink|ready-links|ready-nonce|ready-boot|ready-newline|staging|staging-record-invalid|gate-staging|preplanted-multilink|full-success|full-radio-fail|full-invalid) CASE=$2;; *) fail 'invalid case';; esac
+	case "$2" in success|partial|invalid|interrupt|post-interrupt|dead-watcher|replay|late|premature|no-record|bad-record|record-mode|record-symlink|record-links|record-foreign|record-order|record-malformed|panel-absent|panel-record-absent|panel-foreign|panel-conflict|panel-malformed|panel-mode|panel-symlink|panel-links|contract-missing|contract-corrupt|contract-mode|contract-symlink|contract-links|ready-mode|ready-symlink|ready-links|ready-nonce|ready-boot|ready-newline|staging|staging-record-invalid|gate-staging|preplanted-multilink|full-success|full-radio-fail|full-invalid|full-route-cache-success|full-route-cache-internet-dev|full-route-cache-internet-extra|full-route-cache-dns-dev|full-route-cache-dns-extra) CASE=$2;; *) fail 'invalid case';; esac
 	umask 077
 	for ns in mnt pid net; do
 		eval "host_ns=\${HOST_${ns}_NS:-}"
@@ -290,7 +290,12 @@ IFQUERY
 	case "$CASE" in
 		full-*)
 			GATE_DIR=/run/radio-bringup/success-gate-294
-			[ "$(hash /derived-post)" = 113553dddfc646b77dacb06777cc2c450e4f17d33aaf508e3113c993968ac0f3 ] || fail 'full case derived post is not the canonical generated post'
+			case "$CASE" in
+				full-route-cache-*)
+					[ "$(hash /derived-post)" = 92f6f9cdfa3dcdc8854c7481fe01b500591f1b2b1c9908e97c4cdbfc0ae68d0c ] || fail 'candidate case derived post is not the candidate post';;
+				*)
+					[ "$(hash /derived-post)" = 113553dddfc646b77dacb06777cc2c450e4f17d33aaf508e3113c993968ac0f3 ] || fail 'full case derived post is not the canonical generated post';;
+			esac
 			[ "$(hash /run/pid1-guard/guard.sh)" = "$GUARD_SHA" ] &&
 				[ "$("$BB" stat -Lc '%d:%i' /proc/1/exe)" = "$("$BB" stat -c '%d:%i' /bin/busybox)" ] || fail 'full case guard or PID 1 is not real BusyBox'
 			"$BB" printf '/bin/busybox\000sh\000/run/pid1-guard/guard.sh\000watch\000mock\000%s\000%s\000' "$TEST_BUDGET" "$MOCK_SHA" > /run/full-watch-command
@@ -387,9 +392,9 @@ case "${1:-}" in
 esac
 FULLWRAP
 			"$BB" chmod 700 /run/tool
-			printf '%s\n' 'fixture full: real canonical derived post executed after replacing only BB=/bin/busybox with /run/tool; PID 1, the real guard and /bin/busybox stay real BusyBox' \
+			printf '%s\n' 'fixture full: pinned canonical or route-cache candidate post executed after replacing only BB=/bin/busybox with /run/tool; PID 1, the real guard and /bin/busybox stay real BusyBox' \
 				'fixture full: wrapper passes guard, ACK/ready, ordered-record, identity and radio-marker file operations through unchanged; other invocations use the applet allowlist' \
-				'fixture full: mocked boundaries only: dmesg kmsg replay (synthetic pre-cutover panel line and marker publication), rmtfs/daemon process evidence and pinned hashes, pidof, ping, DNS probe answer, radio stage invocations'
+				'fixture full: mocked boundaries only: dmesg kmsg replay (synthetic pre-cutover panel line and marker publication), rmtfs/daemon process evidence and pinned hashes, pidof, ping, route replies, DNS probe answer, radio stage invocations'
 			: > /run/tool-requests
 			full_result=0
 			"$BB" sh /run/full-post.sh > /run/full-post.log 2>&1 || full_result=$?
@@ -397,26 +402,49 @@ FULLWRAP
 			"$BB" printf 'pmos-self-post: post-cutover PID 1 on boot %s; guard identity check passed; pid1 identity check passed\n' "$boot" >> /run/expected-full-record
 			"$BB" cmp -s /run/expected-full-record /.omnipha-boot-record || fail "$CASE record not exactly pre-cutover entries plus post entry"
 			case "$CASE" in
-				full-success)
-					[ "$full_result" = 0 ] || { "$BB" cat /run/full-post.log >&2; "$BB" cat "$GATE_DIR/refusal" >&2 2>/dev/null || true; fail 'full-success post did not succeed'; }
-					[ "$("$BB" sed -n '$p' /.omnipha-boot-record)" = "pmos-self-post: post-cutover PID 1 on boot $boot; guard identity check passed; pid1 identity check passed" ] || fail 'full-success post record line missing'
-					! "$BB" grep -q 'pmos-self-post: FAIL' /.omnipha-boot-record || fail 'full-success record contains a failure'
+				full-route-cache-*)
+					case "$CASE" in
+						full-route-cache-internet-*) expected_routes=internet;;
+						*) expected_routes=$("$BB" printf 'internet\ndns\n');;
+					esac
+					[ "$("$BB" cat /run/route-requests)" = "$expected_routes" ] || fail "$CASE route lookup order differs"
+					for route_stage in internet dns; do
+						case "$route_stage:$CASE" in
+							dns:full-route-cache-internet-*) [ ! -e /run/route-dns-reply ] || fail "$CASE unexpectedly queried DNS route"; continue;;
+							internet:*) target=1.1.1.1;;
+							dns:*) target=192.0.2.53;;
+						esac
+						dev=wlan0
+						continuation='    cache '
+						case "$CASE:$route_stage" in
+							full-route-cache-internet-dev:internet|full-route-cache-dns-dev:dns) dev=eth0;;
+							full-route-cache-internet-extra:internet|full-route-cache-dns-extra:dns) continuation='    cache extra';;
+						esac
+						"$BB" printf '%s\n' "$target from 192.0.2.2 via 192.0.2.1 dev $dev uid 0 " "$continuation" |
+							"$BB" cmp -s - "/run/route-$route_stage-reply" || fail "$CASE $route_stage reply differs"
+					done;;
+			esac
+			case "$CASE" in
+				full-success|full-route-cache-success)
+					[ "$full_result" = 0 ] || { "$BB" cat /run/full-post.log >&2; "$BB" cat "$GATE_DIR/refusal" >&2 2>/dev/null || true; fail "$CASE post did not succeed"; }
+					[ "$("$BB" sed -n '$p' /.omnipha-boot-record)" = "pmos-self-post: post-cutover PID 1 on boot $boot; guard identity check passed; pid1 identity check passed" ] || fail "$CASE post record line missing"
+					! "$BB" grep -q 'pmos-self-post: FAIL' /.omnipha-boot-record || fail "$CASE record contains a failure"
 					for stage in modem wpss driver scan services; do
 						token="guest-radio-$stage-$("$BB" printf '%s' "$boot:$nonce:$stage" | "$BB" sha256sum | "$BB" cut -c 1-16)"
 						[ -f "/run/radio-bringup/$stage.marker" ] && [ ! -L "/run/radio-bringup/$stage.marker" ] &&
 							[ "$("$BB" stat -c '%u:%a:%h' "/run/radio-bringup/$stage.marker")" = 0:600:1 ] &&
-							[ "$("$BB" cat "/run/radio-bringup/$stage.marker")" = "$token" ] || fail "full-success marker $stage invalid"
+							[ "$("$BB" cat "/run/radio-bringup/$stage.marker")" = "$token" ] || fail "$CASE marker $stage invalid"
 					done
 					for stage in nonce-and-radio-markers radio-health services association address route gateway internet dns final-health all-checks published accepted; do
-						[ -f "$GATE_DIR/$stage.ok" ] || fail "full-success missing evidence: $stage"
+						[ -f "$GATE_DIR/$stage.ok" ] || fail "$CASE missing evidence: $stage"
 					done
-					[ ! -e "$GATE_DIR/kmsg" ] && [ ! -e "$GATE_DIR/dns-probe" ] || fail 'full-success left bounded snapshots behind'
+					[ ! -e "$GATE_DIR/kmsg" ] && [ ! -e "$GATE_DIR/dns-probe" ] || fail "$CASE left bounded snapshots behind"
 					[ "$("$BB" cat /run/pid1-guard/accepted)" = "$boot" ] && [ ! -e /run/pid1-guard/nonce ] && [ ! -e /run/pid1-guard/ack ] ||
-						fail 'full-success real guard did not consume nonce and ACK'
-					[ -f /run/pid1-guard/success-ready ] && [ "$("$BB" stat -c '%h' /run/pid1-guard/success-ready)" = 1 ] || fail 'full-success success-ready invalid'
-					[ ! -e /run/pid1-guard/.success-gated-ack-new ] && [ ! -e /run/pid1-guard/recovery-request ] || fail 'full-success left staging or recovery'
+						fail "$CASE real guard did not consume nonce and ACK"
+					[ -f /run/pid1-guard/success-ready ] && [ "$("$BB" stat -c '%h' /run/pid1-guard/success-ready)" = 1 ] || fail "$CASE success-ready invalid"
+					[ ! -e /run/pid1-guard/.success-gated-ack-new ] && [ ! -e /run/pid1-guard/recovery-request ] || fail "$CASE left staging or recovery"
 					"$BB" sleep "$((TEST_BUDGET + 2))"
-					[ ! -e /run/pid1-guard/recovery-request ] && [ "$("$BB" cat /run/pid1-guard/accepted)" = "$boot" ] || fail 'full-success accepted guard requested recovery'
+					[ ! -e /run/pid1-guard/recovery-request ] && [ "$("$BB" cat /run/pid1-guard/accepted)" = "$boot" ] || fail "$CASE accepted guard requested recovery"
 					;;
 				full-radio-fail)
 					[ "$full_result" != 0 ] || fail 'full-radio-fail post unexpectedly succeeded'
@@ -429,8 +457,21 @@ FULLWRAP
 					"$BB" grep -F 'stage=dns result=refused-or-interrupted phase=before-publication reason=invalid DNS answer' "$GATE_DIR/refusal" >/dev/null ||
 						{ "$BB" cat /run/full-post.log "$GATE_DIR/refusal" >&2 2>/dev/null || true; fail 'full-invalid DNS refusal reason'; }
 					;;
+				full-route-cache-internet-*)
+					[ "$full_result" != 0 ] || fail "$CASE post unexpectedly succeeded"
+					"$BB" grep -xF "boot=$boot stage=internet result=refused-or-interrupted phase=before-publication reason=internet route is not wlan0" "$GATE_DIR/refusal" >/dev/null ||
+						{ "$BB" cat /run/full-post.log "$GATE_DIR/refusal" >&2 2>/dev/null || true; fail "$CASE refusal reason"; }
+					[ -f "$GATE_DIR/gateway.ok" ] && [ ! -e "$GATE_DIR/internet.ok" ] && [ ! -e "$GATE_DIR/dns.ok" ] || fail "$CASE stage evidence invalid"
+					! "$BB" grep -qF 'intercepted ping ping -4 -I wlan0 -c 1 -W 4 -w 5 1.1.1.1' /run/tool-requests || fail "$CASE pinged internet after route refusal"
+					;;
+				full-route-cache-dns-*)
+					[ "$full_result" != 0 ] || fail "$CASE post unexpectedly succeeded"
+					"$BB" grep -xF "boot=$boot stage=dns result=refused-or-interrupted phase=before-publication reason=DNS route is not wlan0" "$GATE_DIR/refusal" >/dev/null ||
+						{ "$BB" cat /run/full-post.log "$GATE_DIR/refusal" >&2 2>/dev/null || true; fail "$CASE refusal reason"; }
+					[ -f "$GATE_DIR/internet.ok" ] && [ ! -e "$GATE_DIR/dns.ok" ] || fail "$CASE stage evidence invalid"
+					;;
 			esac
-			if [ "$CASE" != full-success ]; then
+			if [ "$CASE" != full-success ] && [ "$CASE" != full-route-cache-success ]; then
 				[ ! -e /run/pid1-guard/ack ] && [ ! -L /run/pid1-guard/ack ] &&
 					[ ! -e /run/pid1-guard/.ack-new ] && [ ! -L /run/pid1-guard/.ack-new ] &&
 					[ ! -e /run/pid1-guard/.success-gated-ack-new ] && [ ! -L /run/pid1-guard/.success-gated-ack-new ] &&
@@ -446,6 +487,13 @@ FULLWRAP
 				done
 				[ "$("$BB" cat /run/pid1-guard/recovery-request)" = bootloader ] && [ ! -e /run/pid1-guard/accepted ] && [ "$("$BB" cat /run/pid1-guard/nonce)" = "$nonce" ] || fail "$CASE recovery or nonce invalid"
 				deadline_reached
+				case "$CASE" in
+					full-route-cache-*)
+						for path in /run/pid1-guard/ack /run/pid1-guard/.ack-new /run/pid1-guard/.success-gated-ack-new /run/pid1-guard/success-ready /run/pid1-guard/.success-ready-new "$GATE_DIR/published.ok"; do
+							[ ! -e "$path" ] && [ ! -L "$path" ] || fail "$CASE published ACK or readiness after refusal"
+						done
+						! "$BB" grep -qF 'intercepted DNS probe' /run/tool-requests || fail "$CASE probed DNS after route refusal";;
+				esac
 			fi
 			if [ "$CASE" = full-radio-fail ]; then expected_stages='modem wpss driver scan'; else expected_stages='modem wpss driver scan services'; fi
 			actual_stages=$("$BB" awk '/^intercepted radio stage / {printf "%s%s", sep, $4; sep=" "}' /run/tool-requests)
@@ -453,8 +501,12 @@ FULLWRAP
 			! "$BB" grep -q '^refused ' /run/tool-requests || { "$BB" grep '^refused ' /run/tool-requests >&2; fail "$CASE wrapper refused an operation"; }
 			"$BB" grep -q 'intercepted dmesg' /run/tool-requests || fail "$CASE mocked panel/kmsg boundary not exercised"
 			case "$CASE" in
-				full-success|full-invalid)
+				full-success|full-route-cache-success|full-invalid)
 					for boundary in 'DNS probe' 'rmtfs comm' 'rmtfs executable hash' 'rmtfs UIO map' 'SSH listener check' 'networking service hash' 'supplicant service hash' 'lease helper hash' pidof ping; do
+						"$BB" grep -qF "intercepted $boundary" /run/tool-requests || fail "$CASE mock boundary not exercised: $boundary"
+					done;;
+				full-route-cache-*)
+					for boundary in 'rmtfs comm' 'rmtfs executable hash' 'rmtfs UIO map' 'SSH listener check' 'networking service hash' 'supplicant service hash' 'lease helper hash' pidof ping; do
 						"$BB" grep -qF "intercepted $boundary" /run/tool-requests || fail "$CASE mock boundary not exercised: $boundary"
 					done;;
 			esac
@@ -589,7 +641,7 @@ if [ "${1:-}" = --inner ]; then
 		[ -n "$host_ns" ] && [ "$("$BB" readlink "/proc/1/ns/$ns")" != "$host_ns" ] || fail "$ns namespace not isolated"
 	done
 	"$BB" awk -F: 'NR > 2 {gsub(/[ \t]/, "", $1); if ($1 != "lo") bad++; else n++} END {exit(bad || n != 1)}' /proc/net/dev || fail 'network namespace has unexpected interfaces'
-	case "$2" in success|partial|invalid|interrupt|post-interrupt|dead-watcher|replay|late|premature|no-record|bad-record|record-mode|record-symlink|record-links|record-foreign|record-order|record-malformed|panel-absent|panel-record-absent|panel-foreign|panel-conflict|panel-malformed|panel-mode|panel-symlink|panel-links|contract-missing|contract-corrupt|contract-mode|contract-symlink|contract-links|ready-mode|ready-symlink|ready-links|ready-nonce|ready-boot|ready-newline|staging|staging-record-invalid|gate-staging|preplanted-multilink|full-success|full-radio-fail|full-invalid) CASE=$2;; *) fail 'invalid case';; esac
+	case "$2" in success|partial|invalid|interrupt|post-interrupt|dead-watcher|replay|late|premature|no-record|bad-record|record-mode|record-symlink|record-links|record-foreign|record-order|record-malformed|panel-absent|panel-record-absent|panel-foreign|panel-conflict|panel-malformed|panel-mode|panel-symlink|panel-links|contract-missing|contract-corrupt|contract-mode|contract-symlink|contract-links|ready-mode|ready-symlink|ready-links|ready-nonce|ready-boot|ready-newline|staging|staging-record-invalid|gate-staging|preplanted-multilink|full-success|full-radio-fail|full-invalid|full-route-cache-success|full-route-cache-internet-dev|full-route-cache-internet-extra|full-route-cache-dns-dev|full-route-cache-dns-extra) CASE=$2;; *) fail 'invalid case';; esac
 	"$BB" mount --make-rprivate / || fail 'cannot privatize mounts'
 	MAIN_NUMS=$HOST_MAIN_NUMS
 	"$BB" mount -t tmpfs -o mode=0700,size=32m tmpfs /run || fail 'private staging run'
@@ -599,6 +651,7 @@ if [ "${1:-}" = --inner ]; then
 		*) "$BB" cp "$HOST_WORK/radio" /run/radio;;
 	esac
 	"$BB" cp "$HOST_WORK/derived-post" /run/derived-post
+	case "$CASE" in full-route-cache-*) "$BB" cp "$HOST_WORK/candidate-post" /run/candidate-post;; esac
 	"$BB" cp "$HOST_WORK/replay-nonce" /run/replay-nonce
 	case "$CASE" in
 		dead-watcher|post-interrupt)
@@ -642,6 +695,9 @@ if [ "${1:-}" = --inner ]; then
 	"$BB" cp /run/test.sh "$G/test.sh"
 	"$BB" cp /run/replay-nonce "$G/replay-nonce"
 	case "$CASE" in
+		full-route-cache-*)
+			"$BB" cp /run/candidate-post "$G/derived-post"
+			[ "$(hash "$G/derived-post")" = 92f6f9cdfa3dcdc8854c7481fe01b500591f1b2b1c9908e97c4cdbfc0ae68d0c ] || fail 'candidate post copy changed';;
 		full-*)
 			"$BB" cp /run/derived-post "$G/derived-post"
 			[ "$(hash "$G/derived-post")" = 113553dddfc646b77dacb06777cc2c450e4f17d33aaf508e3113c993968ac0f3 ] || fail 'derived post copy changed';;
@@ -753,7 +809,21 @@ IW
 case "$*" in
 	'-o -4 addr show dev wlan0 scope global') /bin/busybox printf '%s\n' '3: wlan0 inet 192.0.2.2/24 scope global wlan0';;
 	'-4 route show default') /bin/busybox printf '%s\n' 'default via 192.0.2.1 dev wlan0';;
-	'-4 route get 1.1.1.1 from 192.0.2.2'|'-4 route get 192.0.2.53 from 192.0.2.2') /bin/busybox printf '%s\n' '192.0.2.1 dev wlan0 src 192.0.2.2';;
+	'-4 route get 1.1.1.1 from 192.0.2.2'|'-4 route get 192.0.2.53 from 192.0.2.2')
+		fixture=$(/bin/busybox cat /run/case)
+		case "$fixture" in
+			full-route-cache-*)
+				case "$4" in 1.1.1.1) stage=internet;; 192.0.2.53) stage=dns;; *) exit 1;; esac
+				dev=wlan0
+				continuation='    cache '
+				case "$fixture:$stage" in
+					full-route-cache-internet-dev:internet|full-route-cache-dns-dev:dns) dev=eth0;;
+					full-route-cache-internet-extra:internet|full-route-cache-dns-extra:dns) continuation='    cache extra';;
+				esac
+				/bin/busybox printf '%s\n' "$stage" >> /run/route-requests
+				/bin/busybox printf '%s\n' "$4 from 192.0.2.2 via 192.0.2.1 dev $dev uid 0 " "$continuation" | /bin/busybox tee "/run/route-$stage-reply";;
+			*) /bin/busybox printf '%s\n' '192.0.2.1 dev wlan0 src 192.0.2.2';;
+		esac;;
 	*) exit 1;;
 esac
 IP
@@ -822,9 +892,9 @@ PREAMBLE
 	"$BB" mknod -m 0400 /dev/block/sda13 b "${MAIN_NUMS%%:*}" "${MAIN_NUMS##*:}"
 	"$BB" umount -l /oldroot || fail 'cannot detach host root'
 	case "$CASE" in
-		full-invalid) TEST_BUDGET=20;;
+		full-invalid|full-route-cache-internet-*|full-route-cache-dns-*) TEST_BUDGET=20;;
 		full-radio-fail) TEST_BUDGET=15;;
-		full-success) TEST_BUDGET=30;;
+		full-success|full-route-cache-success) TEST_BUDGET=30;;
 		success|panel-absent|gate-staging|post-interrupt|preplanted-multilink) TEST_BUDGET=30;;
 		dead-watcher) TEST_BUDGET=10;;
 		*) TEST_BUDGET=18;;
@@ -855,7 +925,12 @@ PREAMBLE
 	exec /bin/busybox switch_root /guest /bin/busybox sh /test.sh --switched "$CASE"
 fi
 
-[ "$#" = 0 ] || fail 'usage: test-pmos-success-gate-guard.sh'
+ROUTE_CACHE_ONLY=0
+case "$#:${1:-}" in
+	0:) :;;
+	1:--route-cache-only) ROUTE_CACHE_ONLY=1;;
+	*) fail 'usage: test-pmos-success-gate-guard.sh [--route-cache-only]';;
+esac
 HERE=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 SCRIPT=$HERE/test-pmos-success-gate-guard.sh
 [ "$(hash "$HERE/pmos-pid1-guard.sh")" = "$GUARD_SHA" ] || fail 'guard pin changed'
@@ -1023,20 +1098,29 @@ if (gen.sha(post.encode()) != '113553dddfc646b77dacb06777cc2c450e4f17d33aaf508e3
     raise SystemExit('canonical generated post or hook pin changed')
 if post.count('\nBB=/bin/busybox\n') != 1:
     raise SystemExit('canonical post BB assignment changed')
+route_cache = load('route_cache', 'derive-route-cache-gated-ack.py')
+candidate_post, candidate_hook = route_cache.derive(post.encode(), hook.encode())
+if (gen.sha(candidate_post) != '92f6f9cdfa3dcdc8854c7481fe01b500591f1b2b1c9908e97c4cdbfc0ae68d0c' or
+        gen.sha(candidate_hook) != '5bc5b0f4e2820aef8ae11b5b3e1f9264a0c7fe5fc60f8686718fb955b376fc3a'):
+    raise SystemExit('route-cache candidate post or hook pin changed')
+if candidate_post.count(b'\nBB=/bin/busybox\n') != 1:
+    raise SystemExit('route-cache candidate post BB assignment changed')
 work = pathlib.Path(os.environ['WORK'])
 (work / 'gate').write_text(gate)
 (work / 'radio').write_text(radio)
 (work / 'full-radio').write_text(full_radio)
 (work / 'derived-post').write_text(post)
+(work / 'candidate-post').write_bytes(candidate_post)
 (work / 'replay-nonce').write_text('none\n')
 PY
 sh -n "$WORK/gate" || fail 'generated gate syntax'
 sh -n "$WORK/derived-post" || fail 'generated full post syntax'
 sh -n "$WORK/full-radio" || fail 'canonical fresh radio syntax'
+sh -n "$WORK/candidate-post" || fail 'candidate full post syntax'
 printf '%s\n' 'fixture: isolated loop-backed ext4 with synthetic userdata identity; real contract open/append/verify builds each ordered stage; external stage observations and panel evidence are synthetic'
 printf '%s\n' 'fixture: gate-only cases run the generated gate suffix; full cases also run the self-post prefix with simulated radio-stage invocations'
-printf '%s\n' 'fixture: full cases execute the canonical generated post with only its BB line redirected; guard, identity, ACK/ready, ordered-record and marker file operations pass to real BusyBox'
-printf '%s\n' 'fixture: mocked radio/process/service evidence, selected hashes, kmsg, network commands and DNS result; real probe bytes are checked but not executed'
+printf '%s\n' 'fixture: full cases execute the pinned canonical post or the separately derived route-cache candidate with only its BB line redirected; guard, identity, ACK/ready, ordered-record and marker file operations pass to real BusyBox'
+printf '%s\n' 'fixture: mocked radio/process/service evidence, selected hashes, kmsg, network commands, actual-style route-cache replies and DNS result; real probe bytes are checked but not executed'
 printf '%s\n' 'fixture: dead-watcher uses pidfd SIGKILL; post-interrupt pauses the real watcher and barriers the publisher after single-link ACK publication'
 HOST_mnt_NS=$(readlink /proc/self/ns/mnt)
 HOST_pid_NS=$(readlink /proc/self/ns/pid)
@@ -1048,7 +1132,14 @@ run_case() {
 		HOST_CONTRACT="$HERE/pmos-root-contract.sh" HOST_MAIN_NUMS="$MAIN_NUMS" HOST_PIDFD_SHA="$HOST_PIDFD_SHA" \
 		/bin/busybox sh "$SCRIPT" --inner "$1"
 }
-for case in full-radio-fail full-success full-invalid; do run_case "$case" || fail "$case isolated fixture"; done
+if [ "$ROUTE_CACHE_ONLY" = 0 ]; then
+	for case in full-radio-fail full-success full-invalid; do run_case "$case" || fail "$case isolated fixture"; done
+fi
+for case in full-route-cache-success full-route-cache-internet-dev full-route-cache-internet-extra full-route-cache-dns-dev full-route-cache-dns-extra; do run_case "$case" || fail "$case isolated fixture"; done
+if [ "$ROUTE_CACHE_ONLY" = 1 ]; then
+	printf '%s\n' 'pass: route-cache candidate cases in host-only isolated ext4 switch_root; external evidence was synthetic'
+	exit 0
+fi
 result=$(run_case success) || fail 'isolated success case'
 nonce=$(printf '%s\n' "$result" | "$BB" awk -F= '/^REPLAY_NONCE=/ {print $2}')
 case "$nonce" in ????????????????????????????????????????????????????????????????) case "$nonce" in *[!0-9a-f]*) fail 'invalid captured nonce';; esac;; *) fail 'missing captured nonce';; esac

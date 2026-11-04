@@ -41,24 +41,36 @@ $BB awk 'NR == 1 {for (i=1;i<NF;i++) if ($i == "dev" && $(i+1) == "wlan0") ok++}
 ```
 
 strictly required `NR == 1`. Because the second line (`cache`) caused `NR == 2`,
-the parser exited 1 and triggered `internet route is not wlan0` despite a valid
-route via `wlan0`. The actual route text was not preserved in the captured log;
-this defect is a demonstrated, sufficient cause for the observed gate refusal.
+the parser exited 1 and triggered `internet route is not wlan0`. The actual
+route text was not preserved in the captured log; this defect is a demonstrated,
+sufficient cause that would explain the observed gate refusal.
 
 ## Candidate derivation and regression test
 
 1. Added `scripts/derive-route-cache-gated-ack.py` to derive the corrected candidate
    without modifying the installed pair or invalidating historical verification:
-   - Updated post: SHA-256 `e48445964beda83d2f661730360954d8c8f9acead7ecbfc6965e2475356c743f`.
-   - Updated hook: SHA-256 `6488f1339f4ff6876219a452712c71e9465ddd3887f835d9475a346cd0310377`.
+   - Updated post: SHA-256 `92f6f9cdfa3dcdc8854c7481fe01b500591f1b2b1c9908e97c4cdbfc0ae68d0c`.
+   - Updated hook: SHA-256 `5bc5b0f4e2820aef8ae11b5b3e1f9264a0c7fe5fc60f8686718fb955b376fc3a`.
    - The corrected awk expression permits the optional single `cache` second line:
-     `NR == 1 {for (i=1;i<NF;i++) if ($i == "dev") {if ($(i+1) == "wlan0") ok++; else bad++}} NR == 2 {if ($0 !~ /^[ \t]*cache[ \t]*$/) bad++} NR > 2 {bad++} END {exit(NR < 1 || ok != 1 || bad)}`
+     `NR == 1 {for (i=1;i<=NF;i++) if ($i == "dev") {if ($(i+1) == "wlan0") ok++; else bad++}} NR == 2 {if ($0 !~ /^[ \t]*cache[ \t]*$/) bad++} NR > 2 {bad++} END {exit(NR < 1 || ok != 1 || bad)}`
+   - Raw route bytes are base64-encoded before shell capture and checked for NUL before
+     decoding to awk. This preserves trailing blank lines and rejects NUL anywhere,
+     preventing command substitution from concealing those bytes. `set -o pipefail`
+     preserves failures in the lookup and validation pipelines.
+   - The revised candidate also rejects a dangling `dev` token following `dev wlan0`.
 2. Added `scripts/test-success-gate-route-cache.py`:
    - Confirms that the old awk strictly rejects the real `iproute2` two-line output.
    - Confirms that the corrected awk accepts it.
    - Matrix testing verifies rejection of wrong interface, empty output, multi-dev injection,
      foreign second line, and extra lines beyond the cache continuation.
-3. Existing tests pass cleanly:
+3. Host-only fixture checks on this candidate:
+   - `sh scripts/test-pmos-success-gated-ack.sh --route-cache-only`: PASS;
+     detached candidate hook, cached routes, fake-guard ACK and 12 refusal cases
+     across internet and DNS, including NUL, trailing blank and filter failure.
+   - `timeout -k 10s 240s sh scripts/test-pmos-success-gate-guard.sh --route-cache-only`: PASS;
+     candidate post against real guard and ordered contract, five cases with
+     mocked external evidence and no network or physical device.
+4. Existing tests pass cleanly:
    - `python3 -B scripts/test-success-gate-route-cache.py`: PASS.
    - `python3 -B scripts/test-derive-success-gated-ack.py`: PASS.
    - `python3 -B scripts/test-success-gate-dns.py`: PASS.

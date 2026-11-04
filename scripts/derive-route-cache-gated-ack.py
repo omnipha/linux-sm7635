@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""Derive the run-113 route-cache gate candidate from the pinned run-113 chain.
-"""
+"""Derive a route-cache gate candidate from the pinned run-113 chain."""
 import hashlib
 import importlib.util
 import os
@@ -11,14 +10,29 @@ import sys
 HERE = pathlib.Path(__file__).resolve().parent
 OLD_POST_SHA = '113553dddfc646b77dacb06777cc2c450e4f17d33aaf508e3113c993968ac0f3'
 OLD_HOOK_SHA = '3d317a6937f547565968785dee9984c9d5edd714ac0a8dde4c1dbf2c550b4e67'
-POST_SHA = 'e48445964beda83d2f661730360954d8c8f9acead7ecbfc6965e2475356c743f'
-HOOK_SHA = '6488f1339f4ff6876219a452712c71e9465ddd3887f835d9475a346cd0310377'
+POST_SHA = '92f6f9cdfa3dcdc8854c7481fe01b500591f1b2b1c9908e97c4cdbfc0ae68d0c'
+HOOK_SHA = '5bc5b0f4e2820aef8ae11b5b3e1f9264a0c7fe5fc60f8686718fb955b376fc3a'
 OLD_AWK = ('NR == 1 {for (i=1;i<NF;i++) if ($i == "dev" && $(i+1) == "wlan0") ok++} '
            'END {exit(NR != 1 || ok != 1)}')
-NEW_AWK = ('NR == 1 {for (i=1;i<NF;i++) if ($i == "dev") '
+NEW_AWK = ('NR == 1 {for (i=1;i<=NF;i++) if ($i == "dev") '
            '{if ($(i+1) == "wlan0") ok++; else bad++}} '
            r'NR == 2 {if ($0 !~ /^[ \t]*cache[ \t]*$/) bad++} '
            'NR > 2 {bad++} END {exit(NR < 1 || ok != 1 || bad)}')
+
+
+def route_blocks(target, name):
+    reason = f'{name} route is not wlan0'
+    old = (f'g_route=$($BB timeout -k 1 5 /sbin/ip -4 route get {target} from "$g_addr" 2>/dev/null) '
+           f"|| gate_fail '{name} route lookup failed'\n"
+           f'$BB printf \'%s\\n\' "$g_route" | $BB awk \'{OLD_AWK}\' || gate_fail \'{reason}\'')
+    new = (f'g_route=$(set -o pipefail || exit 1; $BB timeout -k 1 5 /sbin/ip -4 route get {target} '
+           f'from "$g_addr" 2>/dev/null | $BB base64) || gate_fail \'{name} route lookup failed\'\n'
+           f'g_filtered=$(set -o pipefail || exit 1; $BB printf \'%s\\n\' "$g_route" | $BB base64 -d '
+           f'| $BB tr -d \'\\000\' | $BB base64) || gate_fail \'{reason}\'\n'
+           f'[ "$g_filtered" = "$g_route" ] || gate_fail \'{reason}\'\n'
+           f'(set -o pipefail || exit 1; $BB printf \'%s\\n\' "$g_route" | $BB base64 -d '
+           f'| $BB awk \'{NEW_AWK}\') || gate_fail \'{reason}\'')
+    return old.encode(), new.encode()
 
 
 def sha(data):
@@ -28,10 +42,11 @@ def sha(data):
 def derive(post, hook):
     if sha(post) != OLD_POST_SHA or sha(hook) != OLD_HOOK_SHA:
         raise ValueError('inputs are not the pinned run-113 post and hook')
-    old, new = OLD_AWK.encode(), NEW_AWK.encode()
-    if post.count(old) != 2 or hook.count(OLD_POST_SHA.encode()) != 1:
+    old_internet, new_internet = route_blocks('1.1.1.1', 'internet')
+    old_dns, new_dns = route_blocks('"$g_dns"', 'DNS')
+    if post.count(old_internet) != 1 or post.count(old_dns) != 1 or hook.count(OLD_POST_SHA.encode()) != 1:
         raise ValueError('pinned route checks or hook binding changed')
-    updated_post = post.replace(old, new)
+    updated_post = post.replace(old_internet, new_internet).replace(old_dns, new_dns)
     updated_hook = hook.replace(OLD_POST_SHA.encode(), POST_SHA.encode())
     if sha(updated_post) != POST_SHA or sha(updated_hook) != HOOK_SHA:
         raise ValueError('derived post or hook digest differs from the reviewed candidate')
