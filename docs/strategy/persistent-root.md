@@ -1,6 +1,6 @@
 # Persistent-root migration strategy
 
-Status: **proposal for review**, not implemented or accepted. This document
+Status: **proposal under revision**, not implemented or accepted. This document
 is not evidence and authorizes no installation, flash, reboot or device
 access. The physical coordinator owns every device decision. #324 requires
 PC-style SSH edits that survive reboot without a partition flash, measured
@@ -74,10 +74,17 @@ The new bootstrap would validate the entire selected signed generation before
 any managed file is executed, before guest SSH or PID 1 cutover, and before
 radio `prepare`. Diagnostic key-only USB SSH and rescue must remain available
 on refusal; prove the required sequencing without weakening the present
-rescue path. Before any transaction write, exclude concurrent privileged
-writers, including diagnostic sessions, until reconciliation has finished or
-aborted; a cooperative lock alone is not proof of exclusion. If that cannot be
-implemented and tested without compromising rescue, do not deploy.
+rescue path. Concurrent writers are excluded by phase separation, not by a
+lock: the managed store stays mounted read-only with no journal replay
+(`ro,noload`) except during one bounded write window that the bootstrap itself
+enters and leaves, and no other session — including a diagnostic root SSH —
+exists during that window. A cooperative lock is not exclusion: the host
+fixture shows an unprivileged writer that ignores `flock` appends freely, and
+that root can remount or `nsenter` around a read-only bind and a mount
+namespace
+([writer-exclusion fixture](../../records/2026-11-04-190612-pair-deliverable-host-proofs.md)).
+If the phase separation cannot be implemented and tested without compromising
+rescue, do not deploy.
 
 The independently verified image pair is the trust anchor, not a key or
 verifier first obtained from userdata. The proposal assumes the coordinator's
@@ -88,11 +95,15 @@ is outside this boundary. Root SSH can also execute arbitrary user commands
 and alter other userland: this proposal protects the specified boot chain, not
 the entire operating system against an already privileged root user.
 
-- Embed the offline release public key and a separately controlled rollback
-  authorization public key in the verified initramfs or in the carrier bundle
-  whose exact header and payload digests are pinned by that initramfs. Pin and
-  verify the verifier, hashing tools, static interpreter and updater the same
-  way. Private keys remain offline and never enter the phone or repository.
+- Trust anchor: two offline Ed25519 keys — one release key and one separately
+  controlled rollback-authorization key — embedded as public keys in the
+  verified initramfs, or in the carrier bundle whose exact header and payload
+  digests are pinned by that initramfs. This is the design's trust anchor, not
+  a key or verifier first obtained from userdata. No such keys are approved or
+  generated yet, so no replacement pair can be built; approving or generating
+  them is an explicit owner decision recorded in #324, and private keys stay
+  offline and never enter the phone or repository. Pin and verify the
+  verifier, hashing tools, static interpreter and updater the same way.
   Key rotation or verifier replacement needs a separately reviewed carrier
   cutover; userdata cannot authorize its own trust-root replacement.
 - Before and after `switch_root`, security decisions must use verified
@@ -343,6 +354,48 @@ plan. No `fsck -y`, journal replay, format or cleanup is authorized here.
 Verify that this policy is compatible with the actual filesystem and with
 interruption recovery before deployment; measure mount options and fsck/journal
 behavior rather than inferring them from `ro,noload` or a host fixture.
+
+## Next single variable
+
+Read-only measurement of the **installed** pair, before any replacement exists.
+Every acceptance fact of #324 is still unmeasured on the device, and the
+replacement pair is blocked on an owner key decision plus a bootstrap that does
+not exist yet
+([pair-deliverable proofs](../../records/2026-11-04-190612-pair-deliverable-host-proofs.md)).
+Spending further boots and design rounds on a pair that cannot be built does
+not move the check. The next measurement, coordinator-owned and separately
+authorized, answers with the pair already installed and unchanged:
+
+1. Final root mount mode of `sda13` after cutover: read-only or read-write,
+   and the filesystem features, clean state and error counters, captured with
+   read-only tools. No `fsck -y`, no journal replay, no remount, no write.
+2. Whether one innocuous new file, created over SSH **outside** the three
+   pinned paths, is still there after a reboot with no partition flash and
+   with `init_boot_a` `d7bba454…` and `vendor_boot_b` `221bfd82…` unchanged.
+
+That single boot is the whole budget for this variable. It is not the
+reversible-root-fault rescue test and not an update/rollback test; each of
+those needs its own later technical reason and coordinator approval.
+
+## Budget and fallback
+
+Host-side, the assigned worker finishes the three items already in progress:
+the deployable bootstrap reconciled with the host model, the model corrected
+to the separately keyed new-generation rollback (its current rollback is a
+same-key selector flip, which the design does not say), and a green host ACK
+path in `test-pmos-pid1.sh`. No image is built and no pair is flashed until
+the owner records a decision on the two trust-anchor keys.
+
+If that measurement shows the final root stays read-only, or that an unpinned
+file does not survive the reboot, then persistent PC-style operation is not a
+property of the installed system at all and the migration design alone cannot
+deliver it: stop designing the replacement pair and re-scope #324 around the
+measured mount and persistence behavior instead of assuming it.
+
+Fallback for the privileged-writer problem is the phase separation above. Do
+not spend another fixture round proving that locks, read-only bind mounts or
+mount namespaces exclude root; the 2026-11-04 fixture already refutes all
+three.
 
 This strategy is not a new record or public support claim. Actual decisions
 and measurements belong in new dated `records/` entries via `records.py`;
