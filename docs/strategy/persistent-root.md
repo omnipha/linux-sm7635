@@ -145,10 +145,11 @@ the entire operating system against an already privileged root user.
   controlled rollback-authorization key — embedded as public keys in the
   verified initramfs, or in the carrier bundle whose exact header and payload
   digests are pinned by that initramfs. This is the design's trust anchor, not
-  a key or verifier first obtained from userdata. No such keys are approved or
-  generated yet, so no replacement pair can be built; approving or generating
-  them is an explicit owner decision recorded in #324, and private keys stay
-  offline and never enter the phone or repository. Pin and verify the
+  a key or verifier first obtained from userdata. Owner decision "Option A"
+  (2026-11-05, #324 comment 6652407108) approves this two-key shape; private
+  halves stay offline. Still outstanding is the owner-supplied **public-key
+  values** (release + rollback) for the repo config, without which no
+  replacement pair can be built. Pin and verify the
   verifier, hashing tools, static interpreter and updater the same way.
   Key rotation or verifier replacement needs a separately reviewed carrier
   cutover; userdata cannot authorize its own trust-root replacement.
@@ -619,9 +620,12 @@ returns to the bootloader is an unclean end of the boot, not a substitute for
 the coordinator-approved no-flash second boot, and it is not guaranteed (see
 Deadline). Booting again may overwrite the first boot's ramoops, and the
 recorded preboot pstore fetch was unsupported, so loss of boot-1 pstore is a
-risk. Pstore retention or loss remains an unresolved separate owner decision
-on #324; this runbook does not accept pstore loss, does not request that
-decision, and authorizes no boot.
+risk. The owner has since decided (2026-11-05, #324 comment 6653556220):
+boot-1 pstore loss is accepted, boot-1 evidence is the marker plus the sda13
+mount mode kept on the coordinator host, the guard deadline stays a technical
+stop rule, and no userdata format/erase. Booting again may still overwrite the
+first boot's ramoops, and the recorded preboot pstore fetch was unsupported;
+that accepted risk is managed by keeping boot-1 evidence off-pstore.
 
 ## Budget and fallback
 
@@ -636,7 +640,7 @@ before OpenRC starts, skips links whose `readlink` fails, passes if nothing is l
 been shown to fail under an injected post-cutover leak; only the pre-cutover
 fd-9 assertion was negative-tested. That evidence is fixture-authored, so it
 is not a device ACK. Still open: the deployable bootstrap reconciled with the model. No image is
-built and no pair is flashed until the owner records a decision on the two
+built and no pair is flashed until the owner public-key values for the two
 trust-anchor keys.
 
 If that measurement shows the final root stays read-only, or that an unpinned
