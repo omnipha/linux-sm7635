@@ -224,7 +224,10 @@ experimental full-tuple reissue refusal only: a forward reusing one earlier
 payload, or trivially altered older bytes, is still accepted, and the logical
 model accepts full reissue. Hash comparison is not semantic downgrade
 prevention. That difference needs an owner decision before either rule is
-adopted.
+adopted. A second unreconciled difference: the verifier bounds `sequence` at
+2^31-1 (`SEQUENCE_MAX`), whereas the logical model accepts any nonnegative
+integer; a host probe showed both accept sequence 2^31-1 and only the verifier
+refuses 2^31.
 
 Realistic replay limits: sequence and selector checks hold only relative to
 intact local state. A privileged actor — or a whole-userdata rollback —
@@ -527,18 +530,23 @@ armed uptime + budget defines the deadline on the device's `/proc/uptime`
 clock. The installed pair arms with a 160-second budget
 (`scripts/pmos-pid1-transition.sh` requests 160; `scripts/pmos-pid1-guard.sh`
 rejects budgets outside 1..178). `/run/pid1-guard/armed` contains the boot ID,
-not an arm timestamp, and the script computes `deadline = floor(arm uptime) +
-160`. A `/proc/uptime` read in a later session shows only the current uptime,
-not the arm uptime: it provides an upper bound on remaining time only if a
-conservative lower bound for the same boot's arm uptime is available.
+not an arm timestamp, and the script truncates uptime with `awk int()` then
+computes `deadline = floor(arm uptime) + 160`. A `/proc/uptime` read in a later session shows only the current uptime,
+not the arm uptime: it provides a usable lower bound on remaining time only if a
+defensible conservative lower bound for the same boot's arm uptime is available
+(`remaining >= lower_bound_on_start + 160 - current_uptime`).
 If no defensible same-boot lower bound is established, stop: absolute or
-cross-image arm/uptime claims are not safe substitutes. Run 61 armed at a
+cross-image arm/uptime claims are not safe substitutes. The mere presence of
+`/run/pid1-guard/armed` proves only that arming occurred at or before that file
+was checked, not a lower bound on when arming started. Run 61 armed at a
 measured kernel uptime near 155.4 seconds on a different image reaching
 post-cutover PID 1; the installed run-113 pair ended around uptime 315 seconds
 but this does not establish the same boot's arm timestamp, so no inspect
 derived from those two numbers is a safe deadline for the physical session.
-If uncertain, stop rather than infer. When armed and safe: leave before the
-computed deadline minus teardown margin. If the deadline expires, the guard
+If uncertain, stop rather than infer. When armed and safe: leave before
+`(lower_bound_on_start + 160) - margin`, with integer `margin >= 1` covering
+teardown and coarseness, ensuring the session finishes while uptime is still
+strictly below `start + 160`. If the deadline expires, the guard
 attempts bootloader recovery, but that recovery is not guaranteed: it refuses
 if the device identity or `/bin/restart2` helper checks fail, and it falls
 through to sleep rather than forcing an untrusted reboot.
@@ -550,8 +558,10 @@ through to sleep rather than forcing an untrusted reboot.
    `/proc/uptime` and establish, before any other step, whether a defensible
    conservative lower bound for this boot's guard arming time is available
    (same boot only). If it is not, stop; do not estimate from other boots or
-   images. Otherwise compute `floor(arm uptime) + 160` minus teardown margin
-   as the leave-by time, and start the host-side session log.
+   images. Otherwise compute `(lower bound on arm uptime) + 160` minus an
+   integer margin of at least 1 second as the leave-by uptime, and start the
+   host-side session log. A host log timestamp is not the guard's truncated
+   `/proc/uptime` sample.
 2. Record `sda13` mount mode (read-only or read-write) and the mount
    identity. Read-only observation only.
 3. Record filesystem features, clean state and error counters by reading the
@@ -606,8 +616,9 @@ Host-side, the model now implements the separately keyed new-generation
 rollback, and `test-pmos-pid1.sh` is rewritten to supply `success-ready` and an
 ordered boot record on an isolated loop-backed ext4 root; it passes all six
 cases on the host with the production scripts unchanged. The fixture's
-post-cutover descriptor sweep reads `/proc/1/fd` once before service start,
-skips links whose `readlink` fails, passes if nothing is listed, matches only
+post-cutover descriptor sweep reads `/proc/1/fd` once at the start of the
+switched PID 1, after the pre-cutover Dropbear service is already running and
+before OpenRC starts, skips links whose `readlink` fails, passes if nothing is listed, matches only
 `/dev/loop*`, `/dev/block/sda13` and `/tmp/pmos-pid1.*` targets, and has not
 been shown to fail under an injected post-cutover leak; only the pre-cutover
 fd-9 assertion was negative-tested. That evidence is fixture-authored, so it
