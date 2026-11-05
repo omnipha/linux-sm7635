@@ -552,6 +552,20 @@ authorizes a boot. A superblock read of a filesystem mounted read-write is an
 observational snapshot only (see the runbook below). Any boot beyond run 116
 needs its own technical reason and its own coordinator approval.
 
+**Measured 2026-11-05, run 117 (coordinator, boot `53bf9af3`, no flash,
+installed pair unchanged):** final root mount mode of `sda13` after cutover
+is read-write (`rw,relatime,norecovery`, PID-1 mountinfo root `ext4`
+`8:13`), and a read-only superblock snapshot — pre-cutover and
+post-cutover, byte-identical, sha256 `88c1849c…` — gives: ext4 without a
+journal, `s_state = 0` (not marked clean), error behavior continue,
+`s_error_count = 0`, `compat=0x28`, `incompat=0x2c2`,
+`ro_compat=0x46b` (including `METADATA_CSUM`). The run-116 marker was still
+present. Not established by this snapshot: `METADATA_CSUM` semantics for a
+later writable transaction, on-device carrier hashes, and the offline fsck
+policy. The boot's autonomous radio stages ran on their own and ended in the
+usual no-ACK guard return; no WLAN acceptance is claimed. See
+[records/2026-11-05-103554-run117-sda13-superblock-readonly-snapshot.md](../../records/2026-11-05-103554-run117-sda13-superblock-readonly-snapshot.md).
+
 Run 116 against the original two-item variable:
 
 1. Final root mount mode of `sda13`: **measured**, read-write
