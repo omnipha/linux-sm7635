@@ -2,6 +2,7 @@
 
 ## Latest 10
 
+- [2026-11-05-021930-host-measurement-runbook-and-tool-closure-corrections](records/2026-11-05-021930-host-measurement-runbook-and-tool-closure-corrections.md) | userspace | inconclusive | linux-sm7635#324 | host measurement runbook and tool closure corrections
 - [2026-11-05-003759-host-signed-bootstrap-closure-audit](records/2026-11-05-003759-host-signed-bootstrap-closure-audit.md) | userspace | inconclusive | linux-sm7635#324 | host signed bootstrap closure audit
 - [2026-11-04-220742-persistent-root-host-blockers](records/2026-11-04-220742-persistent-root-host-blockers.md) | userspace | inconclusive | linux-sm7635#324 | persistent root host blockers
 - [2026-11-04-190612-pair-deliverable-host-proofs](records/2026-11-04-190612-pair-deliverable-host-proofs.md) | userspace | inconclusive | linux-sm7635#324 | pair deliverable host proofs
@@ -11,7 +12,6 @@
 - [2026-11-04-113000-route-cache-variant-integration](records/2026-11-04-113000-route-cache-variant-integration.md) | wlan | confirmed | linux-sm7635#311 | route-cache candidate variant integration
 - [2026-11-04-102445-run113-route-cache-diagnosis](records/2026-11-04-102445-run113-route-cache-diagnosis.md) | wlan | confirmed | linux-sm7635#311 | run113 route cache diagnosis
 - [2026-11-04-093054-run113-pair-installed-internet-route-gate-refused](records/2026-11-04-093054-run113-pair-installed-internet-route-gate-refused.md) | wlan run 113 | confirmed | linux-sm7635#311 | run113 pair installed internet route gate refused
-- [2026-11-04-062414-pair-producer-verified-consumer-gate-still-open](records/2026-11-04-062414-pair-producer-verified-consumer-gate-still-open.md) | wlan | inconclusive | linux-sm7635#311 | pair producer verified consumer gate still open
 
 ## By subsystem (latest 3, total in brackets)
 
@@ -35,10 +35,10 @@
 - [2026-10-29-2206-host-re-address-of-a-renamed-diagnostic-gadget-2](records/2026-10-29-2206-host-re-address-of-a-renamed-diagnostic-gadget-2.md) | usb | inconclusive | omnipha/linux-sm7635#169 | Host re-address of a renamed diagnostic gadget (2026-10-29, #169)
 - [2026-10-28-2284-run-52-measured-postmarketos-pid-1-cutover-and-u](records/2026-10-28-2284-run-52-measured-postmarketos-pid-1-cutover-and-u.md) | usb run 52 | confirmed | omnipha/linux-sm7635#145 | Run-52 measured postmarketOS PID-1 cutover and USB SSH (#145, live-session finding, 2026-10-28)
 
-### userspace [30]
+### userspace [31]
+- [2026-11-05-021930-host-measurement-runbook-and-tool-closure-corrections](records/2026-11-05-021930-host-measurement-runbook-and-tool-closure-corrections.md) | userspace | inconclusive | linux-sm7635#324 | host measurement runbook and tool closure corrections
 - [2026-11-05-003759-host-signed-bootstrap-closure-audit](records/2026-11-05-003759-host-signed-bootstrap-closure-audit.md) | userspace | inconclusive | linux-sm7635#324 | host signed bootstrap closure audit
 - [2026-11-04-220742-persistent-root-host-blockers](records/2026-11-04-220742-persistent-root-host-blockers.md) | userspace | inconclusive | linux-sm7635#324 | persistent root host blockers
-- [2026-11-04-190612-pair-deliverable-host-proofs](records/2026-11-04-190612-pair-deliverable-host-proofs.md) | userspace | inconclusive | linux-sm7635#324 | pair deliverable host proofs
 
 ### wlan [87]
 - [2026-11-04-154823-run113-route-attribution-inconclusive](records/2026-11-04-154823-run113-route-attribution-inconclusive.md) | wlan run 113 | inconclusive | linux-sm7635#311 | run113 route refusal attribution remains inconclusive
@@ -50,5 +50,5 @@
 
 ## By month
 
-- [2026-11](records/index-2026-11.md) [59]
+- [2026-11](records/index-2026-11.md) [60]
 - [2026-10](records/index-2026-10.md) [162]
