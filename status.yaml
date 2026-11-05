@@ -5,11 +5,10 @@ updated: 2026-11-05
 next_question: >-
   The signed-generation model and SSHSIG bundle verifier are self-tested
   host-only prototypes (records/2026-11-05-003759-host-signed-bootstrap-closure-audit.md).
-  Which owner-approved release/rollback public keys and demonstrated
-  privileged-writer exclusion let the replacement pair be built; separately,
-  what are the rw root mode and persistence of an unpinned marker on the
-  installed pair, measured over two coordinator-approved boots under the
-  guard-window runbook in docs/strategy/persistent-root.md?
+  Run 116 saw the installed root rw (norecovery) and one unpinned marker
+  survive a no-flash reboot (records/2026-11-05-095841-run-116-unpinned-marker-survives-no-flash-reboot.md).
+  What are the sda13 ext4 features, clean state and error counters, read with
+  read-only tools only, so a journal/fsck policy can be stated?
 active_issue: omnipha/linux-sm7635#324
 subsystems:
   boot:
