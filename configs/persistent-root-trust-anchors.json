@@ -1,0 +1,7 @@
+{
+  "schema": "omnipha-sm7635-persistent-root-trust-anchors-v1",
+  "keys": {
+    "release": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIF4cv6UO28iKtnlNA6oQcACE6nV0umjZdDjGO29hP+U/ omnipha-sm7635-release-20261105",
+    "rollback": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIF7XVKbavCyKZHEaH9Rzcc3dL/Vok6xaYP2Xn5pg8i6a omnipha-sm7635-rollback-20261105"
+  }
+}
