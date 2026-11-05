@@ -2,6 +2,7 @@
 
 ## Latest 10
 
+- [2026-11-05-103554-run117-sda13-superblock-readonly-snapshot](records/2026-11-05-103554-run117-sda13-superblock-readonly-snapshot.md) | userspace run 117 | inconclusive | linux-sm7635#324 | run 117 sda13 superblock read-only snapshot
 - [2026-11-05-095841-run-116-unpinned-marker-survives-no-flash-reboot](records/2026-11-05-095841-run-116-unpinned-marker-survives-no-flash-reboot.md) | userspace run 116 | inconclusive | linux-sm7635#324 | run 116 unpinned marker survives no flash reboot
 - [2026-11-05-082947-host-trust-anchor-wiring-and-policy-reconciliation](records/2026-11-05-082947-host-trust-anchor-wiring-and-policy-reconciliation.md) | userspace | inconclusive | linux-sm7635#324 | host trust-anchor wiring and policy reconciliation
 - [2026-11-05-042845-host-signed-generation-sequence-bound-unification-and-audit](records/2026-11-05-042845-host-signed-generation-sequence-bound-unification-and-audit.md) | userspace | confirmed | linux-sm7635#324 | host signed-generation sequence bound, carrier-read and guard-time proposal review
@@ -11,7 +12,6 @@
 - [2026-11-04-220742-persistent-root-host-blockers](records/2026-11-04-220742-persistent-root-host-blockers.md) | userspace | inconclusive | linux-sm7635#324 | persistent root host blockers
 - [2026-11-04-190612-pair-deliverable-host-proofs](records/2026-11-04-190612-pair-deliverable-host-proofs.md) | userspace | inconclusive | linux-sm7635#324 | pair deliverable host proofs
 - [2026-11-04-172845-pin-replacement-host-design-and-models](records/2026-11-04-172845-pin-replacement-host-design-and-models.md) | userspace | confirmed | linux-sm7635#324 | pin replacement host design and models
-- [2026-11-04-154823-run113-route-attribution-inconclusive](records/2026-11-04-154823-run113-route-attribution-inconclusive.md) | wlan run 113 | inconclusive | linux-sm7635#311 | run113 route refusal attribution remains inconclusive
 
 ## By subsystem (latest 3, total in brackets)
 
@@ -35,10 +35,10 @@
 - [2026-10-29-2206-host-re-address-of-a-renamed-diagnostic-gadget-2](records/2026-10-29-2206-host-re-address-of-a-renamed-diagnostic-gadget-2.md) | usb | inconclusive | omnipha/linux-sm7635#169 | Host re-address of a renamed diagnostic gadget (2026-10-29, #169)
 - [2026-10-28-2284-run-52-measured-postmarketos-pid-1-cutover-and-u](records/2026-10-28-2284-run-52-measured-postmarketos-pid-1-cutover-and-u.md) | usb run 52 | confirmed | omnipha/linux-sm7635#145 | Run-52 measured postmarketOS PID-1 cutover and USB SSH (#145, live-session finding, 2026-10-28)
 
-### userspace [35]
+### userspace [36]
+- [2026-11-05-103554-run117-sda13-superblock-readonly-snapshot](records/2026-11-05-103554-run117-sda13-superblock-readonly-snapshot.md) | userspace run 117 | inconclusive | linux-sm7635#324 | run 117 sda13 superblock read-only snapshot
 - [2026-11-05-095841-run-116-unpinned-marker-survives-no-flash-reboot](records/2026-11-05-095841-run-116-unpinned-marker-survives-no-flash-reboot.md) | userspace run 116 | inconclusive | linux-sm7635#324 | run 116 unpinned marker survives no flash reboot
 - [2026-11-05-082947-host-trust-anchor-wiring-and-policy-reconciliation](records/2026-11-05-082947-host-trust-anchor-wiring-and-policy-reconciliation.md) | userspace | inconclusive | linux-sm7635#324 | host trust-anchor wiring and policy reconciliation
-- [2026-11-05-042845-host-signed-generation-sequence-bound-unification-and-audit](records/2026-11-05-042845-host-signed-generation-sequence-bound-unification-and-audit.md) | userspace | confirmed | linux-sm7635#324 | host signed-generation sequence bound, carrier-read and guard-time proposal review
 
 ### wlan [87]
 - [2026-11-04-154823-run113-route-attribution-inconclusive](records/2026-11-04-154823-run113-route-attribution-inconclusive.md) | wlan run 113 | inconclusive | linux-sm7635#311 | run113 route refusal attribution remains inconclusive
@@ -50,5 +50,5 @@
 
 ## By month
 
-- [2026-11](records/index-2026-11.md) [64]
+- [2026-11](records/index-2026-11.md) [65]
 - [2026-10](records/index-2026-10.md) [162]
