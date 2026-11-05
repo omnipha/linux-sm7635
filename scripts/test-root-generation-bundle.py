@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import ast
 import base64
 import hashlib
 import importlib.util
@@ -77,9 +78,32 @@ def expect_refusal(label: str, reason_fragment: str, func: Any, *args: Any, **kw
         raise AssertionError(f"{label}: expected Reject({reason_fragment!r}) but succeeded")
 
 
+def expect_foreign_refusal(label: str, reason_fragment: str, reject: Any, func: Any,
+                           *args: Any, **kwargs: Any) -> None:
+    try:
+        func(*args, **kwargs)
+    except reject as exc:
+        assert reason_fragment in str(exc), f"{label}: expected {reason_fragment!r} in {str(exc)!r}"
+    else:
+        raise AssertionError(f"{label}: expected rejection {reason_fragment!r} but succeeded")
+
+
 def signature_payload(signature: bytes) -> bytes:
     body = signature[len(verifier.SSHSIG_BEGIN):-len(verifier.SSHSIG_END)]
     return b"".join(body[:-1].split(b"\n"))
+
+
+def load_provenance(work: pathlib.Path) -> Any:
+    tree = ast.parse((HERE / "test-pmos-baseline-provenance.py").read_text())
+    assert isinstance(tree.body[-1], ast.Expr) and isinstance(tree.body[-1].value, ast.Call)
+    tree.body = tree.body[:-1]
+    stripped = work / "provenance_fixture.py"
+    stripped.write_text(ast.unparse(tree))
+    provenance_spec = importlib.util.spec_from_file_location("provenance_fixture", stripped)
+    assert provenance_spec is not None and provenance_spec.loader is not None
+    loaded = importlib.util.module_from_spec(provenance_spec)
+    provenance_spec.loader.exec_module(loaded)
+    return loaded
 
 
 def rewrap_signature(signature: bytes, width: int) -> bytes:
@@ -229,6 +253,19 @@ def run_tests() -> None:
         assert verifier.ROLLBACK_DOMAIN == model.ROLLBACK_DOMAIN
         assert verifier.RELEASE_PRINCIPAL == model.RELEASE_PRINCIPAL
         assert verifier.ROLLBACK_PRINCIPAL == model.ROLLBACK_PRINCIPAL
+        assert verifier.SEQUENCE_MAX == model.SEQUENCE_MAX == 2**31 - 1
+        for edge in (1, verifier.SEQUENCE_MAX):
+            assert verifier.rollback_message("1" * 64, "2" * 64, "3" * 64, edge) == \
+                model.rollback_message("1" * 64, "2" * 64, "3" * 64, edge)
+        for edge in (0, verifier.SEQUENCE_MAX + 1):
+            expect_refusal(f"verifier rollback statement {edge}", "rollback statement",
+                           verifier.rollback_message, "1" * 64, "2" * 64, "3" * 64, edge)
+            try:
+                model.rollback_message("1" * 64, "2" * 64, "3" * 64, edge)
+            except model.Reject as exc:
+                assert "rollback statement" in str(exc)
+            else:
+                raise AssertionError(f"model accepted rollback statement sequence {edge}")
 
         model_dir = work / "model_keys"
         model_dir.mkdir()
@@ -270,6 +307,75 @@ def run_tests() -> None:
         assert model.verify_chain(diff_keys, diff_base.ident, diff_history, diff_reissue.ident)
         del diff_keys
 
+        provenance = load_provenance(work)
+        assert provenance.SEQUENCE_MAX == verifier.SEQUENCE_MAX == model.SEQUENCE_MAX == 2**31 - 1
+        for edge in (1, verifier.SEQUENCE_MAX):
+            assert verifier.rollback_message("1" * 64, "2" * 64, "3" * 64, edge) == \
+                provenance.rollback_message("1" * 64, "2" * 64, "3" * 64, edge)
+        for edge in (0, -1, True, 0.0, verifier.SEQUENCE_MAX + 1, 2**63, 2**64):
+            expect_foreign_refusal(f"provenance rollback statement {edge}", "rollback statement",
+                                   provenance.Reject, provenance.rollback_message,
+                                   "1" * 64, "2" * 64, "3" * 64, edge)
+        drift_payloads = forward_payloads("drift", baseline_payloads)
+        for sequence in (1, 2, verifier.SEQUENCE_MAX - 1, verifier.SEQUENCE_MAX):
+            drift = build_manifest(sequence, "forward", b_id, None, drift_payloads)
+            assert verifier.parse_manifest(drift)["sequence"] == sequence
+            assert provenance.parse_manifest(drift)["sequence"] == sequence
+        for sequence in (-1, verifier.SEQUENCE_MAX + 1, verifier.SEQUENCE_MAX + 2, 2**63, 2**64):
+            drift = build_manifest(sequence, "forward", b_id, None, drift_payloads)
+            expect_refusal(f"verifier drift sequence {sequence}", "sequence type",
+                           verifier.parse_manifest, drift)
+            expect_foreign_refusal(f"provenance drift sequence {sequence}", "sequence type",
+                                   provenance.Reject, provenance.parse_manifest, drift)
+        expect_foreign_refusal("provenance forward sequence zero", "transition shape",
+                               provenance.Reject, provenance.parse_manifest,
+                               build_manifest(0, "forward", b_id, None, drift_payloads))
+
+        edge_dir = work / "edge_keys"
+        edge_dir.mkdir()
+        edge_keys = model.Keys(edge_dir)
+        edge_base = model.make_generation(edge_keys, 0, "baseline", None, None,
+                                          model.payloads("edge"))
+        edge_second = model.make_generation(edge_keys, 1, "forward", edge_base.ident, None,
+                                            model.payloads("edge-second"))
+        edge_third = model.make_generation(edge_keys, 2, "forward", edge_second.ident, None,
+                                           model.payloads("edge-third"))
+        edge_prev = model.make_generation(edge_keys, verifier.SEQUENCE_MAX - 1, "forward",
+                                          edge_third.ident, None, model.payloads("edge-prev"))
+        edge_gen = model.make_generation(edge_keys, verifier.SEQUENCE_MAX, "forward",
+                                         edge_prev.ident, None, model.payloads("edge-max"))
+        edge_history = {gen.ident: gen for gen in
+                        (edge_base, edge_second, edge_third, edge_prev, edge_gen)}
+        model.verify_entry(edge_keys, edge_base.ident, edge_second, edge_base, edge_history)
+        model.verify_entry(edge_keys, edge_base.ident, edge_third, edge_second, edge_history)
+        expect_foreign_refusal("model refuses jump from sequence 2 to the end of range", "sequence",
+                               model.Reject, model.verify_entry, edge_keys, edge_base.ident,
+                               edge_prev, edge_third, edge_history)
+        expect_foreign_refusal("model chain with a synthetic gap", "sequence",
+                               model.Reject, model.verify_chain, edge_keys, edge_base.ident,
+                               edge_history, edge_gen.ident)
+        model.verify_entry(edge_keys, edge_base.ident, edge_gen, edge_prev, edge_history)
+        assert model.parse_manifest(edge_gen.raw)["sequence"] == verifier.SEQUENCE_MAX
+        assert model.parse_manifest(edge_prev.raw)["sequence"] == verifier.SEQUENCE_MAX - 1
+        edge_past = model.manifest(verifier.SEQUENCE_MAX + 1, "forward", edge_prev.ident, None,
+                                   model.payloads("edge-past"))
+        expect_foreign_refusal("model sequence past end of range", "sequence type",
+                               model.Reject, model.parse_manifest, edge_past)
+        edge_wrap = model.manifest(0, "forward", edge_prev.ident, None, model.payloads("edge-wrap"))
+        expect_foreign_refusal("model forward sequence zero", "transition shape",
+                               model.Reject, model.parse_manifest, edge_wrap)
+        edge_past_gen = model.make_generation(edge_keys, verifier.SEQUENCE_MAX, "forward",
+                                              edge_gen.ident, None, model.payloads("edge-past"))
+        edge_history[edge_past_gen.ident] = edge_past_gen
+        expect_foreign_refusal("model transition beyond end of range", "sequence",
+                               model.Reject, model.verify_entry, edge_keys, edge_base.ident,
+                               edge_past_gen, edge_gen, edge_history)
+        edge_rollback = model.make_generation(edge_keys, verifier.SEQUENCE_MAX, "rollback",
+                                              edge_prev.ident, edge_base.ident, edge_base.payloads)
+        edge_history[edge_rollback.ident] = edge_rollback
+        model.verify_entry(edge_keys, edge_base.ident, edge_rollback, edge_prev, edge_history)
+        del edge_keys
+
         expect_refusal("empty chain", "chain input", verifier.verify_chain,
                        [], release.signers, rollback.signers, b_id)
 
@@ -308,6 +414,46 @@ def run_tests() -> None:
         expect_refusal("forward carrying rollback evidence", "forward authorization",
                        verifier.verify_chain, [b_blob, forward_with_rollback_blob],
                        release.signers, rollback.signers, b_id)
+
+        assert verifier.CHAIN_MAX == 64 < verifier.SEQUENCE_MAX
+        expect_refusal("chain longer than CHAIN_MAX", "chain input", verifier.verify_chain,
+                       [b_blob] * (verifier.CHAIN_MAX + 1), release.signers, rollback.signers, b_id)
+        boundary_payloads = forward_payloads("boundary", f2_payloads)
+        for sequence, reason in (
+            (verifier.SEQUENCE_MAX, "sequence"),
+            (verifier.SEQUENCE_MAX - 1, "sequence"),
+            (0, "transition shape"),
+            (verifier.SEQUENCE_MAX + 1, "sequence type"),
+            (2**32 + 3, "sequence type"),
+            (2**63, "sequence type"),
+            (-1, "sequence type"),
+        ):
+            boundary_blob, _ = make_bundle(release, sequence, "forward", f2_id, None,
+                                           boundary_payloads)
+            expect_refusal(f"signed forward sequence {sequence} after sequence 2", reason,
+                           verifier.verify_chain, [b_blob, f1_blob, f2_blob, boundary_blob],
+                           release.signers, rollback.signers, b_id)
+        for sequence in (0, verifier.SEQUENCE_MAX + 1, 2**32 + 3, -1):
+            expect_refusal(f"rollback authorization sequence {sequence}", "rollback statement",
+                           make_bundle, release, sequence, "rollback", f2_id, b_id,
+                           baseline_payloads, rollback)
+        for sequence, reason in (
+            (verifier.SEQUENCE_MAX, "sequence"),
+            (0, "transition shape"),
+            (verifier.SEQUENCE_MAX + 1, "sequence type"),
+            (2**32 + 3, "sequence type"),
+        ):
+            raw_manifest = build_manifest(sequence, "rollback", f2_id, b_id, baseline_payloads)
+            raw_id = verifier.digest(raw_manifest)
+            raw_sig = release.sign(verifier.RELEASE_NS, verifier.RELEASE_DOMAIN + raw_manifest)
+            statement = (verifier.ROLLBACK_DOMAIN +
+                         f"current={f2_id}\ntarget={raw_id}\n"
+                         f"restores={b_id}\nsequence=3\n".encode("ascii"))
+            raw_blob = verifier.encode_bundle(raw_manifest, raw_sig, baseline_payloads,
+                                              rollback.sign(verifier.ROLLBACK_NS, statement))
+            expect_refusal(f"signed rollback sequence {sequence} after sequence 2", reason,
+                           verifier.verify_chain, [b_blob, f1_blob, f2_blob, raw_blob],
+                           release.signers, rollback.signers, b_id)
 
         rb1_blob, rb1_id = make_bundle(
             release, 3, "rollback", f2_id, b_id, baseline_payloads, rollback)
@@ -502,6 +648,22 @@ def run_tests() -> None:
 
         valid_manifest = build_manifest(0, "baseline", None, None, baseline_payloads)
         assert verifier.parse_manifest(valid_manifest)["sequence"] == 0
+        for sequence in (1, 2, verifier.SEQUENCE_MAX - 1, verifier.SEQUENCE_MAX):
+            for operation, restores in (("forward", None), ("rollback", b_id)):
+                valid = build_manifest(sequence, operation, b_id, restores, baseline_payloads)
+                assert verifier.parse_manifest(valid)["sequence"] == sequence
+        for sequence in (-1, verifier.SEQUENCE_MAX + 1, 2**63, 2**64):
+            for operation, restores in (("forward", None), ("rollback", b_id)):
+                invalid = build_manifest(sequence, operation, b_id, restores, baseline_payloads)
+                expect_refusal(f"{operation} sequence {sequence}", "sequence type", verifier.parse_manifest, invalid)
+        expect_refusal("forward sequence zero", "transition shape", verifier.parse_manifest,
+                       build_manifest(0, "forward", b_id, None, baseline_payloads))
+        for sequence in (1, verifier.SEQUENCE_MAX):
+            assert verifier.rollback_message(b_id, b_id, b_id, sequence).endswith(
+                f"sequence={sequence}\n".encode("ascii"))
+        for sequence in (0, -1, True, 0.0, verifier.SEQUENCE_MAX + 1, 2**64):
+            expect_refusal(f"rollback statement sequence {sequence}", "rollback statement",
+                           verifier.rollback_message, b_id, b_id, b_id, sequence)
         spaced = json.dumps(json.loads(valid_manifest)).encode("ascii")
         expect_refusal("noncanonical manifest spacing", "not canonical",
                        verifier.parse_manifest, spaced)
@@ -511,6 +673,8 @@ def run_tests() -> None:
                        valid_manifest[:-1] + b',"restores":null}')
         expect_refusal("float spelling", "sequence type", verifier.parse_manifest,
                        valid_manifest.replace(b'"sequence":0', b'"sequence":0.0'))
+        expect_refusal("boolean sequence", "sequence type", verifier.parse_manifest,
+                       valid_manifest.replace(b'"sequence":0', b'"sequence":true'))
         expect_refusal("escaped path", "not canonical", verifier.parse_manifest,
                        valid_manifest.replace(b'"/usr/libexec', b'"\\u002fusr/libexec', 1))
         expect_refusal("empty manifest", "manifest size", verifier.parse_manifest, b"")

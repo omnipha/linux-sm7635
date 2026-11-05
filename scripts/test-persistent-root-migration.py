@@ -42,6 +42,7 @@ RUN113_FILES = {
 LEGACY_IMAGE_NS = "omnipha-legacy-image-attestation-v1@fixture.invalid"
 LEGACY_IMAGE_PRINCIPAL = "fixture-legacy-image"
 LEGACY_IMAGE_DOMAIN = b"omnipha-legacy-image-attestation-v1\n"
+SEQUENCE_MAX = 2**31 - 1
 MANIFEST_KEYS = ["schema", "sequence", "operation", "previous", "files", "restores"]
 ENTRY_KEYS = ["path", "size", "sha256", "uid", "gid", "mode"]
 
@@ -86,7 +87,7 @@ def parse_manifest(raw: bytes) -> dict[str, Any]:
         refuse("manifest fields")
     if obj["schema"] != SCHEMA:
         refuse("schema")
-    if type(obj["sequence"]) is not int or obj["sequence"] < 0:
+    if type(obj["sequence"]) is not int or not 0 <= obj["sequence"] <= SEQUENCE_MAX:
         refuse("sequence type")
     if obj["operation"] not in ("baseline", "forward", "rollback"):
         refuse("operation")
@@ -130,6 +131,8 @@ def manifest(sequence: int, operation: str, previous: str | None, restores: str 
 
 
 def rollback_message(current: str, target: str, restores: str, sequence: int) -> bytes:
+    if type(sequence) is not int or not 0 < sequence <= SEQUENCE_MAX:
+        refuse("rollback statement")
     return ROLLBACK_DOMAIN + (
         f"current={current}\ntarget={target}\nrestores={restores}\nsequence={sequence}\n"
     ).encode("ascii")
@@ -863,6 +866,9 @@ def test_parser(base: Generation) -> None:
         ("schema", "schema", raw.replace(b"generation-v1", b"generation-v2")),
         ("sequence float", "sequence type", raw.replace(b'"sequence":0', b'"sequence":0.0')),
         ("sequence bool", "sequence type", raw.replace(b'"sequence":0', b'"sequence":true')),
+        ("sequence negative", "sequence type", raw.replace(b'"sequence":0', b'"sequence":-1')),
+        ("sequence above bound", "sequence type",
+         raw.replace(b'"sequence":0', f'"sequence":{SEQUENCE_MAX + 1}'.encode())),
         ("path", "file path", raw.replace(PATHS[0].encode(), b"/unexpected")),
         ("mode", "file mode", raw.replace(b'"0700"', b'"0755"', 1)),
         ("owner", "file uid", raw.replace(b'"uid":0', b'"uid":1', 1)),
@@ -875,6 +881,27 @@ def test_parser(base: Generation) -> None:
     for label, reason, invalid in cases:
         expect_reject(label, reason, functools.partial(parse_manifest, invalid))
     print(f"parser: {len(cases)} canonical/schema/metadata mutations rejected")
+    for sequence in (1, 2, SEQUENCE_MAX - 1, SEQUENCE_MAX):
+        accepted = manifest(sequence, "forward", base.ident, None, base.payloads)
+        assert parse_manifest(accepted)["sequence"] == sequence
+        accepted = manifest(sequence, "rollback", base.ident, base.ident, base.payloads)
+        assert parse_manifest(accepted)["sequence"] == sequence
+    for sequence in (SEQUENCE_MAX + 1, SEQUENCE_MAX + 2, 2**63, 2**64):
+        for operation, restores in (("forward", None), ("rollback", base.ident)):
+            expect_reject(f"{operation} sequence {sequence}", "sequence type", functools.partial(
+                parse_manifest, manifest(sequence, operation, base.ident, restores, base.payloads)))
+    expect_reject("forward sequence zero", "transition shape", functools.partial(
+        parse_manifest, manifest(0, "forward", base.ident, None, base.payloads)))
+    for sequence in (1, SEQUENCE_MAX):
+        assert rollback_message(base.ident, base.ident, base.ident, sequence).endswith(
+            f"sequence={sequence}\n".encode("ascii"))
+    invalid_sequences: tuple[Any, ...] = (0, -1, True, 0.0, SEQUENCE_MAX + 1, 2**64)
+    for invalid_sequence in invalid_sequences:
+        expect_reject(f"rollback statement sequence {invalid_sequence}", "rollback statement", functools.partial(
+            rollback_message, base.ident, base.ident, base.ident, invalid_sequence))
+    print(f"parser sequence bound: 1, 2, {SEQUENCE_MAX - 1} and {SEQUENCE_MAX} accepted for forward and "
+          f"rollback; {SEQUENCE_MAX + 1}, 2**63 and 2**64 refused; rollback statements refuse 0, negative "
+          f"and above {SEQUENCE_MAX}")
 
 
 def test_authorization(keys: Keys, base: Generation, forward: Generation, rollback: Generation) -> None:
