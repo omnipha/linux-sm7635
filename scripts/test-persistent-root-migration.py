@@ -5,10 +5,10 @@ import copy
 import dataclasses
 import functools
 import hashlib
+import importlib.util
 import json
 import os
 import pathlib
-import re
 import shutil
 import stat
 import subprocess
@@ -142,30 +142,33 @@ def run(args: list[str], data: bytes | None = None) -> subprocess.CompletedProce
     return subprocess.run(args, input=data, capture_output=True, check=False)
 
 
-def signer_key_material(signers: pathlib.Path) -> bytes:
+def load_verifier() -> Any:
+    path = pathlib.Path(__file__).resolve().with_name("verify-root-generation-bundle.py")
+    spec = importlib.util.spec_from_file_location("verify_root_generation_bundle", path)
+    if spec is None or spec.loader is None:
+        raise ImportError("verifier unavailable")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+VERIFIER = load_verifier()
+
+
+def signer_key_material(signers: pathlib.Path, principal: str, namespace: str) -> bytes:
     try:
-        lines = [line for line in signers.read_text(encoding="ascii").splitlines()
-                 if line.strip() and not line.lstrip().startswith("#")]
-    except (OSError, UnicodeError):
-        refuse("malformed allowed-signers")
-    require(len(lines) == 1, "malformed allowed-signers")
-    fields = lines[0].split()
-    require(len(fields) >= 3 and re.fullmatch(r"[A-Za-z0-9_@.,!?*+\-]+", fields[0]) is not None,
-            "malformed allowed-signers")
-    index = 1
-    if fields[index] != "ssh-ed25519" and not fields[index].startswith("ssh-"):
-        require(re.fullmatch(r'[A-Za-z0-9_@.,!?*+=\-"]+', fields[index]) is not None and
-                'namespaces="' in fields[index], "malformed allowed-signers")
-        index += 1
-    require(len(fields) > index + 1, "malformed allowed-signers")
-    require(fields[index] == "ssh-ed25519", "unsupported signer key")
-    try:
-        blob = base64.b64decode(fields[index + 1], validate=True)
-    except ValueError:
-        refuse("malformed allowed-signers")
-    require(len(blob) == 51 and blob[:15] == b"\x00\x00\x00\x0bssh-ed25519" and
-            blob[15:19] == b"\x00\x00\x00\x20", "malformed signer key")
-    return blob
+        blob = VERIFIER.load_signers(signers, principal, namespace)[1]
+    except VERIFIER.Reject as exc:
+        refuse(str(exc))
+    return cast(bytes, blob)
+
+
+def signer_pin(keys: "Keys") -> tuple[bytes, bytes]:
+    require(keys.release_signers.resolve() != keys.rollback_signers.resolve(), "keys not distinct")
+    release = signer_key_material(keys.release_signers, RELEASE_PRINCIPAL, RELEASE_NS)
+    rollback = signer_key_material(keys.rollback_signers, ROLLBACK_PRINCIPAL, ROLLBACK_NS)
+    require(release != rollback, "keys not distinct")
+    return release, rollback
 
 
 class Keys:
@@ -174,8 +177,7 @@ class Keys:
         self.verified: set[tuple[bool, bytes, bytes, bytes]] = set()
         self.release, self.release_signers = self.make_key("release", RELEASE_PRINCIPAL, RELEASE_NS)
         self.rollback, self.rollback_signers = self.make_key("rollback", ROLLBACK_PRINCIPAL, ROLLBACK_NS)
-        require(signer_key_material(self.release_signers) != signer_key_material(self.rollback_signers),
-                "keys not distinct")
+        signer_pin(self)
         assert RELEASE_DOMAIN != ROLLBACK_DOMAIN and RELEASE_NS != ROLLBACK_NS
 
     def make_key(self, name: str, principal: str, namespace: str) -> tuple[pathlib.Path, pathlib.Path]:
@@ -196,22 +198,26 @@ class Keys:
             assert result.returncode == 0, result.stderr
             return pathlib.Path(str(target) + ".sig").read_bytes()
 
-    def verify(self, rollback: bool, message: bytes, signature: bytes) -> bool:
+    def verify(self, rollback: bool, message: bytes, signature: bytes, key: bytes | None = None) -> bool:
         signers = self.rollback_signers if rollback else self.release_signers
-        cache_key = (rollback, message, signature, signers.read_bytes())
+        principal = ROLLBACK_PRINCIPAL if rollback else RELEASE_PRINCIPAL
+        namespace = ROLLBACK_NS if rollback else RELEASE_NS
+        current = signer_key_material(signers, principal, namespace)
+        require(key is None or current == key, "signers changed")
+        try:
+            canonical_sig = VERIFIER.canonical_signature(signature, namespace)
+        except VERIFIER.Reject:
+            return False
+        cache_key = (rollback, message, canonical_sig, current)
         if cache_key in self.verified:
             return True
-        with tempfile.TemporaryDirectory(dir=self.directory) as tmp:
-            target = pathlib.Path(tmp) / "signature"
-            target.write_bytes(signature)
-            principal = ROLLBACK_PRINCIPAL if rollback else RELEASE_PRINCIPAL
-            namespace = ROLLBACK_NS if rollback else RELEASE_NS
-            result = run(["ssh-keygen", "-Y", "verify", "-f", str(signers), "-I", principal,
-                          "-n", namespace, "-s", str(target)], message)
-        if result.returncode == 0:
+        try:
+            accepted = VERIFIER.ssh_verify(signers, principal, namespace, message, canonical_sig, current)
+        except VERIFIER.Reject as exc:
+            refuse(str(exc))
+        if accepted:
             self.verified.add(cache_key)
-            return True
-        return False
+        return bool(accepted)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -243,11 +249,12 @@ def payloads(label: str) -> tuple[bytes, ...]:
 
 
 def verify_entry(keys: Keys, baseline_id: str, gen: Generation, previous: Generation | None,
-                 ancestors: dict[str, Generation]) -> None:
-    require(signer_key_material(keys.release_signers) != signer_key_material(keys.rollback_signers),
-            "keys not distinct")
+                 ancestors: dict[str, Generation], pins: tuple[bytes, bytes] | None = None) -> None:
+    current = signer_pin(keys)
+    require(pins is None or current == pins, "signers changed")
+    release_key, rollback_key = current if pins is None else pins
     obj = parse_manifest(gen.raw)
-    if not keys.verify(False, RELEASE_DOMAIN + gen.raw, gen.release_sig):
+    if not keys.verify(False, RELEASE_DOMAIN + gen.raw, gen.release_sig, release_key):
         refuse("release signature")
     if len(gen.payloads) != len(PATHS):
         refuse("payload count")
@@ -282,7 +289,7 @@ def verify_entry(keys: Keys, baseline_id: str, gen: Generation, previous: Genera
     if gen.rollback_sig is None:
         refuse("missing rollback signature")
     statement = rollback_message(previous.ident, gen.ident, source_id, obj["sequence"])
-    if not keys.verify(True, statement, gen.rollback_sig):
+    if not keys.verify(True, statement, gen.rollback_sig, rollback_key):
         refuse("rollback signature")
 
 
@@ -303,10 +310,11 @@ def verify_chain(keys: Keys, baseline_id: str, generations: dict[str, Generation
         if obj["operation"] == "baseline":
             break
         current = obj["previous"]
+    pins = signer_pin(keys)
     ancestors: dict[str, Generation] = {}
     previous = None
     for gen in reversed(chain):
-        verify_entry(keys, baseline_id, gen, previous, ancestors)
+        verify_entry(keys, baseline_id, gen, previous, ancestors, pins)
         ancestors[gen.ident] = gen
         previous = gen
     return ancestors
@@ -1320,6 +1328,27 @@ def test_archive_history_and_signers(keys: Keys, initial: State, base: Generatio
     release_blob = release_text.split()[-1]
     rollback_blob = rollback_text.split()[-1]
     chain = {base.ident: base, forward.ident: forward}
+    canonical_line = f'{ROLLBACK_PRINCIPAL} namespaces="{ROLLBACK_NS}" ssh-ed25519 {rollback_blob}\n'
+    canonical_release_line = f'{RELEASE_PRINCIPAL} namespaces="{RELEASE_NS}" ssh-ed25519 {release_blob}\n'
+    good_signers = keys.directory / "good-rollback.signers"
+    good_signers.write_text(canonical_line)
+    os.chmod(good_signers, 0o600)
+    link = keys.directory / "link-rollback.signers"
+    link.symlink_to(good_signers)
+    hard = keys.directory / "hard-rollback.signers"
+    os.link(good_signers, hard)
+    for label, reason, signers, principal, namespace in (
+        ("symlinked signers", "signers file", link, ROLLBACK_PRINCIPAL, ROLLBACK_NS),
+        ("hardlinked signers", "signers file", hard, ROLLBACK_PRINCIPAL, ROLLBACK_NS),
+        ("wrong principal", "signers file", good_signers, RELEASE_PRINCIPAL, ROLLBACK_NS),
+        ("wrong namespace", "signers file", good_signers, ROLLBACK_PRINCIPAL, RELEASE_NS),
+    ):
+        expect_reject(label, reason, functools.partial(signer_key_material, signers, principal, namespace))
+    expect_reject("namespace mismatch with release signer", "signers file", functools.partial(
+        signer_key_material, keys.release_signers, RELEASE_PRINCIPAL, ROLLBACK_NS))
+    link.unlink()
+    hard.unlink()
+    good_signers.unlink()
 
     def tampered(target: pathlib.Path, original: str, text: str, label: str, reason: str) -> None:
         target.write_text(text)
@@ -1341,37 +1370,53 @@ def test_archive_history_and_signers(keys: Keys, initial: State, base: Generatio
         ("extra options", f'{ROLLBACK_PRINCIPAL} no-touch-required,namespaces="{ROLLBACK_NS}" ssh-ed25519 {release_blob}\n'),
         ("tabs and trailing space", f'{ROLLBACK_PRINCIPAL}\tnamespaces="{ROLLBACK_NS}"\tssh-ed25519\t{release_blob}  \n'),
         ("key comment", f'{ROLLBACK_PRINCIPAL} namespaces="{ROLLBACK_NS}" ssh-ed25519 {release_blob} release-copy\n'),
+        ("missing trailing newline", canonical_line.rstrip("\n")),
+        ("rollback principal under release namespace",
+         f'{ROLLBACK_PRINCIPAL} namespaces="{RELEASE_NS}" ssh-ed25519 {rollback_blob}\n'),
         ("release principal", f'{RELEASE_PRINCIPAL} namespaces="{RELEASE_NS}" ssh-ed25519 {release_blob}\n'),
-        ("no namespaces option", f"{ROLLBACK_PRINCIPAL} ssh-ed25519 {release_blob}\n"),
+        ("no namespaces option", f"{ROLLBACK_PRINCIPAL} ssh-ed25519 {rollback_blob}\n"),
     ]
     for label, text in same_key_formats:
         tampered(keys.rollback_signers, rollback_text, text, "rollback signers same key, " + label,
-                 "keys not distinct")
+                 "signers file")
+    tampered(keys.rollback_signers, rollback_text, canonical_release_line,
+             "rollback signers carrying release identity", "signers file")
     tampered(keys.release_signers, release_text,
              f'# note\n{RELEASE_PRINCIPAL} no-touch-required,namespaces="{RELEASE_NS}" ssh-ed25519 {rollback_blob}\n',
-             "release signers carrying rollback key", "keys not distinct")
-    for label, text, reason in (
-        ("empty file", "", "malformed allowed-signers"),
-        ("two keys", rollback_text + release_text, "malformed allowed-signers"),
-        ("bad base64", f'{ROLLBACK_PRINCIPAL} namespaces="{ROLLBACK_NS}" ssh-ed25519 !!!\n', "malformed allowed-signers"),
-        ("truncated key", f'{ROLLBACK_PRINCIPAL} namespaces="{ROLLBACK_NS}" ssh-ed25519 {rollback_blob[:-8]}\n',
-         "malformed signer key"),
-        ("non-ed25519 type", f'{ROLLBACK_PRINCIPAL} namespaces="{ROLLBACK_NS}" ssh-rsa {rollback_blob}\n',
-         "unsupported signer key"),
-        ("wrong embedded type", (f'{ROLLBACK_PRINCIPAL} namespaces="{ROLLBACK_NS}" ssh-ed25519 '
-                                 f'{base64.b64encode(b"x" + base64.b64decode(rollback_blob)[1:]).decode()}\n'),
-         "malformed signer key"),
+             "release signers carrying rollback key", "signers file")
+    for label, text in (
+        ("empty file", ""),
+        ("two keys", rollback_text + release_text),
+        ("rsa key type", f'{ROLLBACK_PRINCIPAL} namespaces="{ROLLBACK_NS}" ssh-rsa {rollback_blob}\n'),
+        ("trailing comment field", canonical_line[:-1] + " note\n"),
+        ("oversized signers", canonical_line + "#" * VERIFIER.SIGNERS_MAX),
+        ("noncanonical base64", (f"{ROLLBACK_PRINCIPAL} namespaces=\"{ROLLBACK_NS}\" ssh-ed25519 "
+                                 f"{rollback_blob}==\n")),
+        ("unsupported key prefix",
+         (f"{ROLLBACK_PRINCIPAL} namespaces=\"{ROLLBACK_NS}\" ssh-ed25519 "
+          f"{base64.b64encode(b'x' + base64.b64decode(rollback_blob)[1:]).decode('ascii')}\n")),
     ):
-        tampered(keys.rollback_signers, rollback_text, text, "rollback signers " + label, reason)
+        tampered(keys.rollback_signers, rollback_text, text, "rollback signers " + label, "signers file")
     assert keys.rollback_signers.read_text() == rollback_text and keys.release_signers.read_text() == release_text
-    reformatted = f'# note\n\n  {ROLLBACK_PRINCIPAL}\tnamespaces="{ROLLBACK_NS}" ssh-ed25519 {rollback_blob} comment  \n'
-    keys.rollback_signers.write_text(reformatted)
-    try:
-        assert signer_key_material(keys.rollback_signers) == signer_key_material(
-            pathlib.Path(str(keys.rollback) + ".signers"))
-        verify_entry(keys, base.ident, rollback, forward, verify_chain(keys, base.ident, chain, forward.ident))
-    finally:
-        keys.rollback_signers.write_text(rollback_text)
+    message = RELEASE_DOMAIN + b"armor probe"
+    genuine = keys.sign(keys.release, RELEASE_NS, message)
+    assert keys.verify(False, message, genuine)
+    armor_payload = b"".join(genuine[len(VERIFIER.SSHSIG_BEGIN):-len(VERIFIER.SSHSIG_END)]
+                             .rstrip(b"\n").split(b"\n"))
+    for label, signature in (
+        ("duplicate armor", genuine + genuine),
+        ("repeated begin", VERIFIER.SSHSIG_BEGIN + armor_payload[:VERIFIER.SSHSIG_WRAP] + b"\n" +
+         VERIFIER.SSHSIG_BEGIN + armor_payload[VERIFIER.SSHSIG_WRAP:] + b"\n" + VERIFIER.SSHSIG_END),
+        ("armor with trailing whitespace", VERIFIER.SSHSIG_BEGIN +
+         armor_payload + b" \n" + VERIFIER.SSHSIG_END),
+        ("short final armor line", VERIFIER.SSHSIG_BEGIN + armor_payload[:VERIFIER.SSHSIG_WRAP - 1] +
+         b"\n" + armor_payload[VERIFIER.SSHSIG_WRAP:] + b"\n" + VERIFIER.SSHSIG_END),
+        ("blank line inside armor", VERIFIER.SSHSIG_BEGIN + armor_payload[:VERIFIER.SSHSIG_WRAP] + b"\n\n" +
+         armor_payload[VERIFIER.SSHSIG_WRAP:] + b"\n" + VERIFIER.SSHSIG_END),
+    ):
+        assert not keys.verify(False, message, signature), "noncanonical armor accepted: " + label
+    assert not keys.verify(False, message, genuine + b"trailing")
+    assert keys.verify(False, message, genuine)
     verify_entry(keys, base.ident, rollback, forward, verify_chain(keys, base.ident, chain, forward.ident))
     print(f"archive history: {len(corrupt_histories) + 4} corrupt or unknown committed/recovered histories refused "
           "on journal-free boot, floor check and floor advance; recovered-before-committed attempts, an unreached "
@@ -1380,12 +1425,13 @@ def test_archive_history_and_signers(keys: Keys, initial: State, base: Generatio
     print(f"post-plan archive: {post_plan_refusals} corrupt histories inserted after plan construction refused by "
           "consult itself and by the first guarded action, without writes")
     print("signer roles: release and rollback allowed-signers files must authorize different ed25519 key "
-          f"material; {len(same_key_formats) + 1} same-key reformatting/tampering vectors and 6 malformed or "
-          "foreign-format signer vectors refused on verify_entry, boot, floor check and floor advance")
-    print("signer scope: model parses one single-key ed25519 allowed-signers line and accepts a missing or "
-          "unmatched namespaces option; it does not validate ssh-keygen option semantics, certificates, "
-          "multi-key files, key comments, expiry or revocation, nor that signers files are the operational "
-          "trust anchor")
+          f"material; {len(same_key_formats) + 2} same-key reformatting/tampering vectors, 7 malformed or "
+          "foreign-format signer vectors, symlinked/hardlinked signers and wrong principal/namespace lookups "
+          "refused on verify_entry, boot, floor check and floor advance")
+    print("signer scope: model delegates allowed-signers loading and ssh-signature parsing to "
+          "verify-root-generation-bundle.py, so it enforces that verifier's strict canonical single-key "
+          "ed25519 line and pinned-namespace sshsig armor; it does not validate ssh-keygen option semantics, "
+          "certificates, expiry or revocation, nor that signers files are the operational trust anchor")
 
 
 def legacy_rel(path: str) -> str:
@@ -2070,24 +2116,54 @@ def test_trusted_floor(keys: Keys, base: Generation, forward: Generation, rollba
 def test_signature_cache(keys: Keys) -> None:
     message = RELEASE_DOMAIN + b"cache probe"
     signature = keys.sign(keys.release, RELEASE_NS, message)
-    assert keys.verify(False, message, signature)
-    with mock.patch(__name__ + ".run", wraps=run) as spy:
-        for rollback in (False, True):
-            for _ in range(2):
-                assert not keys.verify(rollback, message + b"tampered", signature)
+    release_key = signer_key_material(keys.release_signers, RELEASE_PRINCIPAL, RELEASE_NS)
+    rollback_key = signer_key_material(keys.rollback_signers, ROLLBACK_PRINCIPAL, ROLLBACK_NS)
+    assert release_key != rollback_key
+    assert keys.verify(False, message, signature, release_key)
+    rollback_message_bytes = ROLLBACK_DOMAIN + b"cache probe"
+    rollback_signature = keys.sign(keys.rollback, ROLLBACK_NS, rollback_message_bytes)
+    with mock.patch.object(VERIFIER, "ssh_verify", wraps=VERIFIER.ssh_verify) as spy:
+        for _ in range(2):
+            assert not keys.verify(False, message + b"tampered", signature, release_key)
+            assert not keys.verify(True, rollback_message_bytes + b"tampered", rollback_signature, rollback_key)
         assert spy.call_count == 4
-        assert all(call.args[0][:3] == ["ssh-keygen", "-Y", "verify"] for call in spy.call_args_list)
+        assert not keys.verify(True, message, signature, rollback_key)
+        assert not keys.verify(False, rollback_message_bytes, rollback_signature, release_key)
+        assert spy.call_count == 4
     original = keys.release_signers.read_bytes()
+    rollback_bytes = keys.rollback_signers.read_bytes()
     try:
-        keys.release_signers.write_bytes(keys.rollback_signers.read_bytes())
-        with mock.patch(__name__ + ".run", wraps=run) as spy:
-            assert not keys.verify(False, message, signature)
-            assert not keys.verify(False, message, signature)
-            assert spy.call_count == 2
+        keys.release_signers.write_bytes(rollback_bytes)
+        with mock.patch.object(VERIFIER, "ssh_verify", wraps=VERIFIER.ssh_verify) as spy:
+            expect_reject("release role repinned to rollback signer", "signers file", functools.partial(
+                keys.verify, False, message, signature, release_key))
+            expect_reject("release role repinned to rollback signer, unpinned", "signers file",
+                          functools.partial(keys.verify, False, message, signature))
+            assert spy.call_count == 0
+        keys.release_signers.write_bytes(original + rollback_bytes)
+        expect_reject("two-line signers file", "signers file", functools.partial(
+            keys.verify, False, message, signature, release_key))
+        keys.release_signers.write_bytes(
+            original.replace(RELEASE_NS.encode(), ROLLBACK_NS.encode()))
+        expect_reject("release signer with rollback namespace", "signers file", functools.partial(
+            keys.verify, False, message, signature, release_key))
+        other_dir = keys.directory / "other-release"
+        other_dir.mkdir()
+        other_release = Keys(other_dir)
+        keys.release_signers.write_bytes(other_release.release_signers.read_bytes())
+        expect_reject("well-formed different release key", "signers changed", functools.partial(
+            keys.verify, False, message, signature, release_key))
+        assert not keys.verify(False, message, signature)
     finally:
         keys.release_signers.write_bytes(original)
-    assert keys.verify(False, message, signature)
-    print("signature cache: repeated failed release/rollback checks execute ssh-keygen; signer changes invalidate hits")
+    assert signer_key_material(keys.release_signers, RELEASE_PRINCIPAL, RELEASE_NS) == release_key
+    assert keys.verify(False, message, signature, release_key)
+    keys.verified.clear()
+    with mock.patch.object(VERIFIER, "ssh_verify", wraps=VERIFIER.ssh_verify) as spy:
+        assert keys.verify(False, message, signature, release_key)
+        assert keys.verify(False, message, signature, release_key)
+        assert spy.call_count == 1
+    print("signature cache: one ssh-keygen run per distinct verified triple, repeated checks and hits served from cache; signer swaps and extra lines invalidate pins")
 
 
 def test_selector_without_journal(keys: Keys, base: Generation, forward: Generation) -> None:

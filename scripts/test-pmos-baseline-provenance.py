@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
+import base64
 import dataclasses
 import functools
 import hashlib
 import importlib.util
 import itertools
 import json
+import os
 import pathlib
 import re
 import shutil
@@ -12,6 +14,7 @@ import subprocess
 import tempfile
 from collections.abc import Callable
 from typing import Any
+from unittest import mock
 
 HERE = pathlib.Path(__file__).resolve().parent
 
@@ -79,6 +82,16 @@ def sha256(data: bytes) -> str:
 def load_builder() -> Any:
     spec = importlib.util.spec_from_file_location(
         "persistent_builder", HERE / "build-init-boot-persistent-root.py")
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@functools.cache
+def load_verifier() -> Any:
+    spec = importlib.util.spec_from_file_location(
+        "verify_root_generation_bundle", HERE / "verify-root-generation-bundle.py")
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -237,13 +250,33 @@ def ssh_sign(keys: Keys, key: pathlib.Path, namespace: str, message: bytes) -> b
     return pathlib.Path(str(target) + ".sig").read_bytes()
 
 
-def ssh_verify(keys: Keys, signers: pathlib.Path, principal: str, namespace: str,
-               message: bytes, signature: bytes) -> bool:
-    sig = keys.work / f"signature{next(counter)}"
-    sig.write_bytes(signature)
-    done = run(["ssh-keygen", "-Y", "verify", "-f", str(signers), "-I", principal,
-                "-n", namespace, "-s", str(sig)], message)
-    return done.returncode == 0
+def pinned_verify(reason: str, signers: pathlib.Path, principal: str, namespace: str,
+                  message: bytes, signature: bytes, key: bytes) -> None:
+    verifier = load_verifier()
+    try:
+        accepted = verifier.ssh_verify(signers, principal, namespace, message, signature, key)
+    except verifier.Reject as exc:
+        raise Reject(f"{reason}: {exc}") from None
+    if not accepted:
+        raise Reject(reason)
+
+
+def pin_signers(keys: Keys) -> tuple[bytes, bytes]:
+    verifier = load_verifier()
+    if (RELEASE_PRINCIPAL, RELEASE_NS, ROLLBACK_PRINCIPAL, ROLLBACK_NS) != (
+        verifier.RELEASE_PRINCIPAL, verifier.RELEASE_NS, verifier.ROLLBACK_PRINCIPAL, verifier.ROLLBACK_NS
+    ):
+        raise Reject("signer policy mismatch")
+    try:
+        if keys.release_signers.resolve() == keys.rollback_signers.resolve():
+            raise Reject("signer policy: keys not distinct")
+        release_key = verifier.load_signers(keys.release_signers, RELEASE_PRINCIPAL, RELEASE_NS)[1]
+        rollback_key = verifier.load_signers(keys.rollback_signers, ROLLBACK_PRINCIPAL, ROLLBACK_NS)[1]
+    except verifier.Reject as exc:
+        raise Reject(f"signer policy: {exc}") from None
+    if release_key == rollback_key:
+        raise Reject("signer policy: keys not distinct")
+    return release_key, rollback_key
 
 
 def release_message(manifest: bytes) -> bytes:
@@ -269,17 +302,17 @@ def make_generation(keys: Keys, sequence: int, operation: str, previous: str | N
     return Generation(manifest, release, rollback)
 
 
-def verify_release(keys: Keys, gen: Generation, reason: str) -> dict[str, Any]:
+def verify_release(keys: Keys, release_key: bytes, gen: Generation, reason: str) -> dict[str, Any]:
     parsed = parse_manifest(gen.manifest)
-    if not ssh_verify(keys, keys.release_signers, RELEASE_PRINCIPAL, RELEASE_NS,
-                      release_message(gen.manifest), gen.release_sig):
-        raise Reject(reason)
+    pinned_verify(reason, keys.release_signers, RELEASE_PRINCIPAL, RELEASE_NS,
+                  release_message(gen.manifest), gen.release_sig, release_key)
     return parsed
 
 
 def verify_generation(keys: Keys, gen: Generation, payloads: dict[str, bytes],
                       active: Generation | None, history: dict[str, Generation]) -> dict[str, Any]:
-    parsed = verify_release(keys, gen, "release signature")
+    release_key, rollback_key = pin_signers(keys)
+    parsed = verify_release(keys, release_key, gen, "release signature")
     operation = parsed["operation"]
     if operation == "baseline":
         if active is not None:
@@ -293,7 +326,7 @@ def verify_generation(keys: Keys, gen: Generation, payloads: dict[str, bytes],
     else:
         if active is None:
             raise Reject("transition without active generation")
-        active_parsed = verify_release(keys, active, "active release signature")
+        active_parsed = verify_release(keys, release_key, active, "active release signature")
         if parsed["previous"] != active.ident:
             raise Reject("predecessor")
         if parsed["sequence"] != active_parsed["sequence"] + 1:
@@ -308,7 +341,7 @@ def verify_generation(keys: Keys, gen: Generation, payloads: dict[str, bytes],
             source = history.get(restores)
             if source is None or source.ident != restores:
                 raise Reject("restored generation unknown")
-            source_parsed = verify_release(keys, source, "restored release signature")
+            source_parsed = verify_release(keys, release_key, source, "restored release signature")
             if source_parsed["sequence"] >= active_parsed["sequence"]:
                 raise Reject("restored generation not older")
             if parsed["files"] != source_parsed["files"]:
@@ -316,9 +349,8 @@ def verify_generation(keys: Keys, gen: Generation, payloads: dict[str, bytes],
             if gen.rollback_sig is None:
                 raise Reject("rollback signature missing")
             statement = rollback_message(active.ident, gen.ident, restores, parsed["sequence"])
-            if not ssh_verify(keys, keys.rollback_signers, ROLLBACK_PRINCIPAL, ROLLBACK_NS,
-                              statement, gen.rollback_sig):
-                raise Reject("rollback signature")
+            pinned_verify("rollback signature", keys.rollback_signers, ROLLBACK_PRINCIPAL, ROLLBACK_NS,
+                          statement, gen.rollback_sig, rollback_key)
     if set(payloads) != set(PATHS):
         raise Reject("payload set")
     for entry in parsed["files"]:
@@ -346,6 +378,195 @@ def flip(data: bytes, index: int) -> bytes:
     out = bytearray(data)
     out[index] ^= 1
     return bytes(out)
+
+
+def ssh_keygen_verify(keys: Keys, signers: pathlib.Path, principal: str, namespace: str,
+                      message: bytes, signature: bytes) -> bool:
+    sig = keys.work / f"signature{next(counter)}"
+    sig.write_bytes(signature)
+    done = run(["ssh-keygen", "-Y", "verify", "-f", str(signers), "-I", principal,
+                "-n", namespace, "-s", str(sig)], message)
+    return done.returncode == 0
+
+
+def pinned_load(signers: pathlib.Path, principal: str, namespace: str) -> bytes:
+    verifier = load_verifier()
+    try:
+        return bytes(verifier.load_signers(signers, principal, namespace)[1])
+    except verifier.Reject as exc:
+        raise Reject(str(exc)) from None
+
+
+def pinned_signature(signature: bytes, namespace: str | None = None) -> bytes:
+    verifier = load_verifier()
+    try:
+        return bytes(verifier.canonical_signature(signature, namespace))
+    except verifier.Reject as exc:
+        raise Reject(str(exc)) from None
+
+
+def role_line(principal: str, namespace: str, blob: str) -> str:
+    return f'{principal} namespaces="{namespace}" ssh-ed25519 {blob}\n'
+
+
+def rewrap(signature: bytes, width: int) -> bytes:
+    body = signature.split(b"\n")[1:-2]
+    data = b"".join(body)
+    lines = [data[i:i + width] for i in range(0, len(data), width)]
+    return b"-----BEGIN SSH SIGNATURE-----\n" + b"\n".join(lines) + b"\n-----END SSH SIGNATURE-----\n"
+
+
+def check_signer_policy(keys: Keys, verify: Callable[[Keys], Any],
+                        verify_baseline: Callable[[Keys], Any], verify_forward: Callable[[Keys], Any]) -> None:
+    good = keys.release_signers.read_text()
+    rollback_good = keys.rollback_signers.read_text()
+    release_blob = good.split()[-1]
+    rollback_blob = rollback_good.split()[-1]
+    assert release_blob != rollback_blob
+    assert verify(keys)["sequence"] == 2
+    roles = "signer policy: signers file"
+    for label, use, reason in (
+        ("both signer sets swapped",
+         dataclasses.replace(keys, release_signers=keys.rollback_signers,
+                             rollback_signers=keys.release_signers),
+         "signer policy: signers file"),
+        ("rollback signer set is release signer set",
+         dataclasses.replace(keys, rollback_signers=keys.release_signers),
+         "signer policy: keys not distinct"),
+        ("release signer set is rollback signer set",
+         dataclasses.replace(keys, release_signers=keys.rollback_signers),
+         "signer policy: keys not distinct"),
+    ):
+        expect_reject(label, reason, functools.partial(verify, use))
+    expect_reject("signer files sharing one path", "signer policy: keys not distinct", functools.partial(
+        verify, dataclasses.replace(keys, rollback_signers=keys.release_signers,
+                                    release_signers=keys.release_signers)))
+
+    same_rollback = keys.work / "rollback-with-release-key.signers"
+    same_rollback.write_text(role_line(ROLLBACK_PRINCIPAL, ROLLBACK_NS, release_blob))
+    for label, check in (("baseline", verify_baseline), ("forward", verify_forward), ("rollback", verify)):
+        expect_reject(label + " with identical underlying role keys", "signer policy: keys not distinct",
+                      functools.partial(check, dataclasses.replace(keys, rollback_signers=same_rollback)))
+    same_release = keys.work / "release-with-rollback-key.signers"
+    same_release.write_text(role_line(RELEASE_PRINCIPAL, RELEASE_NS, rollback_blob))
+    expect_reject("release role holds the rollback underlying key", "signer policy: keys not distinct",
+                  functools.partial(verify, dataclasses.replace(keys, release_signers=same_release)))
+
+    malformed = (
+        ("two key lines", good + good),
+        ("option name", good.replace("namespaces", "namespace", 1)),
+        ("key type", good.replace("ssh-ed25519", "ssh-rsa", 1)),
+        ("extra option", good.replace(" ssh-ed25519", ",cert-authority ssh-ed25519", 1)),
+        ("no trailing newline", good.rstrip("\n")),
+        ("trailing field", good.rstrip("\n") + " note\n"),
+        ("wrong principal", good.replace(RELEASE_PRINCIPAL, "fixture-other", 1)),
+        ("wrong namespace", good.replace(RELEASE_NS, ROLLBACK_NS, 1)),
+        ("short key blob", good.replace(release_blob, base64.b64encode(b"short").decode(), 1)),
+        ("non-base64 key blob", good.replace(release_blob, "!" * len(release_blob), 1)),
+        ("empty file", ""),
+        ("oversized file", good + "#" * 1024 + "\n"),
+    )
+    for label, text in malformed:
+        target = keys.work / f"malformed{next(counter)}.signers"
+        target.write_bytes(text.encode())
+        expect_reject("malformed signers: " + label, "signers file", functools.partial(
+            pinned_load, target, RELEASE_PRINCIPAL, RELEASE_NS))
+        expect_reject("generation under malformed signers: " + label, roles, functools.partial(
+            verify, dataclasses.replace(keys, release_signers=target)))
+
+    malformed_rollback = keys.work / "malformed-rollback.signers"
+    malformed_rollback.write_text(rollback_good.replace(ROLLBACK_NS, RELEASE_NS, 1))
+    for label, check in (("baseline", verify_baseline), ("forward", verify_forward), ("rollback", verify)):
+        expect_reject(label + " with wrong rollback signer namespace", roles,
+                      functools.partial(check, dataclasses.replace(keys, rollback_signers=malformed_rollback)))
+
+    link = keys.work / "release-link.signers"
+    link.symlink_to(keys.release_signers.name)
+    expect_reject("symlinked signers", "signers file", functools.partial(
+        pinned_load, link, RELEASE_PRINCIPAL, RELEASE_NS))
+    expect_reject("generation under symlinked release signers", roles,
+                  functools.partial(verify, dataclasses.replace(keys, release_signers=link)))
+    rollback_link = keys.work / "rollback-link.signers"
+    rollback_link.symlink_to(keys.rollback_signers.name)
+    expect_reject("generation under symlinked rollback signers", roles,
+                  functools.partial(verify, dataclasses.replace(keys, rollback_signers=rollback_link)))
+
+    hard = keys.work / "release-hard.signers"
+    os.link(keys.release_signers, hard)
+    expect_reject("hardlinked signers", "signers file", functools.partial(
+        pinned_load, hard, RELEASE_PRINCIPAL, RELEASE_NS))
+    expect_reject("generation under hardlinked release signers", roles,
+                  functools.partial(verify, dataclasses.replace(keys, release_signers=hard)))
+    expect_reject("generation under signers with a second hardlink", roles, functools.partial(verify, keys))
+    hard.unlink()
+    rollback_hard = keys.work / "rollback-hard.signers"
+    os.link(keys.rollback_signers, rollback_hard)
+    expect_reject("generation under hardlinked rollback signers", roles,
+                  functools.partial(verify, dataclasses.replace(keys, rollback_signers=rollback_hard)))
+    expect_reject("generation under rollback signers with a second hardlink", roles, functools.partial(verify, keys))
+    rollback_hard.unlink()
+
+    folder = keys.work / "release-dir.signers"
+    folder.mkdir()
+    expect_reject("signers path is a directory", "signers file", functools.partial(
+        pinned_load, folder, RELEASE_PRINCIPAL, RELEASE_NS))
+    expect_reject("generation under missing release signers", roles, functools.partial(
+        verify, dataclasses.replace(keys, release_signers=keys.work / "absent.signers")))
+    assert verify(keys)["sequence"] == 2
+    verifier = load_verifier()
+    original_verify = verifier.ssh_verify
+    for principal, signers, replacement in (
+        (RELEASE_PRINCIPAL, keys.release_signers, role_line(RELEASE_PRINCIPAL, RELEASE_NS, rollback_blob)),
+        (ROLLBACK_PRINCIPAL, keys.rollback_signers, role_line(ROLLBACK_PRINCIPAL, ROLLBACK_NS, release_blob)),
+    ):
+        original = signers.read_bytes()
+
+        def replace_before_verify(path: pathlib.Path, role: str, namespace: str, message: bytes,
+                                  signature: bytes, key: bytes | None = None, *, target: str = principal,
+                                  signer_path: pathlib.Path = signers, new_line: str = replacement) -> bool:
+            if role == target:
+                signer_path.write_text(new_line)
+            return bool(original_verify(path, role, namespace, message, signature, key))
+
+        try:
+            with mock.patch.object(verifier, "ssh_verify", side_effect=replace_before_verify):
+                expect_reject("generation signer changes after pin: " + principal, "signers changed",
+                              functools.partial(verify, keys))
+        finally:
+            signers.write_bytes(original)
+    assert verify(keys)["sequence"] == 2
+    print("ok: signer policy requires exact role, namespace, single-link regular files and distinct keys")
+
+
+
+def check_signatures(keys: Keys, rolled: bytes, statement: bytes, release_sig: bytes,
+                     release_text: bytes, verify: Callable[[bytes], Any]) -> None:
+    assert pinned_signature(rolled, ROLLBACK_NS) == rolled
+    assert pinned_signature(release_sig, RELEASE_NS) == release_sig
+    crlf = rolled.replace(b"\n", b"\r\n")
+    assert ssh_keygen_verify(keys, keys.rollback_signers, ROLLBACK_PRINCIPAL, ROLLBACK_NS, statement, crlf)
+    wrapped = rewrap(rolled, 64)
+    assert wrapped != rolled
+    assert ssh_keygen_verify(keys, keys.rollback_signers, ROLLBACK_PRINCIPAL, ROLLBACK_NS, statement, wrapped)
+    for label, signature in (("crlf armor", crlf), ("rewrapped at 64 columns", wrapped),
+                             ("trailing newline", rolled + b"\n"), ("trailing junk", rolled + b"junk\n"),
+                             ("leading junk", b"junk\n" + rolled), ("duplicated armor", rolled + rolled)):
+        expect_reject("canonical signature: " + label, "signature encoding", functools.partial(
+            pinned_signature, signature))
+        expect_reject("generation with signature: " + label, "signature encoding",
+                      functools.partial(verify, signature))
+    expect_reject("canonical signature: namespace mismatch", "signature namespace", functools.partial(
+        pinned_signature, rolled, RELEASE_NS))
+    expect_reject("canonical signature: truncated structure", "signature", functools.partial(
+        pinned_signature, rolled[:60] + b"\n-----END SSH SIGNATURE-----\n"))
+    expect_reject("pinned key differs from signers file", "signers changed", functools.partial(
+        pinned_verify, "rollback signature", keys.rollback_signers, ROLLBACK_PRINCIPAL, ROLLBACK_NS,
+        statement, rolled, pinned_load(keys.release_signers, RELEASE_PRINCIPAL, RELEASE_NS)))
+    assert not ssh_keygen_verify(keys, keys.release_signers, RELEASE_PRINCIPAL, ROLLBACK_NS,
+                                 release_text, release_sig)
+    assert not ssh_keygen_verify(keys, keys.release_signers, ROLLBACK_PRINCIPAL, RELEASE_NS,
+                                 release_text, release_sig)
+    print("ok: signatures must be canonical armor in the role namespace under the pinned key")
 
 
 def check_tools() -> None:
@@ -528,20 +749,22 @@ def main() -> None:
 
         swapped_all = dataclasses.replace(keys, release_signers=keys.rollback_signers,
                                           rollback_signers=keys.release_signers)
-        expect_reject("both signer sets swapped", "release signature",
+        expect_reject("both signer sets swapped", "signer policy",
                       lambda: check_roll(rollback, use=swapped_all))
         swapped_rollback = dataclasses.replace(keys, rollback_signers=keys.release_signers)
-        expect_reject("rollback signer set is release signer set", "rollback signature",
+        expect_reject("rollback signer set is release signer set", "signer policy",
                       lambda: check_roll(rollback, use=swapped_rollback))
         swapped_release = dataclasses.replace(keys, release_signers=keys.rollback_signers)
-        expect_reject("release signer set is rollback signer set", "release signature",
+        expect_reject("release signer set is rollback signer set", "signer policy",
                       lambda: check_roll(rollback, use=swapped_release))
-        assert not ssh_verify(keys, keys.release_signers, RELEASE_PRINCIPAL, ROLLBACK_NS,
-                              release_message(rollback.manifest), rollback.release_sig)
-        assert not ssh_verify(keys, keys.release_signers, ROLLBACK_PRINCIPAL, RELEASE_NS,
-                              release_message(rollback.manifest), rollback.release_sig)
-        print("rejected: wrong namespace and wrong principal at ssh-keygen level")
 
+        check_signer_policy(keys, lambda use: check_roll(rollback, use=use),
+                            lambda use: verify_generation(use, base, baseline, None, {}),
+                            lambda use: verify_generation(use, forward, large, base, history))
+        assert rollback.rollback_sig is not None
+        check_signatures(keys, rollback.rollback_sig, statement, rollback.release_sig,
+                         release_message(rollback.manifest),
+                         lambda sig: check_roll(roll(rollback_sig=sig)))
         expect_reject("modified manifest", "release signature",
                       lambda: check_roll(roll(manifest=rollback.manifest.replace(b'"sequence":2', b'"sequence":3'))))
         expect_reject("modified manifest byte", "manifest",
@@ -619,7 +842,7 @@ def main() -> None:
                           forward, release_sig=ssh_sign(keys, keys.rollback_key, RELEASE_NS,
                                                        release_message(forward.manifest))),
                           large, base, history))
-        expect_reject("forward under swapped signers", "release signature",
+        expect_reject("forward under swapped signers", "signer policy",
                       lambda: verify_generation(swapped_all, forward, large, base, history))
         expect_reject("forward with missing release signature", "release signature",
                       lambda: verify_generation(keys, dataclasses.replace(forward, release_sig=b""),

@@ -147,12 +147,26 @@ the entire operating system against an already privileged root user.
   digests are pinned by that initramfs. This is the design's trust anchor, not
   a key or verifier first obtained from userdata. Owner decision "Option A"
   (2026-11-05, #324 comment 6652407108) approves this two-key shape; private
-  halves stay offline. Still outstanding is the owner-supplied **public-key
-  values** (release + rollback) for the repo config, without which no
-  replacement pair can be built. Pin and verify the
-  verifier, hashing tools, static interpreter and updater the same way.
-  Key rotation or verifier replacement needs a separately reviewed carrier
-  cutover; userdata cannot authorize its own trust-root replacement.
+  halves stay offline outside the repository and must never be read, copied or
+  committed. The two role-specific Ed25519 owner public keys are now recorded
+  in `configs/persistent-root-trust-anchors.json` with their fingerprints
+  (release `SHA256:aiUM8xoA0XpncAyFhsf+mVp2h/MqO0ag9byKnaohBJ8`,
+  comment `omnipha-sm7635-release-20261105`; rollback
+  `SHA256:bhAnhbEInLjaSxPUHzjnXjZkGuN0SvA5VkCCVTLfpsA`,
+  comment `omnipha-sm7635-rollback-20261105`) and pinned in
+  `scripts/persistent_root_trust.py`. Its production check reads only that
+  fixed config, requires the exact role comments, and fails closed when a
+  slot, pin, file or key is absent, malformed, duplicated, swapped or not the
+  reviewed value. A throwaway key is not identifiable from its public bytes
+  and cannot pass that gate or become a shippable default. The host gate does
+  not build or verify an image; recording the public anchors is a prerequisite
+  for a future replacement pair, not the building of one. Pin and verify the
+  verifier, hashing tools, static interpreter and updater the same way. Key
+  rotation or verifier replacement needs a separately reviewed carrier cutover;
+  userdata cannot authorize its own trust-root replacement. The pins and
+  config live in the same reviewable commit, so after they are recorded the
+  gate relies on review of that recording commit, not on an independent
+  cryptographic property.
 - Before and after `switch_root`, security decisions must use verified
   RAM-side tools, not executables, interpreters or mutable runtime libraries
   loaded from userdata. Map and pin the complete executable and dependency
@@ -237,6 +251,29 @@ rollback sequences 1 through `SEQUENCE_MAX`, and rollback statements at 1 and
 verifier parser and rollback statement alike, as does the baseline-provenance
 fixture's parser and rollback statement. This unifies the earlier divergence
 where the model and the provenance fixture accepted any nonnegative integer.
+The model and the provenance fixture now also delegate signer-file loading and
+signature armor checks to the verifier's strict policy: one canonical
+single-link regular `ssh-ed25519` line per role with the exact role principal
+and namespace, distinct role key blobs pinned once per verification call and
+re-checked against the signer file within that call only (no pin persists
+across calls or boots), and canonical armor in the expected namespace. They
+differ from the verifier in rules not about the anchors themselves (full-tuple
+reissue, baseline pinning, the provenance fixture's denylist coverage), which
+still need the owner decision above. All three sign their chains with per-run
+throwaway keys. Owner anchors are consumed only by
+`persistent_root_trust.load_owner_anchors` and the verifier's
+`verify_owner_bootstrap_baseline` / `verify_owner_chain` entry points. Those
+entry points verify the release or rollback signature against the anchors from
+`load_owner_anchors` and, separately and independently, require the baseline
+payloads to equal the hardcoded `BASELINE_DIGESTS` and `BASELINE_SIZES`. The
+baseline manifest ID stays caller-supplied and is not pinned anywhere: there is
+no recorded binding between one owner key and one baseline. No owner-signed
+bundle exists — private keys are offline — so the only positive owner-path
+test runs against an explicitly labeled fake loader with throwaway keys, and a
+valid throwaway-signed chain is refused by the genuine owner entry points.
+Owner keys are verified only against the hardcoded fixture principal and
+namespace strings; adopting real identities is an open design point of the
+separately reviewed cutover, not a settled property of the recorded keys.
 The acceptance above is parser and statement acceptance only; it is not a
 full signed-chain verification at the boundary. A successor to `SEQUENCE_MAX`
 cannot exist: it would need sequence `SEQUENCE_MAX + 1`, which the parser
@@ -441,10 +478,11 @@ device, USB, flash or partition access):
 - `scripts/test-pmos-journal-fsck.sh` (synthetic loop images) checks a strict
   offline `dumpe2fs` allowlist and a clean `e2fsck -fn` transcript; it is not
   a production filesystem safety proof or the live `sda13` measurement.
-- `scripts/test-pmos-baseline-provenance.py` (synthetic throwaway keys)
-  derives the three baseline payloads and checks the contract; it provides no
-  authorized device baseline signature, reviewed schema implementation,
-  updater or pair.
+-   `scripts/test-pmos-baseline-provenance.py` (synthetic throwaway keys)
+  derives the three baseline payloads and checks the contract except the
+  altered-radio denylist, which its parser does not enforce (`ALTERED_RADIO`
+  is only asserted against the derived bytes). The model and the verifier do
+  refuse that digest inside their parsers.
 
 The first physical measurement is a separately authorized,
 coordinator-run baseline cutover boot, not part of this proposal. Preflight
@@ -481,10 +519,12 @@ synthetic journal-fsck fixture above does not replace that measurement.
 ## Next single variable
 
 Read-only measurement of the **installed** pair, before any replacement exists.
-Every acceptance fact of #324 is still unmeasured on the device, and the
-replacement pair is blocked on an owner key decision plus a bootstrap that does
-not exist yet
-([pair-deliverable proofs](../../records/2026-11-04-190612-pair-deliverable-host-proofs.md)).
+Every acceptance fact of #324 is still unmeasured on the device. The exact
+owner public-key values are now recorded in
+`configs/persistent-root-trust-anchors.json`, which closes the missing-keys
+blocker named by the
+[pair-deliverable proofs](../../records/2026-11-04-190612-pair-deliverable-host-proofs.md);
+the replacement pair is still blocked on a bootstrap that does not exist yet.
 Spending further boots and design rounds on a pair that cannot be built does
 not move the check. The next measurement, coordinator-owned and separately
 authorized, answers with the pair already installed and unchanged:
@@ -639,9 +679,10 @@ before OpenRC starts, skips links whose `readlink` fails, passes if nothing is l
 `/dev/loop*`, `/dev/block/sda13` and `/tmp/pmos-pid1.*` targets, and has not
 been shown to fail under an injected post-cutover leak; only the pre-cutover
 fd-9 assertion was negative-tested. That evidence is fixture-authored, so it
-is not a device ACK. Still open: the deployable bootstrap reconciled with the model. No image is
-built and no pair is flashed until the owner public-key values for the two
-trust-anchor keys.
+is not a device ACK. Still open: the deployable bootstrap reconciled with the
+model. No image is built and no pair is flashed until the bootstrap exists and
+is independently reviewed; the owner public-key values for the two
+trust-anchor keys are now recorded, closing that blocker.
 
 If that measurement shows the final root stays read-only, or that an unpinned
 file does not survive the reboot, then persistent PC-style operation is not a

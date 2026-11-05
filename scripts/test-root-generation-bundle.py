@@ -820,6 +820,324 @@ def run_tests() -> None:
                 raise AssertionError(f"mutation at {index} accepted")
         del chain_input
 
+        release_raw = base64.b64decode(release.public)[len(verifier.ED25519_PREFIX):]
+        rollback_raw = base64.b64decode(rollback.public)[len(verifier.ED25519_PREFIX):]
+        other_raw = base64.b64decode(other.public)[len(verifier.ED25519_PREFIX):]
+        assert len(release_raw) == len(rollback_raw) == len(other_raw) == 32
+        assert verifier.ED25519_PREFIX + release_raw == base64.b64decode(release.public)
+
+        anchor_raw = verifier._verify_chain_with_anchors([b_blob], release_raw, rollback_raw, b_id)
+        assert len(anchor_raw) == 1 and anchor_raw[0].ident == b_id
+        assert anchor_raw[0].payloads == baseline_payloads and not anchor_raw[0].rollback
+        anchor_forward = verifier._verify_chain_with_anchors(
+            [b_blob, f1_blob], release_raw, rollback_raw, b_id)
+        assert [item.ident for item in anchor_forward] == [b_id, f1_id]
+        anchor_rollback = verifier._verify_chain_with_anchors(
+            [b_blob, f1_blob, f2_blob, rb1_blob], release_raw, rollback_raw, b_id)
+        assert anchor_rollback[-1].ident == rb1_id and anchor_rollback[-1].rollback
+        assert anchor_rollback[-1].payloads == baseline_payloads
+
+        def synthetic_bundle(signer: Keys, payloads: tuple[bytes, bytes, bytes]) -> bytes:
+            raw_manifest = build_manifest(0, "baseline", None, None, payloads)
+            raw_sig = signer.sign(verifier.RELEASE_NS, verifier.RELEASE_DOMAIN + raw_manifest)
+            return verifier.encode_bundle(raw_manifest, raw_sig, payloads)
+
+        def synthetic_rollback_bundle(rb_signer: Keys) -> bytes:
+            manifest, release_sig, payloads, _ = verifier.parse_bundle(rb1_blob)
+            stmt = verifier.rollback_message(f2_id, rb1_id, b_id, 3)
+            return verifier.encode_bundle(manifest, release_sig, payloads,
+                                          rb_signer.sign(verifier.ROLLBACK_NS, stmt))
+
+        for label, arg in (("str", "A" * 32), ("short", b"A" * 31), ("long", b"A" * 33)):
+            expect_refusal(f"anchor release key {label}", "anchor key type or length",
+                           verifier._verify_chain_with_anchors, [b_blob], arg, rollback_raw, b_id)
+            expect_refusal(f"anchor rollback key {label}", "anchor key type or length",
+                           verifier._verify_chain_with_anchors, [b_blob], release_raw, arg, b_id)
+        expect_refusal("anchor duplicate keys", "keys not distinct",
+                       verifier._verify_chain_with_anchors, [b_blob], release_raw, release_raw, b_id)
+        expect_refusal("anchor wrong release key", "release signature",
+                       verifier._verify_chain_with_anchors, [b_blob], other_raw, rollback_raw, b_id)
+        expect_refusal("anchor wrong rollback key", "rollback signature",
+                       verifier._verify_chain_with_anchors,
+                       [b_blob, f1_blob, f2_blob, synthetic_rollback_bundle(other)],
+                       release_raw, rollback_raw, b_id)
+        expect_refusal("anchor swapped anchors reject correct baseline", "release signature",
+                       verifier._verify_chain_with_anchors, [b_blob], rollback_raw, release_raw, b_id)
+        expect_refusal("anchor release statement by rollback key", "release signature",
+                       verifier._verify_chain_with_anchors,
+                       [synthetic_bundle(rollback, baseline_payloads)], release_raw, rollback_raw, b_id)
+        expect_refusal("anchor swapped anchors reject correct rollback", "release signature",
+                       verifier._verify_chain_with_anchors,
+                       [b_blob, f1_blob, f2_blob, rb1_blob], rollback_raw, release_raw, b_id)
+        expect_refusal("anchor rollback statement by release key", "rollback signature",
+                       verifier._verify_chain_with_anchors,
+                       [b_blob, f1_blob, f2_blob, synthetic_rollback_bundle(release)],
+                       release_raw, rollback_raw, b_id)
+        expect_refusal("anchor baseline wrong pin", "baseline pin",
+                       verifier._verify_chain_with_anchors, [b_blob], release_raw, rollback_raw, "0" * 64)
+
+        rel_line = (f'{verifier.RELEASE_PRINCIPAL} namespaces="{verifier.RELEASE_NS}" '
+                    f"ssh-ed25519 {base64.b64encode(verifier.ED25519_PREFIX + release_raw).decode('ascii')}\n"
+                    ).encode("ascii")
+        rb_line = (f'{verifier.ROLLBACK_PRINCIPAL} namespaces="{verifier.ROLLBACK_NS}" '
+                   f"ssh-ed25519 {base64.b64encode(verifier.ED25519_PREFIX + rollback_raw).decode('ascii')}\n"
+                   ).encode("ascii")
+        anchor_rel = work / "anchor_release.signers"
+        anchor_rb = work / "anchor_rollback.signers"
+        verifier.write_private(anchor_rel, rel_line)
+        verifier.write_private(anchor_rb, rb_line)
+        assert verifier.load_signers(anchor_rel, verifier.RELEASE_PRINCIPAL, verifier.RELEASE_NS) == (
+            rel_line, verifier.ED25519_PREFIX + release_raw)
+        assert verifier.load_signers(anchor_rb, verifier.ROLLBACK_PRINCIPAL, verifier.ROLLBACK_NS) == (
+            rb_line, verifier.ED25519_PREFIX + rollback_raw)
+        expect_refusal("anchor release line rejected on rollback identity", "signers file",
+                       verifier.load_signers, anchor_rel, verifier.ROLLBACK_PRINCIPAL, verifier.ROLLBACK_NS)
+        expect_refusal("anchor rollback line rejected on release namespace", "signers file",
+                       verifier.load_signers, anchor_rb, verifier.RELEASE_PRINCIPAL, verifier.RELEASE_NS)
+
+        trust_spec = importlib.util.spec_from_file_location(
+            "persistent_root_trust_real", HERE / "persistent_root_trust.py")
+        assert trust_spec is not None and trust_spec.loader is not None
+        trust_real = importlib.util.module_from_spec(trust_spec)
+        trust_spec.loader.exec_module(trust_real)
+        recorded = trust_real.load_owner_anchors()
+        assert tuple(recorded) == ("release", "rollback")
+        recorded_release, recorded_rollback = recorded["release"], recorded["rollback"]
+        assert len(recorded_release) == len(recorded_rollback) == 32
+        assert recorded_release != recorded_rollback
+        assert verifier.digest(recorded_release) == trust_real.OWNER_ANCHOR_SHA256["release"]
+        assert verifier.digest(recorded_rollback) == trust_real.OWNER_ANCHOR_SHA256["rollback"]
+        for slot, raw, want_digest, want_fingerprint in (
+            ("release", recorded_release,
+             "0becb7e18ea429eeb06bfe9fcdb84e7873f4cc9da18e1f625fbaaad92fdc6e55",
+             "SHA256:aiUM8xoA0XpncAyFhsf+mVp2h/MqO0ag9byKnaohBJ8"),
+            ("rollback", recorded_rollback,
+             "9bae1576be7bdf20f14c75b735998e5a574736429186b7d7ec4f91a11e25cf9b",
+             "SHA256:bhAnhbEInLjaSxPUHzjnXjZkGuN0SvA5VkCCVTLfpsA"),
+        ):
+            assert verifier.digest(raw) == want_digest, slot
+            got_fingerprint = "SHA256:" + base64.b64encode(
+                hashlib.sha256(verifier.ED25519_PREFIX + raw).digest()).decode("ascii").rstrip("=")
+            assert got_fingerprint == want_fingerprint, slot
+        repo_lines = trust_real.parse_config(trust_real.read_fixed_config())
+        owner_comments = getattr(trust_real, "OWNER_ANCHOR_COMMENTS", {})
+        recorded_lines = {
+            slot: (b"ssh-ed25519 " + base64.b64encode(verifier.ED25519_PREFIX + raw) + b"\n")
+            for slot, raw in (("release", recorded_release), ("rollback", recorded_rollback))
+        }
+        assert repo_lines == recorded_lines
+        assert owner_comments == {
+            "release": b"omnipha-sm7635-release-20261105",
+            "rollback": b"omnipha-sm7635-rollback-20261105",
+        }
+        repo_text = trust_real.read_fixed_config().decode("ascii")
+        assert all(owner_comments[slot].decode("ascii") in repo_text for slot in ("release", "rollback"))
+        real_module = verifier._load_trust_module()
+        assert real_module is not None and callable(real_module.load_owner_anchors)
+        assert issubclass(real_module.Reject, Exception)
+        original_loader = verifier._load_trust_module
+        print("owner anchors: two distinct recorded public Ed25519 values bind release and rollback; "
+              "private halves are never read by this self-test")
+
+        expect_refusal("owner baseline refuses oversized blob", "bundle size",
+                       verifier.verify_owner_bootstrap_baseline, b"x" * (verifier.BUNDLE_MAX + 1), b_id)
+        expect_refusal("owner baseline refuses malformed pin", "baseline pin",
+                       verifier.verify_owner_bootstrap_baseline, b_blob, "z" * 63)
+        expect_refusal("owner chain refuses malformed pin", "baseline pin",
+                       verifier.verify_owner_chain, [b_blob], "z" * 63)
+        expect_refusal("owner chain refuses non-list chain", "chain input",
+                       verifier.verify_owner_chain, b_blob, b_id)
+        expect_refusal("owner chain refuses empty chain", "chain input",
+                       verifier.verify_owner_chain, [], b_id)
+        expect_refusal("owner chain refuses over-long chain", "chain input",
+                       verifier.verify_owner_chain, [b_blob] * (verifier.CHAIN_MAX + 1), b_id)
+        expect_refusal("owner baseline refuses throwaway valid signed baseline", "release signature",
+                       verifier.verify_owner_bootstrap_baseline, b_blob, b_id)
+        expect_refusal("owner chain refuses throwaway valid signed baseline", "release signature",
+                       verifier.verify_owner_chain, [b_blob], b_id)
+        expect_refusal("owner chain refuses throwaway signed baseline/forward/rollback chain",
+                       "release signature", verifier.verify_owner_chain,
+                       [b_blob, f1_blob, f2_blob, rb1_blob], b_id)
+        expect_refusal("owner baseline refuses throwaway baseline after rollback-key release swap",
+                       "release signature", verifier.verify_owner_bootstrap_baseline,
+                       synthetic_bundle(rollback, baseline_payloads), b_id)
+
+        expect_refusal("anchors helper refuses non-list chain", "chain input",
+                       verifier._verify_chain_with_anchors, b_blob,
+                       recorded_release, recorded_rollback, b_id)
+        expect_refusal("anchors helper refuses oversized member", "bundle size",
+                       verifier._verify_chain_with_anchors, [b"x" * (verifier.BUNDLE_MAX + 1)],
+                       recorded_release, recorded_rollback, b_id)
+        expect_refusal("anchors helper refuses over-long list", "chain input",
+                       verifier._verify_chain_with_anchors, [b_blob] * (verifier.CHAIN_MAX + 1),
+                       recorded_release, recorded_rollback, b_id)
+        expect_refusal("anchors helper refuses malformed pin", "baseline pin",
+                       verifier._verify_chain_with_anchors, [b_blob],
+                       recorded_release, recorded_rollback, "z" * 63)
+        expect_refusal("anchors helper refuses role-swapped recorded anchors", "release signature",
+                       verifier._verify_chain_with_anchors, [b_blob],
+                       recorded_rollback, recorded_release, b_id)
+        expect_refusal("anchors helper refuses duplicated recorded anchor", "keys not distinct",
+                       verifier._verify_chain_with_anchors, [b_blob],
+                       recorded_release, recorded_release, b_id)
+
+        synthetic_lines = {slot: b"ssh-ed25519 " + base64.b64encode(
+            verifier.ED25519_PREFIX + raw) + b"\n"
+            for slot, raw in (("release", release_raw), ("rollback", rollback_raw))}
+        for label, lines, fragment in (
+            ("owner roles swapped",
+             {"release": recorded_lines["rollback"], "rollback": recorded_lines["release"]},
+             "not the owner-authorized value"),
+            ("owner role absent", {"release": recorded_lines["release"]},
+             "not both present"),
+            ("owner role malformed", {"release": b"not-a-key\n", "rollback": recorded_lines["rollback"]},
+             "not exactly one ssh-ed25519 key"),
+            ("owner role duplicated key",
+             {"release": recorded_lines["release"], "rollback": recorded_lines["release"]},
+             "not distinct"),
+            ("throwaway owner keys", synthetic_lines, "not the owner-authorized value"),
+        ):
+            expect_foreign_refusal(f"trust pins refuse {label}", fragment,
+                                   trust_real.Reject, trust_real.validate_with_pins,
+                                   lines, dict(trust_real.OWNER_ANCHOR_SHA256))
+
+        def trust_with_config(config_path: pathlib.Path) -> Any:
+            module = importlib.util.module_from_spec(trust_spec)
+            assert trust_spec.loader is not None
+            trust_spec.loader.exec_module(module)
+            module.CONFIG_PATH = config_path  # type: ignore[attr-defined]
+            return module
+
+        def commented_lines(raw_lines: dict[str, bytes]) -> dict[str, Any]:
+            result: dict[str, Any] = {}
+            for slot, line in raw_lines.items():
+                if line == b"null":
+                    result[slot] = None
+                    continue
+                comment = getattr(trust_real, "OWNER_ANCHOR_COMMENTS", {}).get(slot)
+                body = line.decode("ascii").rstrip("\n")
+                if comment is not None and body.count(" ") == 1:
+                    body = f"{body} {comment.decode('ascii')}"
+                result[slot] = body
+            return result
+
+        for label, lines, fragment in (
+            ("throwaway owner config", synthetic_lines, "not the owner-authorized value"),
+            ("owner roles swapped config",
+             {"release": b"ssh-ed25519 " + base64.b64encode(verifier.ED25519_PREFIX + recorded_rollback) + b"\n",
+              "rollback": b"ssh-ed25519 " + base64.b64encode(verifier.ED25519_PREFIX + recorded_release) + b"\n"},
+             "not the owner-authorized value"),
+            ("owner role absent config", {"release": synthetic_lines["release"]}, "schema is invalid"),
+            ("owner role null config", {"release": synthetic_lines["release"], "rollback": b"null"}, "absent"),
+            ("owner role malformed config",
+             {"release": synthetic_lines["release"][:-1] + b" wrong-comment\n",
+              "rollback": synthetic_lines["rollback"]},
+             "comment is not exact"),
+            ("owner role duplicated key config",
+             {"release": synthetic_lines["release"], "rollback": synthetic_lines["release"]},
+             "not distinct"),
+        ):
+            config_path = work / ("anchors-" + label.replace(" ", "-") + ".json")
+            config_path.write_text(json.dumps({
+                "schema": trust_real.SCHEMA,
+                "keys": commented_lines(lines),
+            }))
+            probe = trust_with_config(config_path)
+            expect_foreign_refusal(f"trust.load_owner_anchors refuses {label}", fragment,
+                                   probe.Reject, probe.load_owner_anchors)
+            loader_holder = verifier
+            saved_loader = loader_holder._load_trust_module  # type: ignore[attr-defined]
+            try:
+                loader_holder._load_trust_module = (lambda bound=probe: bound)  # type: ignore[attr-defined]
+                expect_refusal(f"owner API refuses {label} via loader", "owner trust refused",
+                               verifier.verify_owner_bootstrap_baseline, b_blob, b_id)
+            finally:
+                loader_holder._load_trust_module = saved_loader  # type: ignore[attr-defined]
+        assert verifier._load_trust_module is original_loader
+        absent = trust_with_config(work / "absent-anchors.json")
+        expect_foreign_refusal("trust.load_owner_anchors refuses absent config",
+                               "cannot be opened safely", absent.Reject, absent.load_owner_anchors)
+
+        print("SYNTHETIC OWNER POSITIVE MODEL: verifying baseline and transitions under an explicit "
+              "fake loader using throwaway keys; labeled synthetic-only and isolated from production paths")
+        calls: list[tuple[Any, ...]] = []
+
+        class FakeTrust:
+            class Reject(Exception):
+                pass
+
+            @staticmethod
+            def load_owner_anchors(*args: Any, **kwargs: Any) -> dict[str, bytes]:
+                calls.append((args, tuple(kwargs)))
+                return {"release": release_raw, "rollback": rollback_raw}
+
+        loader_holder = verifier
+        original_loader = loader_holder._load_trust_module  # type: ignore[attr-defined]
+        loader_holder._load_trust_module = lambda: FakeTrust()  # type: ignore[attr-defined]
+        try:
+            wired = verifier.verify_owner_bootstrap_baseline(b_blob, b_id)
+            assert wired.ident == b_id and wired.payloads == baseline_payloads and not wired.rollback
+            assert calls == [((), ())]
+            wired_chain = verifier.verify_owner_chain([b_blob, f1_blob], b_id)
+            assert [item.ident for item in wired_chain] == [b_id, f1_id]
+            assert calls == [((), ())] * 2
+            wired_rollback = verifier.verify_owner_chain([b_blob, f1_blob, f2_blob, rb1_blob], b_id)
+            assert wired_rollback[-1].ident == rb1_id and wired_rollback[-1].rollback
+            assert calls == [((), ())] * 3
+            expect_refusal("wired owner baseline refuses doubled blob", "trailing bytes",
+                           verifier.verify_owner_bootstrap_baseline, b_blob + b_blob, b_id)
+            expect_refusal("wired owner baseline refuses forward bundle", "baseline context",
+                           verifier.verify_owner_bootstrap_baseline, f1_blob, b_id)
+            calls.clear()
+            FakeTrust.load_owner_anchors = staticmethod(  # type: ignore[assignment]
+                lambda: {"release": release_raw, "rollback": release_raw})
+            expect_refusal("wired owner duplicate anchors", "keys not distinct",
+                           verifier.verify_owner_bootstrap_baseline, b_blob, b_id)
+            FakeTrust.load_owner_anchors = staticmethod(  # type: ignore[assignment]
+                lambda: {"rollback": rollback_raw, "release": release_raw})
+            expect_refusal("wired owner reordered slots", "anchor shape",
+                           verifier.verify_owner_bootstrap_baseline, b_blob, b_id)
+            FakeTrust.load_owner_anchors = staticmethod(  # type: ignore[assignment]
+                lambda: {"release": rollback_raw, "rollback": release_raw})
+            expect_refusal("wired owner role-swapped anchors", "release signature",
+                           verifier.verify_owner_bootstrap_baseline, b_blob, b_id)
+            FakeTrust.load_owner_anchors = staticmethod(  # type: ignore[assignment]
+                lambda: {"release": release_raw})
+            expect_refusal("wired owner missing slot", "anchor shape",
+                           verifier.verify_owner_bootstrap_baseline, b_blob, b_id)
+
+            def loader_rejects() -> dict[str, bytes]:
+                raise FakeTrust.Reject("synthetic loader refusal")
+
+            FakeTrust.load_owner_anchors = staticmethod(loader_rejects)  # type: ignore[assignment]
+            expect_refusal("wired owner loader reject mapped", "owner trust refused: synthetic loader refusal",
+                           verifier.verify_owner_bootstrap_baseline, b_blob, b_id)
+
+            def loader_breaks() -> dict[str, bytes]:
+                raise OSError("synthetic")
+
+            FakeTrust.load_owner_anchors = staticmethod(loader_breaks)  # type: ignore[assignment]
+            expect_refusal("wired owner loader failure mapped", "owner trust unavailable",
+                           verifier.verify_owner_bootstrap_baseline, b_blob, b_id)
+            FakeTrust.load_owner_anchors = staticmethod(  # type: ignore[assignment]
+                lambda: {"release": release_raw, "rollback": rollback_raw})
+            expect_refusal("wired owner baseline rejects foreign signature", "release signature",
+                           verifier.verify_owner_bootstrap_baseline,
+                           synthetic_bundle(other, baseline_payloads), b_id)
+            expect_refusal("wired owner chain rejects foreign signature", "release signature",
+                           verifier.verify_owner_chain, [synthetic_bundle(other, baseline_payloads)], b_id)
+            expect_refusal("wired owner baseline rejects wrong pin", "baseline pin",
+                           verifier.verify_owner_bootstrap_baseline, b_blob, "0" * 64)
+        finally:
+            loader_holder._load_trust_module = original_loader  # type: ignore[attr-defined]
+            calls.clear()
+        assert verifier._load_trust_module is original_loader
+
+        expect_refusal("production owner baseline refuses throwaway baseline after restore",
+                       "release signature", verifier.verify_owner_bootstrap_baseline, b_blob, b_id)
+        expect_refusal("production owner chain refuses throwaway chain after restore",
+                       "release signature", verifier.verify_owner_chain, [b_blob], b_id)
+
         print("chain fixture: pinned baseline 9d62f0e5, two forwards, two ancestor rollbacks")
         print("sshsig: model and this verifier accept each other's real ssh-keygen Ed25519 signatures; "
               "interop is ssh-keygen armor only, not arbitrary OpenSSH signature dialects")
@@ -827,7 +1145,11 @@ def run_tests() -> None:
         print("keys: distinct files sharing one underlying key refused; rollback key cannot release")
         print("difference: this verifier refuses a forward that reissues earlier bytes; the model accepts it")
         print("rollback: exact older ancestor only; predecessor and unknown source refused")
-        print("LIMITATION: host-only self-test; no image, userdata, device, durability, or hardware anti-replay")
+        print("LIMITATIONS: host-only self-test; no image, userdata, device, durability, or hardware anti-replay")
+        print("LIMITATIONS: positive owner verification cannot be fabricated; no signed owner bundle exists "
+              "and private keys are inaccessible. verify_owner_bootstrap_baseline only checks anchors and pinned "
+              "baseline payloads/signatures and does NOT claim the actual bootstrap or boot image is verified. "
+              "baseline_id is caller-supplied and not an image pin.")
 
 
 if __name__ == "__main__":

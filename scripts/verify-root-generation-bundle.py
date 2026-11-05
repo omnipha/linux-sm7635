@@ -3,6 +3,7 @@ import base64
 import binascii
 import dataclasses
 import hashlib
+import importlib.util
 import json
 import os
 import pathlib
@@ -170,7 +171,7 @@ def parse_bundle(blob: bytes) -> tuple[bytes, bytes, Payloads, bytes | None]:
 
 def load_signers(signers: pathlib.Path, principal: str, namespace: str) -> tuple[bytes, bytes]:
     try:
-        fd = os.open(signers, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        fd = os.open(signers, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
         with os.fdopen(fd, "rb") as handle:
             info = os.fstat(handle.fileno())
             require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1 and 0 < info.st_size <= SIGNERS_MAX,
@@ -256,8 +257,11 @@ def ssh_verify(signers: pathlib.Path, principal: str, namespace: str, message: b
     with tempfile.TemporaryDirectory(prefix="root-generation-verify-") as scratch:
         pinned = pathlib.Path(scratch) / "signers"
         target = pathlib.Path(scratch) / "signature"
-        write_private(pinned, raw)
-        write_private(target, signature)
+        try:
+            write_private(pinned, raw)
+            write_private(target, signature)
+        except OSError:
+            refuse("ssh-keygen staging failed")
         try:
             done = subprocess.run(["ssh-keygen", "-Y", "verify", "-f", str(pinned), "-I", principal,
                                    "-n", namespace, "-s", str(target)], input=message,
@@ -330,6 +334,96 @@ def verify_chain(blobs: list[bytes], release_signers: pathlib.Path, rollback_sig
                                rb_key), "rollback signature")
         chain.append(VerifiedBundle(manifest, parsed, ident, payloads, parsed["operation"] == "rollback"))
     return chain
+
+
+def _verify_chain_with_anchors(blobs: list[bytes], release_pub: bytes, rollback_pub: bytes,
+                               baseline_id: str) -> list[VerifiedBundle]:
+    require(isinstance(blobs, list) and 0 < len(blobs) <= CHAIN_MAX, "chain input")
+    require(all(isinstance(blob, bytes) and 0 < len(blob) <= BUNDLE_MAX for blob in blobs), "bundle size")
+    require(is_id(baseline_id), "baseline pin")
+    require(isinstance(release_pub, bytes) and len(release_pub) == 32, "anchor key type or length")
+    require(isinstance(rollback_pub, bytes) and len(rollback_pub) == 32, "anchor key type or length")
+    require(release_pub != rollback_pub, "keys not distinct")
+    rel_blob = ED25519_PREFIX + release_pub
+    rb_blob = ED25519_PREFIX + rollback_pub
+    lines = {
+        RELEASE_PRINCIPAL: (f"{RELEASE_PRINCIPAL} namespaces=\"{RELEASE_NS}\" ssh-ed25519 "
+                            f"{base64.b64encode(rel_blob).decode('ascii')}\n"),
+        ROLLBACK_PRINCIPAL: (f"{ROLLBACK_PRINCIPAL} namespaces=\"{ROLLBACK_NS}\" ssh-ed25519 "
+                             f"{base64.b64encode(rb_blob).decode('ascii')}\n"),
+    }
+    try:
+        with tempfile.TemporaryDirectory(prefix="root-generation-anchors-") as scratch:
+            work = pathlib.Path(scratch)
+            rel_path, rb_path = work / "release.signers", work / "rollback.signers"
+            write_private(rel_path, lines[RELEASE_PRINCIPAL].encode("ascii"))
+            write_private(rb_path, lines[ROLLBACK_PRINCIPAL].encode("ascii"))
+            return verify_chain(blobs, rel_path, rb_path, baseline_id)
+    except OSError:
+        refuse("anchor staging failed")
+
+
+def _load_trust_module() -> Any:
+    trust_path = pathlib.Path(__file__).resolve().parent / "persistent_root_trust.py"
+    require(trust_path.is_file(), "trust module missing")
+    spec = importlib.util.spec_from_file_location("persistent_root_trust", trust_path)
+    require(spec is not None and spec.loader is not None, "trust module spec")
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(mod)
+    except (OSError, ValueError, TypeError, KeyError, AttributeError, ImportError, SyntaxError,
+            RecursionError, MemoryError):
+        refuse("trust module unavailable")
+    return mod
+
+
+def _owner_anchors() -> tuple[bytes, bytes]:
+    mod = _load_trust_module()
+    reject = getattr(mod, "Reject", None)
+    loader = getattr(mod, "load_owner_anchors", None)
+    require(isinstance(reject, type) and issubclass(reject, Exception) and callable(loader),
+            "trust module shape")
+    assert isinstance(reject, type) and issubclass(reject, Exception) and callable(loader)
+    try:
+        anchors = loader()
+    except reject as exc:
+        refuse(f"owner trust refused: {exc}")
+    except (OSError, ValueError, TypeError, KeyError, AttributeError, ImportError, SyntaxError,
+            RecursionError, MemoryError):
+        refuse("owner trust unavailable")
+    require(isinstance(anchors, dict) and tuple(anchors) == ("release", "rollback"), "anchor shape")
+    return anchors["release"], anchors["rollback"]
+
+
+def verify_owner_bootstrap_baseline(bundle_blob: bytes, baseline_id: str) -> VerifiedBundle:
+    """Check one baseline bundle against the recorded owner anchors.
+
+    Validates the owner anchors through trust.load_owner_anchors, the owner release
+    signature, and the pinned baseline payload digests and sizes. It does NOT verify
+    any bootstrap, boot image, partition or device. baseline_id is a full manifest id
+    supplied by the caller and compared with the bundle's own manifest digest; it is
+    not an independently pinned image identity.
+    """
+    require(isinstance(bundle_blob, bytes) and 0 < len(bundle_blob) <= BUNDLE_MAX, "bundle size")
+    require(is_id(baseline_id), "baseline pin")
+    release_pub, rollback_pub = _owner_anchors()
+    chain = _verify_chain_with_anchors([bundle_blob], release_pub, rollback_pub, baseline_id)
+    require(len(chain) == 1, "baseline bundle count")
+    return chain[0]
+
+
+def verify_owner_chain(blobs: list[bytes], baseline_id: str) -> list[VerifiedBundle]:
+    """Check a bundle chain against the recorded owner anchors.
+
+    Signatures are checked against the anchors from trust.load_owner_anchors only. The
+    baseline_id is caller supplied and is not an independently pinned image identity.
+    Success does not mean any image, bootstrap or device state was verified.
+    """
+    require(isinstance(blobs, list) and 0 < len(blobs) <= CHAIN_MAX, "chain input")
+    require(is_id(baseline_id), "baseline pin")
+    release_pub, rollback_pub = _owner_anchors()
+    return _verify_chain_with_anchors(blobs, release_pub, rollback_pub, baseline_id)
 
 
 def main(argv: list[str]) -> int:
