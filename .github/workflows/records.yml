@@ -20,3 +20,5 @@ jobs:
         with:
           python-version: "3.12"
       - run: python3 scripts/records.py check . --base origin/main
+      - name: Persistent-root device checklist
+        run: python3 -B scripts/test-persistent-root-device-checklist.py
