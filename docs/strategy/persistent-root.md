@@ -186,8 +186,9 @@ array order, no whitespace, escapes, duplicate keys, unknown keys or alternate
 number spellings. The exact schema and test vectors are part of the future
 implementation review. It contains:
 
-- schema `omnipha-sm7635-root-generation-v1`, a nonnegative sequence number,
-  operation `baseline`, `forward` or `rollback`, and `previous`;
+- schema `omnipha-sm7635-root-generation-v1`, an integer sequence number with
+  `0 <= sequence <= 2**31 - 1`, operation `baseline`, `forward` or `rollback`,
+  and `previous`;
 - exactly the three absolute paths above, their exact byte sizes, lowercase
   SHA-256 digests, owner/group `0:0` and mode `0700`, in fixed order;
 - for a rollback, the ID of the retained generation whose **content** is to
@@ -224,10 +225,21 @@ experimental full-tuple reissue refusal only: a forward reusing one earlier
 payload, or trivially altered older bytes, is still accepted, and the logical
 model accepts full reissue. Hash comparison is not semantic downgrade
 prevention. That difference needs an owner decision before either rule is
-adopted. A second unreconciled difference: the verifier bounds `sequence` at
-2^31-1 (`SEQUENCE_MAX`), whereas the logical model accepts any nonnegative
-integer; a host probe showed both accept sequence 2^31-1 and only the verifier
-refuses 2^31.
+adopted. All three host prototypes now share one sequence bound: `sequence` is an
+integer with `0 <= sequence <= 2**31 - 1` (`SEQUENCE_MAX`). The bound is a
+host-contract limit, not a device measurement: it keeps the decimal
+representation inside 10 digits, well under the 4 KiB manifest cap, and it
+matches the verifier's existing constant. Baseline sequence 0, forward and
+rollback sequences 1 through `SEQUENCE_MAX`, and rollback statements at 1 and
+`SEQUENCE_MAX` are accepted; negative, non-integer, and values at or above
+2**31 are refused by the model parser, the model rollback statement, and the
+verifier parser and rollback statement alike, as does the baseline-provenance
+fixture's parser and rollback statement. This unifies the earlier divergence
+where the model and the provenance fixture accepted any nonnegative integer.
+The acceptance above is parser and statement acceptance only; it is not a
+full signed-chain verification at the boundary. A successor to `SEQUENCE_MAX`
+cannot exist: it would need sequence `SEQUENCE_MAX + 1`, which the parser
+refuses, so a chain head at the bound fails closed instead of wrapping.
 
 Realistic replay limits: sequence and selector checks hold only relative to
 intact local state. A privileged actor — or a whole-userdata rollback —
@@ -240,8 +252,9 @@ detections, not anti-rollback hardware semantics.
 
 Retain the signed baseline and full predecessor chain, with a reviewed bound
 on chain length and storage; check every link back to the image-pinned baseline
-at boot. Capacity exhaustion or missing history stops further updates rather
-than silently pruning trust. Sequence and selector state live on userdata and
+at boot. Capacity exhaustion, missing history, or sequence exhaustion at
+`SEQUENCE_MAX` stops further updates rather than silently pruning trust or
+wrapping the sequence. Sequence and selector state live on userdata and
 are subject to the replay limits above. The same limit applies to locally
 stored rollback authorizations; physical and signing-key controls remain
 necessary.

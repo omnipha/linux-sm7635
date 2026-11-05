@@ -24,6 +24,7 @@ RELEASE_DOMAIN = b"omnipha-sm7635-root-generation-v1/release\n"
 ROLLBACK_DOMAIN = b"omnipha-sm7635-root-generation-v1/rollback\n"
 MANIFEST_MAX = 4096
 PAYLOAD_MAX = 1048576
+SEQUENCE_MAX = 2**31 - 1
 POST_BASELINE_SIZE = 846492
 OPERATIONS = ("baseline", "forward", "rollback")
 MANIFEST_KEYS = ["schema", "sequence", "operation", "previous", "files", "restores"]
@@ -166,7 +167,7 @@ def parse_manifest(data: bytes) -> dict[str, Any]:
         raise Reject("manifest fields")
     if obj["schema"] != SCHEMA:
         raise Reject("manifest schema")
-    if type(obj["sequence"]) is not int or obj["sequence"] < 0:
+    if type(obj["sequence"]) is not int or not 0 <= obj["sequence"] <= SEQUENCE_MAX:
         raise Reject("manifest sequence type")
     if obj["operation"] not in OPERATIONS:
         raise Reject("manifest operation")
@@ -250,6 +251,8 @@ def release_message(manifest: bytes) -> bytes:
 
 
 def rollback_message(current: str, target: str, restores: str, sequence: int) -> bytes:
+    if type(sequence) is not int or not 0 < sequence <= SEQUENCE_MAX:
+        raise Reject("rollback statement")
     return ROLLBACK_DOMAIN + (f"current={current}\ntarget={target}\nrestores={restores}\n"
                               f"sequence={sequence}\n").encode("ascii")
 
@@ -410,6 +413,25 @@ def check_parser(baseline: dict[str, bytes]) -> None:
         encoded = canonical(manifest_object(1, "forward", "0" * 64, None, bounded))
         assert len(encoded) < MANIFEST_MAX
         assert parse_manifest(encoded)["files"][1]["size"] == size
+    predecessor = "0" * 64
+    for sequence in (1, 2, SEQUENCE_MAX - 1, SEQUENCE_MAX):
+        for operation, restores in (("forward", None), ("rollback", predecessor)):
+            encoded = canonical(manifest_object(sequence, operation, predecessor, restores, baseline))
+            assert parse_manifest(encoded)["sequence"] == sequence
+    for sequence in (-1, SEQUENCE_MAX + 1, SEQUENCE_MAX + 2, 2**63, 2**64):
+        for operation, restores in (("forward", None), ("rollback", predecessor)):
+            expect_reject(f"manifest {operation} sequence {sequence}", "sequence type",
+                          functools.partial(parse_manifest, canonical(
+                              manifest_object(sequence, operation, predecessor, restores, baseline))))
+    expect_reject("manifest forward sequence zero", "transition shape", functools.partial(
+        parse_manifest, canonical(manifest_object(0, "forward", predecessor, None, baseline))))
+    for sequence in (1, SEQUENCE_MAX):
+        assert rollback_message(predecessor, predecessor, predecessor, sequence).endswith(
+            f"sequence={sequence}\n".encode("ascii"))
+    invalid_sequences: tuple[Any, ...] = (0, -1, True, 0.0, SEQUENCE_MAX + 1, 2**64)
+    for invalid_sequence in invalid_sequences:
+        expect_reject(f"rollback statement sequence {invalid_sequence}", "rollback statement",
+                      functools.partial(rollback_message, predecessor, predecessor, predecessor, invalid_sequence))
     print("ok: canonical manifest parser bounds")
 
 
