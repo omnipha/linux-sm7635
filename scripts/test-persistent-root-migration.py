@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import ast
+import base64
 import copy
 import dataclasses
 import functools
@@ -7,12 +8,13 @@ import hashlib
 import json
 import os
 import pathlib
+import re
 import shutil
 import stat
 import subprocess
 import tempfile
 from collections.abc import Callable
-from typing import Any, NoReturn
+from typing import Any, NoReturn, cast
 from unittest import mock
 
 SCHEMA = "omnipha-sm7635-root-generation-v1"
@@ -137,14 +139,40 @@ def run(args: list[str], data: bytes | None = None) -> subprocess.CompletedProce
     return subprocess.run(args, input=data, capture_output=True, check=False)
 
 
+def signer_key_material(signers: pathlib.Path) -> bytes:
+    try:
+        lines = [line for line in signers.read_text(encoding="ascii").splitlines()
+                 if line.strip() and not line.lstrip().startswith("#")]
+    except (OSError, UnicodeError):
+        refuse("malformed allowed-signers")
+    require(len(lines) == 1, "malformed allowed-signers")
+    fields = lines[0].split()
+    require(len(fields) >= 3 and re.fullmatch(r"[A-Za-z0-9_@.,!?*+\-]+", fields[0]) is not None,
+            "malformed allowed-signers")
+    index = 1
+    if fields[index] != "ssh-ed25519" and not fields[index].startswith("ssh-"):
+        require(re.fullmatch(r'[A-Za-z0-9_@.,!?*+=\-"]+', fields[index]) is not None and
+                'namespaces="' in fields[index], "malformed allowed-signers")
+        index += 1
+    require(len(fields) > index + 1, "malformed allowed-signers")
+    require(fields[index] == "ssh-ed25519", "unsupported signer key")
+    try:
+        blob = base64.b64decode(fields[index + 1], validate=True)
+    except ValueError:
+        refuse("malformed allowed-signers")
+    require(len(blob) == 51 and blob[:15] == b"\x00\x00\x00\x0bssh-ed25519" and
+            blob[15:19] == b"\x00\x00\x00\x20", "malformed signer key")
+    return blob
+
+
 class Keys:
     def __init__(self, directory: pathlib.Path) -> None:
         self.directory = directory
         self.verified: set[tuple[bool, bytes, bytes, bytes]] = set()
         self.release, self.release_signers = self.make_key("release", RELEASE_PRINCIPAL, RELEASE_NS)
         self.rollback, self.rollback_signers = self.make_key("rollback", ROLLBACK_PRINCIPAL, ROLLBACK_NS)
-        assert self.release.read_bytes() != self.rollback.read_bytes()
-        assert self.release_signers.read_text().split()[-1] != self.rollback_signers.read_text().split()[-1]
+        require(signer_key_material(self.release_signers) != signer_key_material(self.rollback_signers),
+                "keys not distinct")
         assert RELEASE_DOMAIN != ROLLBACK_DOMAIN and RELEASE_NS != ROLLBACK_NS
 
     def make_key(self, name: str, principal: str, namespace: str) -> tuple[pathlib.Path, pathlib.Path]:
@@ -213,6 +241,8 @@ def payloads(label: str) -> tuple[bytes, ...]:
 
 def verify_entry(keys: Keys, baseline_id: str, gen: Generation, previous: Generation | None,
                  ancestors: dict[str, Generation]) -> None:
+    require(signer_key_material(keys.release_signers) != signer_key_material(keys.rollback_signers),
+            "keys not distinct")
     obj = parse_manifest(gen.raw)
     if not keys.verify(False, RELEASE_DOMAIN + gen.raw, gen.release_sig):
         refuse("release signature")
@@ -283,6 +313,7 @@ def verify_chain(keys: Keys, baseline_id: str, generations: dict[str, Generation
 class Journal:
     previous: str
     target: str
+    attempt: int = 0
 
 
 @dataclasses.dataclass
@@ -292,6 +323,8 @@ class Stage:
     synced: set[str] = dataclasses.field(default_factory=set)
     ready: bool = False
     recognized: bool = True
+    isolated: bool = True
+    safe_metadata: bool = True
 
 
 @dataclasses.dataclass
@@ -313,7 +346,8 @@ class State:
     journal: Journal | None = None
     fixed_temps: dict[tuple[str, int, int], FixedTemp] = dataclasses.field(default_factory=dict)
     selector_temps: dict[tuple[str, int], tuple[str, bool]] = dataclasses.field(default_factory=dict)
-    archived: set[Journal] = dataclasses.field(default_factory=set)
+    archived: dict[Journal, str] = dataclasses.field(default_factory=dict)
+    unsynced_archive: Journal | None = None
 
 
 Action = tuple[str, Callable[[], None]]
@@ -332,10 +366,197 @@ def require(condition: bool, reason: str) -> None:
         refuse(reason)
 
 
+def sequence_of(gen: Generation) -> int:
+    return int(parse_manifest(gen.raw)["sequence"])
+
+
+@dataclasses.dataclass
+class TrustedFloor:
+    sequence: int
+    ident: str
+
+    def consult(self, state: State, keys: Keys, baseline_id: str) -> str:
+        require(type(self.sequence) is int and self.sequence >= 0 and is_id(self.ident), "invalid trusted floor")
+        validate_archive_history(state, keys, baseline_id, state.journal)
+        ident = state.selector if state.journal is None else state.journal.previous
+        chain = verify_chain(keys, baseline_id, state.generations, ident)
+        require(sequence_of(chain[ident]) >= self.sequence, "below trusted floor")
+        require(self.ident in chain, "trusted checkpoint not in chain")
+        require(sequence_of(chain[self.ident]) == self.sequence, "trusted floor mismatch")
+        return ident
+
+    def check(self, state: State, keys: Keys, baseline_id: str) -> str:
+        self.consult(state, keys, baseline_id)
+        return boot_clean(state, keys, baseline_id)
+
+    def advance(self, state: State, keys: Keys, baseline_id: str) -> None:
+        self.consult(state, keys, baseline_id)
+        require(state.unsynced_archive is None, "journal archive not durable")
+        ident = self.check(state, keys, baseline_id)
+        sequence = sequence_of(state.generations[ident])
+        self.sequence, self.ident = sequence, ident
+
+
+def guard_plan(plan: list[Action], floor: TrustedFloor | None, state: State, keys: Keys,
+               baseline_id: str) -> list[Action]:
+    if floor is None:
+        return plan
+
+    def guard(action: Callable[[], None]) -> Callable[[], None]:
+        def guarded() -> None:
+            floor.consult(state, keys, baseline_id)
+            action()
+        return guarded
+
+    return [(name, guard(action)) for name, action in plan]
+
+
+def committed(state: State, previous: str, target: str) -> bool:
+    return any(journal.previous == previous and journal.target == target and kind == "committed"
+               for journal, kind in state.archived.items())
+
+
+def verify_recovered(state: State, keys: Keys, baseline_id: str, current_id: str,
+                     journal: Journal, reason: str) -> None:
+    require(journal.previous == current_id and is_id(journal.target) and
+            type(journal.attempt) is int and journal.attempt >= 0 and
+            state.archived.get(journal) == "recovered", reason)
+    chain = verify_chain(keys, baseline_id, state.generations, journal.target)
+    require(parse_manifest(chain[journal.target].raw)["previous"] == current_id, reason)
+
+
+def verify_recovered_from(state: State, keys: Keys, baseline_id: str, current_id: str, reason: str) -> None:
+    journals = [journal for journal, kind in state.archived.items()
+                if journal.previous == current_id and kind == "recovered"]
+    require(bool(journals), reason)
+    for journal in journals:
+        verify_recovered(state, keys, baseline_id, current_id, journal, reason)
+
+
+def verify_staged_bytes(expected: bytes, data: bytes, synced: bool) -> None:
+    require(isinstance(data, bytes) and type(synced) is bool and expected.startswith(data) and
+            (not synced or data == expected), "unrecognized staged bytes")
+
+
+def inspect_stage(stage: Stage, state: State, keys: Keys, baseline_id: str, current_id: str,
+                  chain: dict[str, Generation], candidate: Generation | None) -> None:
+    require(stage.recognized and stage.isolated and stage.safe_metadata, "unknown staging")
+    require(stage.target != current_id and stage.target not in state.generations, "unknown staging")
+    if candidate is None or candidate.ident != stage.target:
+        refuse("unverified staging candidate")
+    verify_entry(keys, baseline_id, candidate, chain[current_id], chain)
+    expected = members(candidate)
+    names = set(stage.members)
+    require(names <= set(expected) and stage.synced <= names, "unknown staging")
+    require(all(isinstance(v, bytes) for v in stage.members.values()), "unknown staging")
+    order = list(expected)
+    present = [name for name in order if name in names]
+    require(present == order[:len(present)], "unknown staging")
+    unsynced = [name for name in present if name not in stage.synced]
+    require(len(unsynced) <= 1 and (not unsynced or unsynced[0] == present[-1]), "unrecognized staged bytes")
+    for name in present:
+        verify_staged_bytes(expected[name], stage.members[name], name in stage.synced)
+    if stage.ready:
+        require(present == order and not unsynced, "unrecognized staged bytes")
+
+
+def is_plain_generation_target(target: str) -> bool:
+    return isinstance(target, str) and is_id(target) and len(target) == 64
+
+
+def inspect_leftovers(state: State, keys: Keys, baseline_id: str, current_id: str,
+                      candidate: Generation | None = None) -> list[str]:
+    chain = verify_chain(keys, baseline_id, state.generations, current_id)
+    found: list[str] = []
+    if state.stage is not None:
+        require(state.journal_temp is None, "unknown staging")
+        require(is_plain_generation_target(state.stage.target), "unknown staging")
+        inspect_stage(state.stage, state, keys, baseline_id, current_id, chain, candidate)
+        found.append("generation staging")
+    temp = state.journal_temp
+    if temp is not None:
+        require(type(temp.attempt) is int and temp.attempt >= 0 and
+                temp.previous == current_id and is_plain_generation_target(temp.target) and
+                temp.target != current_id and temp.target in state.generations, "unknown journal staging")
+        target_chain = verify_chain(keys, baseline_id, state.generations, temp.target)
+        next_attempt = 1 + max((journal.attempt for journal in state.archived
+                                if journal.previous == temp.previous and journal.target == temp.target), default=-1)
+        require(parse_manifest(target_chain[temp.target].raw)["previous"] == current_id and
+                temp not in state.archived and not committed(state, current_id, temp.target) and
+                temp.attempt == next_attempt, "unknown journal staging")
+        found.append("journal staging")
+    for (kind, attempt, index), fixed in state.fixed_temps.items():
+        require(is_plain_generation_target(fixed.generation) and isinstance(attempt, int) and
+                isinstance(index, int) and kind in ("update", "recovery") and
+                index == fixed.index and 0 <= index < len(PATHS) and
+                fixed.generation in state.generations, "unknown fixed staging")
+        if kind == "update":
+            verify_recovered(state, keys, baseline_id, current_id,
+                             Journal(current_id, fixed.generation, attempt), "unknown fixed staging")
+        else:
+            require(fixed.generation == current_id, "unknown fixed staging")
+            verify_recovered_from(state, keys, baseline_id, current_id, "unknown fixed staging")
+        verify_staged_bytes(state.generations[fixed.generation].payloads[index], fixed.data, fixed.synced)
+        found.append("fixed staging")
+    for (kind, attempt), (value, synced) in state.selector_temps.items():
+        require(isinstance(kind, str) and isinstance(attempt, int) and isinstance(value, str) and
+                isinstance(synced, bool), "unknown selector staging")
+        if kind == "update":
+            verify_recovered(state, keys, baseline_id, current_id,
+                             Journal(current_id, value, attempt), "unknown selector staging")
+        else:
+            require(kind == "recovery" and value == current_id, "unknown selector staging")
+            verify_recovered_from(state, keys, baseline_id, current_id, "unknown selector staging")
+        found.append("selector staging")
+    return found
+
+
+def verify_archive_edge(state: State, keys: Keys, baseline_id: str, journal: Journal, reason: str) -> None:
+    require(journal.previous != journal.target, reason)
+    prev_chain = verify_chain(keys, baseline_id, state.generations, journal.previous)
+    target_chain = verify_chain(keys, baseline_id, state.generations, journal.target)
+    require(parse_manifest(target_chain[journal.target].raw)["previous"] == prev_chain[journal.previous].ident,
+            reason)
+
+
+def validate_archive_history(state: State, keys: Keys, baseline_id: str, pending: Journal | None = None) -> None:
+    reason = "journal history collision"
+    pairs: dict[tuple[str, str], dict[int, str]] = {}
+    if pending is not None:
+        pairs[(pending.previous, pending.target)] = {pending.attempt: "pending"}
+    for archived, kind in state.archived.items():
+        require(type(archived.attempt) is int and archived.attempt >= 0 and
+                is_id(archived.previous) and is_id(archived.target) and kind in ("committed", "recovered"),
+                reason)
+        try:
+            verify_archive_edge(state, keys, baseline_id, archived, reason)
+        except Reject as exc:
+            refuse(f"{reason}: {exc}")
+        pairs.setdefault((archived.previous, archived.target), {})[archived.attempt] = kind
+    for attempts in pairs.values():
+        kinds = [attempts.get(n) for n in range(len(attempts))]
+        require(None not in kinds, reason)
+        require(all(kind == "recovered" for kind in kinds[:-1]), reason)
+        require(kinds[-1] in ("recovered", "committed", "pending"), reason)
+    roots = {journal.previous for journal in state.archived}
+    roots.add(pending.previous if pending is not None else state.selector)
+    for ident in roots:
+        chain = verify_chain(keys, baseline_id, state.generations, ident)
+        for gen in chain.values():
+            previous = parse_manifest(gen.raw)["previous"]
+            edge_attempts = pairs.get((previous, gen.ident))
+            require(edge_attempts is None or "committed" in edge_attempts.values(), reason)
+
+
 def validate_pending(state: State, keys: Keys, baseline_id: str) -> tuple[Generation, Generation]:
     journal = state.journal
     if journal is None or journal.previous == journal.target:
         refuse("invalid journal")
+    require(type(journal.attempt) is int and journal.attempt >= 0 and
+            is_id(journal.previous) and is_id(journal.target), "invalid journal")
+    require(journal not in state.archived and not committed(state, journal.previous, journal.target),
+            "journal history collision")
+    validate_archive_history(state, keys, baseline_id, journal)
     prev_chain = verify_chain(keys, baseline_id, state.generations, journal.previous)
     target_chain = verify_chain(keys, baseline_id, state.generations, journal.target)
     previous = prev_chain[journal.previous]
@@ -346,47 +567,70 @@ def validate_pending(state: State, keys: Keys, baseline_id: str) -> tuple[Genera
     for old, new, found in zip(previous.payloads, target.payloads, state.fixed):
         require(found is not None and found in (old, new), "unknown fixed file")
     for name, temp in state.fixed_temps.items():
-        require(name[0] in ("update", "recovery") and name[2] == temp.index and
-                0 <= temp.index < len(PATHS), "unknown fixed staging")
-        require(temp.generation in (previous.ident, target.ident), "unknown staging generation")
-        source = state.generations[temp.generation].payloads[temp.index]
-        require(source.startswith(temp.data) and (not temp.synced or temp.data == source),
-                "unrecognized staged bytes")
-    for selector_name, (value, _) in state.selector_temps.items():
-        require(selector_name[0] in ("update", "recovery") and value in (previous.ident, target.ident),
+        require(isinstance(name, tuple) and len(name) == 3, "unknown fixed staging")
+        kind, attempt, index = name
+        require(kind in ("update", "recovery") and type(attempt) is int and attempt >= 0 and
+                type(index) is int and index == temp.index and 0 <= index < len(PATHS) and
+                (kind == "recovery" or attempt == journal.attempt), "unknown fixed staging")
+        desired = target if kind == "update" else previous
+        require(temp.generation == desired.ident, "unknown staging generation")
+        verify_staged_bytes(desired.payloads[index], temp.data, temp.synced)
+    for selector_name, selector_temp in state.selector_temps.items():
+        require(isinstance(selector_name, tuple) and len(selector_name) == 2 and
+                isinstance(selector_temp, tuple) and len(selector_temp) == 2, "unknown selector staging")
+        kind, attempt = selector_name
+        value, synced = selector_temp
+        require(kind in ("update", "recovery") and type(attempt) is int and attempt >= 0 and
+                type(synced) is bool and (kind == "recovery" or attempt == journal.attempt),
                 "unknown selector staging")
+        require(value == (target.ident if kind == "update" else previous.ident), "unknown selector staging")
     require(state.stage is None and state.journal_temp is None, "unexpected pending staging")
     return previous, target
 
 
-def boot_clean(state: State, keys: Keys, baseline_id: str) -> str:
+def boot_clean(state: State, keys: Keys, baseline_id: str, candidate: Generation | None = None) -> str:
     require(state.journal is None, "journal needs recovery")
-    require(state.stage is None or state.stage.recognized, "unknown staging")
+    validate_archive_history(state, keys, baseline_id)
     chain = verify_chain(keys, baseline_id, state.generations, state.selector)
     selected = chain[state.selector]
     require(state.fixed == list(selected.payloads), "fixed files differ from selector")
+    inspect_leftovers(state, keys, baseline_id, selected.ident, candidate)
     return selected.ident
 
 
-def update_plan(state: State, keys: Keys, baseline_id: str, target: Generation) -> list[Action]:
-    current_id = boot_clean(state, keys, baseline_id)
-    require(state.stage is None and state.journal_temp is None and not state.fixed_temps and
-            not state.selector_temps, "staging collision")
-    require(target.ident not in state.generations, "generation collision")
+def update_plan(state: State, keys: Keys, baseline_id: str, target: Generation,
+                floor: TrustedFloor | None = None) -> list[Action]:
+    if floor is not None:
+        floor.consult(state, keys, baseline_id)
+    require(state.unsynced_archive is None, "journal archive not durable")
+    current_id = boot_clean(state, keys, baseline_id, target)
+    leftovers = inspect_leftovers(state, keys, baseline_id, current_id, target)
+    require(not leftovers, "staging collision")
+    attempts = [journal.attempt for journal in state.archived
+                if journal.previous == current_id and journal.target == target.ident]
+    retry = target.ident in state.generations
+    if retry:
+        require(bool(attempts) and state.generations[target.ident] == target and
+                all(state.archived[Journal(current_id, target.ident, n)] == "recovered" for n in attempts),
+                "generation collision")
+    else:
+        require(not attempts, "journal history collision")
     chain = verify_chain(keys, baseline_id, state.generations, current_id)
     previous = chain[current_id]
     verify_entry(keys, baseline_id, target, previous, chain)
-    journal = Journal(current_id, target.ident)
-    require(journal not in state.archived, "journal history collision")
+    attempt = 1 + max(attempts, default=-1)
+    journal = Journal(current_id, target.ident, attempt)
+    require(journal not in state.archived and not committed(state, current_id, target.ident),
+            "journal history collision")
     plan: list[Action] = []
-
     def create_stage() -> None:
         require(state.stage is None, "staging collision")
         state.stage = Stage(target.ident)
 
-    plan.append(("create generation staging", create_stage))
     expected = members(target)
-    for name, data in expected.items():
+    if not retry:
+        plan.append(("create generation staging", create_stage))
+    for name, data in ({} if retry else expected).items():
         def first(n: str = name, d: bytes = data) -> None:
             assert state.stage is not None
             state.stage.members[n] = d[:len(d) // 2]
@@ -416,9 +660,10 @@ def update_plan(state: State, keys: Keys, baseline_id: str, target: Generation) 
         state.generations[target.ident] = target
         state.stage = None
 
-    plan.extend([("sync generation directory", sync_generation),
-                 ("publish generation without replacement", publish_generation),
-                 ("sync generations parent", lambda: None)])
+    if not retry:
+        plan.extend([("sync generation directory", sync_generation),
+                     ("publish generation without replacement", publish_generation),
+                     ("sync generations parent", lambda: None)])
 
     def write_journal() -> None:
         require(state.journal_temp is None and state.journal is None, "journal collision")
@@ -440,8 +685,8 @@ def update_plan(state: State, keys: Keys, baseline_id: str, target: Generation) 
                  ("publish journal without replacement", publish_journal),
                  ("sync journal parent", lambda: None)])
     for index in range(len(PATHS)):
-        plan.extend(fixed_steps(state, previous, target, target, index, "update", 0))
-    plan.extend(selector_steps(state, previous.ident, target.ident, "update", 0))
+        plan.extend(fixed_steps(state, previous, target, target, index, "update", attempt))
+    plan.extend(selector_steps(state, previous.ident, target.ident, "update", attempt))
 
     def verify_target() -> None:
         validate_pending(state, keys, baseline_id)
@@ -449,19 +694,26 @@ def update_plan(state: State, keys: Keys, baseline_id: str, target: Generation) 
 
     def archive() -> None:
         verify_target()
-        require(journal not in state.archived, "journal history collision")
-        state.archived.add(journal)
+        require(journal not in state.archived and not committed(state, current_id, target.ident),
+                "journal history collision")
+        state.archived[journal] = "committed"
+        state.unsynced_archive = journal
         state.journal = None
 
+    def sync_archive() -> None:
+        require(state.unsynced_archive == journal, "journal archive changed")
+        state.unsynced_archive = None
+
     plan.extend([("reverify complete target", verify_target), ("archive journal without replacement", archive),
-                 ("sync journal archive parent", lambda: None)])
-    return plan
+                  ("sync journal archive parent", sync_archive)])
+    return guard_plan(plan, floor, state, keys, baseline_id)
 
 
 def fixed_steps(state: State, previous: Generation, target: Generation, desired: Generation,
                 index: int, kind: str, attempt: int) -> list[Action]:
     name = (kind, attempt, index)
     data = desired.payloads[index]
+    steps: list[Action] = []
 
     def create() -> None:
         require(name not in state.fixed_temps, "fixed staging collision")
@@ -487,16 +739,18 @@ def fixed_steps(state: State, previous: Generation, target: Generation, desired:
     def verify() -> None:
         require(state.fixed[index] == data, "fixed recheck")
 
-    return [(f"{kind} create partial fixed {index}", create),
-            (f"{kind} finish fixed {index}", finish),
-            (f"{kind} sync and verify fixed {index}", sync),
-            (f"{kind} rename fixed {index}", publish),
-            (f"{kind} sync fixed directory {index}", lambda: None),
-            (f"{kind} recheck fixed {index}", verify)]
+    steps.extend([(f"{kind} create partial fixed {index}", create),
+                  (f"{kind} finish fixed {index}", finish),
+                  (f"{kind} sync and verify fixed {index}", sync),
+                  (f"{kind} rename fixed {index}", publish),
+                  (f"{kind} sync fixed directory {index}", lambda: None),
+                  (f"{kind} recheck fixed {index}", verify)])
+    return steps
 
 
 def selector_steps(state: State, previous: str, desired: str, kind: str, attempt: int) -> list[Action]:
     name = (kind, attempt)
+    steps: list[Action] = []
 
     def create() -> None:
         require(name not in state.selector_temps, "selector staging collision")
@@ -512,15 +766,19 @@ def selector_steps(state: State, previous: str, desired: str, kind: str, attempt
         state.selector = desired
         del state.selector_temps[name]
 
-    return [(f"{kind} write selector", create), (f"{kind} sync selector", sync),
-            (f"{kind} rename selector", publish), (f"{kind} sync selector directory", lambda: None)]
+    steps.extend([(f"{kind} write selector", create), (f"{kind} sync selector", sync),
+                  (f"{kind} rename selector", publish), (f"{kind} sync selector directory", lambda: None)])
+    return steps
 
 
-def recovery_plan(state: State, keys: Keys, baseline_id: str) -> list[Action]:
+def recovery_plan(state: State, keys: Keys, baseline_id: str, floor: TrustedFloor | None = None
+                  ) -> list[Action]:
+    if floor is not None:
+        floor.consult(state, keys, baseline_id)
+    require(state.unsynced_archive is None, "journal archive not durable")
     previous, target = validate_pending(state, keys, baseline_id)
     journal = state.journal
     assert journal is not None
-    require(journal not in state.archived, "journal history collision")
     used = {name[1] for name in state.fixed_temps if name[0] == "recovery"}
     used.update(name[1] for name in state.selector_temps if name[0] == "recovery")
     attempt = max(used, default=-1) + 1
@@ -536,13 +794,18 @@ def recovery_plan(state: State, keys: Keys, baseline_id: str) -> list[Action]:
     def archive() -> None:
         verify_previous()
         require(journal not in state.archived, "journal history collision")
-        state.archived.add(journal)
+        state.archived[journal] = "recovered"
+        state.unsynced_archive = journal
         state.journal = None
+
+    def sync_archive() -> None:
+        require(state.unsynced_archive == journal, "journal archive changed")
+        state.unsynced_archive = None
 
     plan.extend([("reverify complete previous", verify_previous),
                  ("archive recovered journal without replacement", archive),
-                 ("sync recovered archive parent", lambda: None)])
-    return plan
+                 ("sync recovered archive parent", sync_archive)])
+    return guard_plan(plan, floor, state, keys, baseline_id)
 
 
 def execute(plan: list[Action], cut: int | None = None) -> None:
@@ -550,10 +813,26 @@ def execute(plan: list[Action], cut: int | None = None) -> None:
         action()
 
 
-def reconcile(state: State, keys: Keys, baseline_id: str) -> str:
+def reconcile(state: State, keys: Keys, baseline_id: str, floor: TrustedFloor | None = None,
+              candidate: Generation | None = None) -> str:
+    if floor is not None:
+        floor.consult(state, keys, baseline_id)
     if state.journal is not None:
-        execute(recovery_plan(state, keys, baseline_id))
-    return boot_clean(state, keys, baseline_id)
+        execute(recovery_plan(state, keys, baseline_id, floor))
+    ident = boot_clean(state, keys, baseline_id, candidate)
+    if floor is not None:
+        floor.consult(state, keys, baseline_id)
+    return ident
+
+
+def crash(state: State, lose_unsynced: bool) -> None:
+    journal = state.unsynced_archive
+    if journal is None:
+        return
+    state.unsynced_archive = None
+    if lose_unsynced:
+        del state.archived[journal]
+        state.journal = journal
 
 
 def expect_reject(label: str, reason: str, action: Callable[[], Any]) -> None:
@@ -681,23 +960,32 @@ def test_interruption(keys: Keys, initial: State, previous: Generation, target: 
         if state.journal is not None:
             recovery_total = len(recovery_plan(state, keys, baseline_id))
             for recovery_cut in range(recovery_total + 1):
-                interrupted = copy.deepcopy(state)
-                execute(recovery_plan(interrupted, keys, baseline_id), recovery_cut)
-                result = reconcile(interrupted, keys, baseline_id)
-                assert result == previous.ident, (cut, recovery_cut)
-                assert interrupted.selector == previous.ident and interrupted.fixed == list(previous.payloads)
-                assert interrupted.journal is None
-                recovery_cuts += 1
+                for lose in (False, True):
+                    interrupted = copy.deepcopy(state)
+                    execute(recovery_plan(interrupted, keys, baseline_id), recovery_cut)
+                    crash(interrupted, lose)
+                    result = reconcile(interrupted, keys, baseline_id, candidate=target)
+                    assert result == previous.ident, (cut, recovery_cut, lose)
+                    assert interrupted.selector == previous.ident and interrupted.fixed == list(previous.payloads)
+                    assert interrupted.journal is None
+                    recovery_cuts += 1
         committed_at = next(i for i, (name, _) in enumerate(plan)
                             if name == "archive journal without replacement") + 1
-        result = reconcile(state, keys, baseline_id)
-        expected = target if cut >= committed_at else previous
-        assert result == expected.ident, (cut, plan[cut - 1][0] if cut else "before")
-        assert state.fixed == list(expected.payloads) and state.journal is None
+        durable_at = next(i for i, (name, _) in enumerate(plan) if name == "sync journal archive parent") + 1
+        outcomes = [False] if cut >= durable_at or cut < committed_at else [False, True]
+        for lose in outcomes:
+            view = copy.deepcopy(state)
+            crash(view, lose)
+            result = reconcile(view, keys, baseline_id, candidate=target)
+            expected = target if cut >= committed_at and not lose else previous
+            assert result == expected.ident, (cut, lose, plan[cut - 1][0] if cut else "before")
+            assert view.fixed == list(expected.payloads) and view.journal is None
+        state.unsynced_archive = None
     return total + 1, recovery_cuts
 
 
-def test_corruption(keys: Keys, initial: State, base: Generation, forward: Generation) -> None:
+def test_corruption(keys: Keys, initial: State, base: Generation, forward: Generation,
+                    rollback: Generation) -> None:
     pending = copy.deepcopy(initial)
     plan = update_plan(pending, keys, base.ident, forward)
     journal_index = next(i for i, (name, _) in enumerate(plan) if name == "publish journal without replacement")
@@ -720,7 +1008,22 @@ def test_corruption(keys: Keys, initial: State, base: Generation, forward: Gener
             ("foreign", 0, 0): FixedTemp(base.ident, 0, b"")})),
         ("staged corruption", "unrecognized staged bytes", lambda s: s.fixed_temps.update({
             ("update", 0, 0): FixedTemp(forward.ident, 0, b"garbage")})),
-        ("archive collision", "journal history collision", lambda s: s.archived.add(Journal(base.ident, forward.ident))),
+        ("archive collision", "journal history collision",
+         lambda s: s.archived.update({Journal(base.ident, forward.ident): "committed"})),
+        ("malformed archive kind", "journal history collision",
+         lambda s: s.archived.update({Journal(base.ident, forward.ident, 7): "unknown"})),
+        ("negative archive attempt", "journal history collision",
+         lambda s: s.archived.update({Journal(base.ident, forward.ident, -1): "recovered"})),
+        ("negative journal attempt", "invalid journal",
+         lambda s: setattr(s, "journal", Journal(base.ident, forward.ident, -1))),
+        ("malformed fixed staging key", "unknown fixed staging", lambda s: s.fixed_temps.update(
+            cast(dict[tuple[str, int, int], FixedTemp], {("update", 0): FixedTemp(forward.ident, 0, b"")}))),
+        ("negative fixed staging attempt", "unknown fixed staging", lambda s: s.fixed_temps.update({
+            ("recovery", -1, 0): FixedTemp(base.ident, 0, b"")})),
+        ("malformed selector staging value", "unknown selector staging", lambda s: s.selector_temps.update(
+            cast(dict[tuple[str, int], tuple[str, bool]], {("recovery", 0): (base.ident, "yes")}))),
+        ("wrong selector staging value", "unknown selector staging", lambda s: s.selector_temps.update({
+            ("recovery", 0): (forward.ident, False)})),
     ]
     for label, reason, mutate in cases:
         state = copy.deepcopy(pending)
@@ -735,31 +1038,111 @@ def test_corruption(keys: Keys, initial: State, base: Generation, forward: Gener
     corrupt_active.fixed[0] = b"unknown"
     assert_refusal_without_write("unverified current", "fixed files", corrupt_active,
                                  lambda: update_plan(corrupt_active, keys, base.ident, forward))
-    print(f"corruption: {len(cases) + 2} invalid old/new/journal/fixed/staging states refused before writes")
+    recovering = State({base.ident: base, forward.ident: forward}, forward.ident, list(forward.payloads))
+    plan = update_plan(recovering, keys, base.ident, rollback)
+    execute(plan, next(i for i, (name, _) in enumerate(plan) if name == "publish journal without replacement") + 1)
+    assert recovering.journal is not None
+    corrupt_history = copy.deepcopy(recovering)
+    corrupt_history.archived[Journal(forward.ident, "f" * 64, 0)] = "recovered"
+    assert_refusal_without_write("recovered history for unknown target", "missing or substituted",
+                                 corrupt_history, functools.partial(reconcile, corrupt_history, keys, base.ident))
+    resumed = copy.deepcopy(recovering)
+    resumed.fixed_temps[("recovery", 0, 0)] = FixedTemp(forward.ident, 0, b"")
+    reconcile(resumed, keys, base.ident)
+    assert resumed.journal is None and resumed.selector == forward.ident
+    print(f"corruption: {len(cases) + 3} invalid old/new/journal/fixed/staging states refused before writes")
 
 
 def test_collisions(keys: Keys, initial: State, base: Generation, forward: Generation) -> None:
     journal = Journal(base.ident, forward.ident)
     cases: list[tuple[str, str, Callable[[State], Any]]] = [
-        ("recognized stage", "staging collision", lambda s: setattr(s, "stage", Stage(forward.ident))),
         ("unrecognized stage", "unknown staging", lambda s: setattr(
             s, "stage", Stage(forward.ident, recognized=False))),
-        ("journal temp", "staging collision", lambda s: setattr(s, "journal_temp", journal)),
-        ("fixed temp", "staging collision", lambda s: s.fixed_temps.update({
+        ("unsafe stage metadata", "unknown staging", lambda s: setattr(
+            s, "stage", Stage(forward.ident, safe_metadata=False))),
+        ("nonisolated stage", "unknown staging", lambda s: setattr(
+            s, "stage", Stage(forward.ident, isolated=False))),
+        ("foreign stage member", "unknown staging", lambda s: setattr(
+            s, "stage", Stage(forward.ident, members={"foreign": b"bad"}))),
+        ("corrupt stage member", "unrecognized staged bytes", lambda s: setattr(
+            s, "stage", Stage(forward.ident, members={"manifest": b"bad"}))),
+        ("corrupt unsynced signature", "unrecognized staged bytes", lambda s: setattr(
+            s, "stage", Stage(forward.ident, members={"manifest": forward.raw,
+                                                      "release.sig": forward.release_sig[:-1] + b"x"},
+                              synced={"manifest"}))),
+        ("corrupt short payload prefix", "unrecognized staged bytes", lambda s: setattr(
+            s, "stage", Stage(forward.ident, members={"manifest": forward.raw, "release.sig": forward.release_sig,
+                                                      "payload-0": b"wrong"},
+                              synced={"manifest", "release.sig"}))),
+        ("corrupt manifest prefix", "unrecognized staged bytes", lambda s: setattr(
+            s, "stage", Stage(forward.ident, members={"manifest": b'{"schema":"' + SCHEMA.encode() + b'",bad'}))),
+        ("manifest wrong sequence prefix", "unrecognized staged bytes", lambda s: setattr(
+            s, "stage", Stage(forward.ident, members={"manifest": forward.raw[:60].replace(
+                b'"sequence":1', b'"sequence":9')}))),
+        ("manifest wrong previous prefix", "unrecognized staged bytes", lambda s: setattr(
+            s, "stage", Stage(forward.ident, members={"manifest": forward.raw[:forward.raw.index(
+                b'"previous":"') + 12] + b"0" * 8}))),
+        ("manifest garbage after valid prefix", "unrecognized staged bytes", lambda s: setattr(
+            s, "stage", Stage(forward.ident, members={"manifest": forward.raw[:-3] + b"~~~"}))),
+        ("manifest overlong", "unrecognized staged bytes", lambda s: setattr(
+            s, "stage", Stage(forward.ident, members={"manifest": forward.raw + b"x"}))),
+        ("synced truncated manifest", "unrecognized staged bytes", lambda s: setattr(
+            s, "stage", Stage(forward.ident, members={"manifest": forward.raw[:-1]}, synced={"manifest"}))),
+        ("signature header only", "unrecognized staged bytes", lambda s: setattr(
+            s, "stage", Stage(forward.ident, members={"manifest": forward.raw, "release.sig": b"-----BEGIN SSH SIGNATURE-----\n~~~"},
+                              synced={"manifest"}))),
+        ("signature trailing bytes", "unrecognized staged bytes", lambda s: setattr(
+            s, "stage", Stage(forward.ident, members={"manifest": forward.raw,
+                                                      "release.sig": forward.release_sig + b"x"},
+                              synced={"manifest"}))),
+        ("synced truncated signature", "unrecognized staged bytes", lambda s: setattr(
+            s, "stage", Stage(forward.ident, members={"manifest": forward.raw,
+                                                      "release.sig": forward.release_sig[:-8]},
+                              synced={"manifest", "release.sig"}))),
+        ("payload longer than size", "unrecognized staged bytes", lambda s: setattr(
+            s, "stage", Stage(forward.ident, members={"manifest": forward.raw, "release.sig": forward.release_sig,
+                                                      "payload-0": forward.payloads[0] + b"x"},
+                              synced={"manifest", "release.sig"}))),
+        ("synced short payload", "unrecognized staged bytes", lambda s: setattr(
+            s, "stage", Stage(forward.ident, members={"manifest": forward.raw, "release.sig": forward.release_sig,
+                                                      "payload-0": forward.payloads[0][:4]},
+                              synced={"manifest", "release.sig", "payload-0"}))),
+        ("payload out of order", "unknown staging", lambda s: setattr(
+            s, "stage", Stage(forward.ident, members={"manifest": forward.raw, "payload-1": forward.payloads[1][:4]},
+                              synced={"manifest"}))),
+        ("two unsynced members", "unrecognized staged bytes", lambda s: setattr(
+            s, "stage", Stage(forward.ident, members={"manifest": forward.raw, "release.sig": forward.release_sig[:20]}))),
+        ("ready with missing members", "unrecognized staged bytes", lambda s: setattr(
+            s, "stage", Stage(forward.ident, members={"manifest": forward.raw}, synced={"manifest"}, ready=True))),
+        ("unverified candidate mismatch", "unverified staging candidate", lambda s: setattr(
+            s, "stage", Stage("f" * 64, members={"manifest": forward.raw}))),
+        ("unknown journal temp", "unknown journal staging", lambda s: setattr(s, "journal_temp", journal)),
+        ("unknown fixed temp", "unknown fixed staging", lambda s: s.fixed_temps.update({
             ("update", 0, 0): FixedTemp(base.ident, 0, b"")})),
-        ("selector temp", "staging collision", lambda s: s.selector_temps.update({
+        ("unknown selector temp", "unknown selector staging", lambda s: s.selector_temps.update({
             ("update", 0): (base.ident, False)})),
-        ("generation", "generation collision", lambda s: s.generations.update({forward.ident: forward})),
-        ("archived journal", "journal history collision", lambda s: s.archived.add(journal)),
     ]
+    assert forward.payloads[0] != b"wrong" and forward.release_sig != b"corrupt"
     for label, reason, mutate in cases:
         state = copy.deepcopy(initial)
         mutate(state)
+        if label == "unverified candidate mismatch":
+            assert_refusal_without_write(label + " boot", reason, state,
+                                         functools.partial(boot_clean, state, keys, base.ident, base))
+        else:
+            assert_refusal_without_write(label + " boot", reason, state,
+                                         functools.partial(boot_clean, state, keys, base.ident, forward))
+        assert_refusal_without_write(label + " update", reason, state,
+                                     functools.partial(update_plan, state, keys, base.ident, forward))
 
-        def frozen(state: State = state) -> None:
-            update_plan(state, keys, base.ident, forward)
-
-        assert_refusal_without_write(label, reason, state, frozen)
+    for label, mutate in (
+        ("generation", lambda s: s.generations.update({forward.ident: forward})),
+        ("archived journal", lambda s: s.archived.update({journal: "committed"})),
+    ):
+        state = copy.deepcopy(initial)
+        mutate(state)
+        assert_refusal_without_write(label, "collision", state,
+                                     functools.partial(update_plan, state, keys, base.ident, forward))
 
     state = copy.deepcopy(initial)
     plan = update_plan(state, keys, base.ident, forward)
@@ -775,12 +1158,207 @@ def test_collisions(keys: Keys, initial: State, base: Generation, forward: Gener
     state.journal = journal
     assert_refusal_without_write("late journal collision", "journal publish", state, plan[publish][1])
 
-    state = copy.deepcopy(initial)
-    state.stage = Stage(forward.ident, members={"foreign": b"unverified"}, recognized=True)
-    state.fixed_temps[("foreign", 0, 0)] = FixedTemp(base.ident, 0, b"unknown")
+    inert = copy.deepcopy(initial)
+    plan = update_plan(inert, keys, base.ident, forward)
+    execute(plan, next(i for i, (name, _) in enumerate(plan) if name == "sync generation directory"))
+    before = copy.deepcopy(inert)
+    assert boot_clean(inert, keys, base.ident, forward) == base.ident and inert == before
+    assert_refusal_without_write("recognized inert staging blocks update", "staging collision", inert,
+                                 lambda: update_plan(inert, keys, base.ident, forward))
+    print(f"collisions: {len(cases)} unknown objects refused for boot and update; "
+          "recognized inert staging preserved, boots, and blocks updates")
+
+
+def test_archive_history_and_signers(keys: Keys, initial: State, base: Generation, forward: Generation,
+                                     rollback: Generation) -> None:
+    alternate1 = make_generation(keys, 1, "forward", base.ident, None, payloads("alternate"))
+    alternate2 = make_generation(keys, 2, "forward", alternate1.ident, None, payloads("alternate next"))
+    generations = {gen.ident: gen for gen in (base, forward, alternate1, alternate2)}
+    new_state = lambda archived: State(dict(generations), base.ident, list(base.payloads), archived=archived)
+    corrupt_histories: list[tuple[str, dict[Journal, str]]] = [
+        ("committed non-edge", {Journal(base.ident, alternate2.ident, 0): "committed"}),
+        ("committed unknown target", {Journal(base.ident, "f" * 64, 0): "committed"}),
+        ("committed unknown target payload", {Journal(base.ident, forward.ident, 0): "committed",
+                                              Journal(forward.ident, "f" * 64, 0): "committed"}),
+        ("recovered non-edge", {Journal(base.ident, alternate2.ident, 0): "recovered"}),
+        ("recovered unknown target", {Journal(base.ident, "f" * 64, 0): "recovered"}),
+        ("committed before recovered", {Journal(base.ident, forward.ident, 0): "committed",
+                                        Journal(base.ident, forward.ident, 1): "recovered"}),
+        ("recovered attempt gap", {Journal(base.ident, forward.ident, 0): "recovered",
+                                   Journal(base.ident, forward.ident, 2): "recovered"}),
+    ]
+    floor = TrustedFloor(0, base.ident)
+    for label, archived in corrupt_histories:
+        state = new_state(archived)
+        assert_refusal_without_write(label + " boot", "journal history collision", state,
+                                     functools.partial(boot_clean, state, keys, base.ident))
+        assert_refusal_without_write(label + " floor check", "journal history collision", state,
+                                     functools.partial(floor.check, state, keys, base.ident))
+        assert_refusal_without_write(label + " floor advance", "journal history collision", state,
+                                     functools.partial(floor.advance, state, keys, base.ident))
+    corrupt_edge = new_state({Journal(base.ident, forward.ident, 0): "recovered"})
+    corrupt_edge.generations[forward.ident] = dataclasses.replace(forward, release_sig=b"invalid")
+    assert_refusal_without_write("recovered with corrupt target chain", "journal history collision", corrupt_edge,
+                                 functools.partial(boot_clean, corrupt_edge, keys, base.ident))
+    corrupt_committed_edge = new_state({Journal(base.ident, forward.ident, 0): "committed"})
+    corrupt_committed_edge.generations[forward.ident] = dataclasses.replace(forward, release_sig=b"invalid")
+    assert_refusal_without_write("committed with corrupt target chain", "journal history collision",
+                                 corrupt_committed_edge,
+                                 functools.partial(boot_clean, corrupt_committed_edge, keys, base.ident))
+    missing_target = new_state({Journal(base.ident, forward.ident, 0): "committed"})
+    missing_target.generations.pop(forward.ident)
+    assert_refusal_without_write("committed with missing target generation", "journal history collision",
+                                 missing_target, functools.partial(boot_clean, missing_target, keys, base.ident))
+
+    branch = new_state({Journal(base.ident, alternate1.ident, 0): "committed",
+                        Journal(base.ident, forward.ident, 0): "recovered",
+                        Journal(base.ident, forward.ident, 1): "committed"})
+    assert boot_clean(branch, keys, base.ident) == base.ident
+    branch_floor = TrustedFloor(0, base.ident)
+    branch_floor.check(branch, keys, base.ident)
+    branch_floor.advance(branch, keys, base.ident)
+    assert (branch_floor.sequence, branch_floor.ident) == (0, base.ident)
+    recovered = new_state({Journal(base.ident, alternate1.ident, 0): "recovered"})
+    assert boot_clean(recovered, keys, base.ident) == base.ident
+    settled = new_state({Journal(base.ident, alternate1.ident, 0): "committed"})
+    settled.selector, settled.fixed = alternate1.ident, list(alternate1.payloads)
+    assert floor.check(settled, keys, base.ident) == alternate1.ident
+    floor.advance(settled, keys, base.ident)
+    assert (floor.sequence, floor.ident) == (1, alternate1.ident)
+    floor.sequence, floor.ident = 0, base.ident
+
+    valid = State({base.ident: base, forward.ident: forward}, forward.ident, list(forward.payloads))
+    valid_target = make_generation(keys, 2, "forward", forward.ident, None, payloads("valid next"))
+    valid_plan = update_plan(valid, keys, base.ident, valid_target, TrustedFloor(1, forward.ident))
+    execute(valid_plan, next(i for i, (name, _) in enumerate(valid_plan)
+                             if name == "publish journal without replacement") + 1)
+    assert valid.journal is not None
+    fresh_target = make_generation(keys, 1, "forward", base.ident, None, payloads("fresh update"))
+    post_plan_cases: list[tuple[str, State, Journal | None, dict[Journal, str]]] = [
+        ("journal-free", State({base.ident: base}, base.ident, list(base.payloads)), None,
+         {Journal(base.ident, forward.ident, 0): "recovered",
+          Journal(base.ident, forward.ident, 2): "recovered"}),
+        ("pending", copy.deepcopy(valid), valid.journal,
+         {valid.journal: "committed", Journal(base.ident, forward.ident, 1): "recovered"}),
+    ]
+    post_plan_refusals = 0
+    for label, source, journal, archived in post_plan_cases:
+        live = copy.deepcopy(source)
+        live_floor = TrustedFloor(0 if journal is None else 1, base.ident if journal is None else forward.ident)
+        plan = (update_plan(live, keys, base.ident, fresh_target if journal is None else valid_target, live_floor)
+                if journal is None else recovery_plan(live, keys, base.ident, live_floor))
+        live.archived.update(archived)
+        assert_refusal_without_write(label + " post-plan consult", "journal history collision", live,
+                                     functools.partial(live_floor.consult, live, keys, base.ident))
+        assert_refusal_without_write(label + " post-plan guarded action", "journal history collision", live,
+                                     plan[0][1])
+        post_plan_refusals += 2
+    assert valid.journal is not None and valid.archived == {}
+
+    pending = State({base.ident: base}, base.ident, list(base.payloads))
+    pending_plan = update_plan(pending, keys, base.ident, forward)
+    execute(pending_plan, next(i for i, (name, _) in enumerate(pending_plan)
+                               if name == "publish journal without replacement") + 1)
+    assert pending.journal == Journal(base.ident, forward.ident)
+    corrupt_retried = copy.deepcopy(pending)
+    corrupt_retried.archived[Journal(base.ident, forward.ident, 1)] = "recovered"
+    assert_refusal_without_write("pending with recovered attempt after current", "journal history collision",
+                                 corrupt_retried, functools.partial(reconcile, corrupt_retried, keys, base.ident))
+    corrupt_committed = copy.deepcopy(pending)
+    corrupt_committed.archived[Journal(base.ident, forward.ident, 0)] = "committed"
+    assert_refusal_without_write("pending with committed duplicate", "journal history collision", corrupt_committed,
+                                 functools.partial(reconcile, corrupt_committed, keys, base.ident))
+    corrupt_pending_history = copy.deepcopy(pending)
+    corrupt_pending_history.archived[Journal(base.ident, alternate1.ident, 0)] = "recovered"
+    corrupt_pending_history.generations[alternate1.ident] = alternate1
+    corrupt_pending_history.generations[base.ident] = dataclasses.replace(base, release_sig=b"invalid")
+    assert_refusal_without_write("pending with corrupt archive history", "journal history collision",
+                                 corrupt_pending_history,
+                                 functools.partial(reconcile, corrupt_pending_history, keys, base.ident))
+
+    staged = State({base.ident: base, forward.ident: forward}, base.ident, list(base.payloads))
+    for attempt in (cast(Any, -1), cast(Any, True), cast(Any, 1.5), cast(Any, "1")):
+        state = copy.deepcopy(staged)
+        state.journal_temp = Journal(base.ident, forward.ident, attempt)
+        assert_refusal_without_write(f"journal temp attempt {attempt!r}", "unknown journal staging", state,
+                                     functools.partial(boot_clean, state, keys, base.ident))
+        assert_refusal_without_write(f"journal temp attempt {attempt!r} update", "unknown journal staging", state,
+                                     functools.partial(update_plan, state, keys, base.ident, forward))
+    state = copy.deepcopy(staged)
+    state.journal_temp = Journal(base.ident, forward.ident, 0)
     assert boot_clean(state, keys, base.ident) == base.ident
-    print(f"collisions: {len(cases) + 2} abstract staging/publication collisions refused without writes")
-    print("model gap: without a journal, boot trusts the recognized-stage flag and ignores fixed temps")
+
+    release_text = keys.release_signers.read_text()
+    rollback_text = keys.rollback_signers.read_text()
+    release_blob = release_text.split()[-1]
+    rollback_blob = rollback_text.split()[-1]
+    chain = {base.ident: base, forward.ident: forward}
+
+    def tampered(target: pathlib.Path, original: str, text: str, label: str, reason: str) -> None:
+        target.write_text(text)
+        try:
+            expect_reject(label + " verify_entry", reason, functools.partial(
+                verify_entry, keys, base.ident, rollback, forward, chain))
+            fresh = State({base.ident: base}, base.ident, list(base.payloads))
+            assert_refusal_without_write(label + " boot", reason, fresh,
+                                         functools.partial(boot_clean, fresh, keys, base.ident))
+            assert_refusal_without_write(label + " floor check", reason, fresh,
+                                         functools.partial(floor.check, fresh, keys, base.ident))
+            assert_refusal_without_write(label + " floor advance", reason, fresh,
+                                         functools.partial(floor.advance, fresh, keys, base.ident))
+        finally:
+            target.write_text(original)
+
+    same_key_formats = [
+        ("comment and indentation", f'# note\n  {ROLLBACK_PRINCIPAL} namespaces="{ROLLBACK_NS}" ssh-ed25519 {release_blob}\n'),
+        ("extra options", f'{ROLLBACK_PRINCIPAL} no-touch-required,namespaces="{ROLLBACK_NS}" ssh-ed25519 {release_blob}\n'),
+        ("tabs and trailing space", f'{ROLLBACK_PRINCIPAL}\tnamespaces="{ROLLBACK_NS}"\tssh-ed25519\t{release_blob}  \n'),
+        ("key comment", f'{ROLLBACK_PRINCIPAL} namespaces="{ROLLBACK_NS}" ssh-ed25519 {release_blob} release-copy\n'),
+        ("release principal", f'{RELEASE_PRINCIPAL} namespaces="{RELEASE_NS}" ssh-ed25519 {release_blob}\n'),
+        ("no namespaces option", f"{ROLLBACK_PRINCIPAL} ssh-ed25519 {release_blob}\n"),
+    ]
+    for label, text in same_key_formats:
+        tampered(keys.rollback_signers, rollback_text, text, "rollback signers same key, " + label,
+                 "keys not distinct")
+    tampered(keys.release_signers, release_text,
+             f'# note\n{RELEASE_PRINCIPAL} no-touch-required,namespaces="{RELEASE_NS}" ssh-ed25519 {rollback_blob}\n',
+             "release signers carrying rollback key", "keys not distinct")
+    for label, text, reason in (
+        ("empty file", "", "malformed allowed-signers"),
+        ("two keys", rollback_text + release_text, "malformed allowed-signers"),
+        ("bad base64", f'{ROLLBACK_PRINCIPAL} namespaces="{ROLLBACK_NS}" ssh-ed25519 !!!\n', "malformed allowed-signers"),
+        ("truncated key", f'{ROLLBACK_PRINCIPAL} namespaces="{ROLLBACK_NS}" ssh-ed25519 {rollback_blob[:-8]}\n',
+         "malformed signer key"),
+        ("non-ed25519 type", f'{ROLLBACK_PRINCIPAL} namespaces="{ROLLBACK_NS}" ssh-rsa {rollback_blob}\n',
+         "unsupported signer key"),
+        ("wrong embedded type", (f'{ROLLBACK_PRINCIPAL} namespaces="{ROLLBACK_NS}" ssh-ed25519 '
+                                 f'{base64.b64encode(b"x" + base64.b64decode(rollback_blob)[1:]).decode()}\n'),
+         "malformed signer key"),
+    ):
+        tampered(keys.rollback_signers, rollback_text, text, "rollback signers " + label, reason)
+    assert keys.rollback_signers.read_text() == rollback_text and keys.release_signers.read_text() == release_text
+    reformatted = f'# note\n\n  {ROLLBACK_PRINCIPAL}\tnamespaces="{ROLLBACK_NS}" ssh-ed25519 {rollback_blob} comment  \n'
+    keys.rollback_signers.write_text(reformatted)
+    try:
+        assert signer_key_material(keys.rollback_signers) == signer_key_material(
+            pathlib.Path(str(keys.rollback) + ".signers"))
+        verify_entry(keys, base.ident, rollback, forward, verify_chain(keys, base.ident, chain, forward.ident))
+    finally:
+        keys.rollback_signers.write_text(rollback_text)
+    verify_entry(keys, base.ident, rollback, forward, verify_chain(keys, base.ident, chain, forward.ident))
+    print(f"archive history: {len(corrupt_histories) + 4} corrupt or unknown committed/recovered histories refused "
+          "on journal-free boot, floor check and floor advance; recovered-before-committed attempts, an unreached "
+          "committed branch, rewound-selector histories and pending recovery with consistent history accepted; "
+          "negative, boolean, float and string journal-temp attempts refused")
+    print(f"post-plan archive: {post_plan_refusals} corrupt histories inserted after plan construction refused by "
+          "consult itself and by the first guarded action, without writes")
+    print("signer roles: release and rollback allowed-signers files must authorize different ed25519 key "
+          f"material; {len(same_key_formats) + 1} same-key reformatting/tampering vectors and 6 malformed or "
+          "foreign-format signer vectors refused on verify_entry, boot, floor check and floor advance")
+    print("signer scope: model parses one single-key ed25519 allowed-signers line and accepts a missing or "
+          "unmatched namespaces option; it does not validate ssh-keygen option semantics, certificates, "
+          "multi-key files, key comments, expiry or revocation, nor that signers files are the operational "
+          "trust anchor")
 
 
 def legacy_rel(path: str) -> str:
@@ -1295,40 +1873,65 @@ def test_legacy_tree(keys: Keys, base: Generation, forward: Generation, workdir:
           "no root ownership, ACL, capability, mount, fsync or case-insensitive filesystem coverage")
 
 
-def test_gap_documentation(keys: Keys, initial: State, base: Generation, forward: Generation) -> None:
-    state = copy.deepcopy(initial)
-    execute(update_plan(state, keys, base.ident, forward), 0)
-    state.stage = Stage(forward.ident, members={"foreign": b"unverified"}, recognized=True)
-    state.fixed_temps[("foreign", 0, 0)] = FixedTemp(base.ident, 0, b"unknown")
-    state.selector_temps[("foreign", 0)] = ("f" * 64, False)
-    state.journal_temp = Journal(base.ident, forward.ident)
-    assert boot_clean(state, keys, base.ident) == base.ident
+def test_gap_documentation(keys: Keys, initial: State, base: Generation, forward: Generation,
+                           rollback: Generation) -> None:
     aborted = copy.deepcopy(initial)
     plan = update_plan(aborted, keys, base.ident, forward)
     execute(plan, next(i for i, (name, _) in enumerate(plan) if name == "publish journal without replacement") + 1)
     assert reconcile(aborted, keys, base.ident) == base.ident
-    expect_reject("retry of recovered transition", "generation collision",
-                  lambda: update_plan(aborted, keys, base.ident, forward))
-    print("model gaps (asserted so a fix is noticed): clean boot ignores leftover temp objects and trusts a "
-          "boolean 'recognized' stage flag; a recovered transition cannot be retried")
+    retry_plan = update_plan(aborted, keys, base.ident, forward)
+    assert any(name == "write journal" for name, _ in retry_plan)
+    assert not any(name == "publish generation without replacement" for name, _ in retry_plan)
+    execute(retry_plan)
+    assert reconcile(aborted, keys, base.ident) == forward.ident
 
+    repeated = copy.deepcopy(initial)
+    for cut_name in ("publish journal without replacement", "update rename selector"):
+        plan = update_plan(repeated, keys, base.ident, forward)
+        execute(plan, next(i for i, (name, _) in enumerate(plan) if name == cut_name) + 1)
+        assert reconcile(repeated, keys, base.ident) == base.ident
+    execute(update_plan(repeated, keys, base.ident, forward))
+    assert reconcile(repeated, keys, base.ident) == forward.ident
 
-@dataclasses.dataclass
-class TrustedFloor:
-    sequence: int
-    ident: str
+    refused_retries = 0
+    accepted_retries = 0
+    recovered = copy.deepcopy(initial)
+    first = update_plan(recovered, keys, base.ident, forward)
+    execute(first, next(i for i, (name, _) in enumerate(first)
+                        if name == "publish journal without replacement") + 1)
+    assert reconcile(recovered, keys, base.ident) == base.ident
+    total = len(update_plan(copy.deepcopy(recovered), keys, base.ident, forward))
+    for cut in range(total + 1):
+        view = copy.deepcopy(recovered)
+        execute(update_plan(view, keys, base.ident, forward), cut)
+        if view.journal is None:
+            continue
+        assert reconcile(view, keys, base.ident) == base.ident
+        if view.fixed_temps or view.selector_temps:
+            assert_refusal_without_write(f"retry after cut {cut}", "staging collision", view,
+                                         functools.partial(update_plan, view, keys, base.ident, forward))
+            refused_retries += 1
+        else:
+            execute(update_plan(view, keys, base.ident, forward))
+            assert reconcile(view, keys, base.ident) == forward.ident
+            accepted_retries += 1
+    assert refused_retries and accepted_retries
 
-    def check(self, state: State, keys: Keys, baseline_id: str) -> str:
-        ident = boot_clean(state, keys, baseline_id)
-        chain = verify_chain(keys, baseline_id, state.generations, ident)
-        require(parse_manifest(chain[ident].raw)["sequence"] >= self.sequence, "below trusted floor")
-        require(self.ident in chain, "trusted checkpoint not in chain")
-        return ident
-
-    def advance(self, state: State, keys: Keys, baseline_id: str) -> None:
-        ident = self.check(state, keys, baseline_id)
-        self.sequence = parse_manifest(state.generations[ident].raw)["sequence"]
-        self.ident = ident
+    durable = copy.deepcopy(initial)
+    execute(update_plan(durable, keys, base.ident, forward))
+    next_plan = update_plan(durable, keys, base.ident, rollback)
+    archive_at = next(i for i, (name, _) in enumerate(next_plan)
+                      if name == "archive journal without replacement")
+    execute(next_plan, archive_at + 1)
+    assert durable.unsynced_archive is not None and durable.selector == rollback.ident
+    assert_refusal_without_write("update before archive sync", "journal archive not durable", durable,
+                                 functools.partial(update_plan, durable, keys, base.ident, forward))
+    before = copy.deepcopy(durable)
+    assert reconcile(durable, keys, base.ident) == rollback.ident and durable == before
+    print(f"retries: journal-publish and selector-rename cuts recovered and then committed; "
+          f"{refused_retries} fixed or selector staging cuts refuse another update, and no cleanup is modeled")
+    print("archive durability: an unsynced committed archive blocks the next update but not a journal-free boot; "
+          "no device-level durability is modeled")
 
 
 def test_trusted_floor(keys: Keys, base: Generation, forward: Generation, rollback: Generation) -> None:
@@ -1367,11 +1970,74 @@ def test_trusted_floor(keys: Keys, base: Generation, forward: Generation, rollba
                  list(alternate_next.payloads))
     assert_refusal_without_write("signed fork", "trusted checkpoint", fork,
                                  lambda: floor.check(fork, keys, base.ident))
-    print("synthetic external monotonic floor, consulted read-side only: downgrade, store rewind and fork "
-          "refused when the floor is checked; distinct dual-key rollback advances floor from 1 to 2")
-    print("floor caveat: reconcile and update planning do not consult the floor, so a rewound store is still "
-          "written to before a floor check; no trusted monotonic anchor exists on device; advancement is "
-          "assumed atomic and trusted, not modeled across crashes")
+    for label, reason, bad in (
+        ("negative sequence", "invalid trusted floor", TrustedFloor(-1, forward.ident)),
+        ("malformed identifier", "invalid trusted floor", TrustedFloor(1, "zz")),
+        ("sequence and identifier disagree", "trusted floor mismatch", TrustedFloor(0, forward.ident)),
+    ):
+        candidate_store = copy.deepcopy(store)
+        assert_refusal_without_write("floor " + label, reason, candidate_store,
+                                     functools.partial(update_plan, candidate_store, keys, base.ident, rollback, bad))
+    pending = State({base.ident: base, forward.ident: forward}, forward.ident, list(forward.payloads))
+    recovery_floor = TrustedFloor(1, forward.ident)
+    plan = update_plan(pending, keys, base.ident, rollback, recovery_floor)
+    execute(plan, next(i for i, (name, _) in enumerate(plan)
+                       if name == "publish journal without replacement") + 1)
+    assert pending.journal is not None
+    assert_refusal_without_write("pending journal below floor", "below trusted floor", pending,
+                                 lambda: reconcile(pending, keys, base.ident, floor))
+
+    blocked = State({base.ident: base, forward.ident: forward}, forward.ident, list(forward.payloads))
+    assert_refusal_without_write("update below floor", "below trusted floor", blocked,
+                                 lambda: update_plan(blocked, keys, base.ident, rollback, floor))
+    recovered_pending = copy.deepcopy(pending)
+    assert reconcile(recovered_pending, keys, base.ident, recovery_floor) == forward.ident
+    assert recovered_pending.journal is None and recovered_pending.unsynced_archive is None
+
+    guarded_cuts = 0
+    advanced = make_generation(keys, 3, "forward", rollback.ident, None, payloads("advanced"))
+    advanced_store = State({g.ident: g for g in (base, forward, rollback, advanced)}, advanced.ident,
+                           list(advanced.payloads))
+    sources: list[tuple[str, State, Callable[[State, TrustedFloor], list[Action]]]] = [
+        ("update", State({base.ident: base, forward.ident: forward}, forward.ident, list(forward.payloads)),
+         lambda s, f: update_plan(s, keys, base.ident, rollback, f)),
+        ("recovery", copy.deepcopy(pending), lambda s, f: recovery_plan(s, keys, base.ident, f)),
+    ]
+    for label, source, build in sources:
+        total = len(build(copy.deepcopy(source), TrustedFloor(1, forward.ident)))
+        for step in range(total):
+            live = copy.deepcopy(source)
+            live_floor = TrustedFloor(1, forward.ident)
+            plan = build(live, live_floor)
+            execute(plan, step)
+            live_floor.advance(advanced_store, keys, base.ident)
+            assert_refusal_without_write(f"{label} step {step} after floor advance", "below trusted floor", live,
+                                         plan[step][1])
+            guarded_cuts += 1
+    settled = copy.deepcopy(pending)
+    settled_floor = TrustedFloor(1, forward.ident)
+    assert reconcile(settled, keys, base.ident, settled_floor) == forward.ident
+    settled_floor.advance(advanced_store, keys, base.ident)
+    assert_refusal_without_write("post-recovery boot below floor", "below trusted floor", settled,
+                                 lambda: reconcile(settled, keys, base.ident, settled_floor))
+    assert_refusal_without_write("post-recovery update below floor", "below trusted floor", settled,
+                                 lambda: update_plan(settled, keys, base.ident, rollback, settled_floor))
+    after_recovery = update_plan(settled, keys, base.ident, rollback)
+    assert any(name == "write journal" for name, _ in after_recovery)
+
+    floorless = copy.deepcopy(store)
+    floorless.selector = base.ident
+    floorless.fixed = list(base.payloads)
+    assert reconcile(floorless, keys, base.ident) == base.ident
+    print("synthetic external monotonic floor, supplied explicitly and checked before each guarded publication "
+          "or recovery action: downgrade, store rewind, pending-journal rewinds and fork refused before that "
+          f"step wrote without failing the preflight; {guarded_cuts} guarded cuts (including no-op sync "
+          "steps) each refused before their guarded step wrote; distinct dual-key rollback advances floor "
+          "from 1 to 2")
+    print("floor caveat: boot and reconcile do not consult the floor unless a caller supplies it; an unsynced "
+          "archive blocks update, recovery and floor advancement but not a journal-free boot; recognized, "
+          "isolated and safe-metadata stage flags are model booleans with no derived evidence; advancing "
+          "assumes an atomically durable external checkpoint and no trusted monotonic anchor exists on device")
 
 
 def test_signature_cache(keys: Keys) -> None:
@@ -1418,7 +2084,7 @@ def main() -> None:
         test_signature_cache(keys)
         initial = State({base.ident: base}, base.ident, list(base.payloads))
         verify_chain(keys, base.ident, initial.generations, base.ident)
-        test_corruption(keys, initial, base, forward)
+        test_corruption(keys, initial, base, forward, rollback)
         forward_counts = test_interruption(keys, initial, base, forward)
         after_forward = copy.deepcopy(initial)
         execute(update_plan(after_forward, keys, base.ident, forward))
@@ -1434,8 +2100,9 @@ def main() -> None:
         test_legacy_tree(keys, base, forward, pathlib.Path(name))
         test_trusted_floor(keys, base, forward, rollback)
         test_selector_without_journal(keys, base, forward)
-        test_gap_documentation(keys, initial, base, forward)
+        test_gap_documentation(keys, initial, base, forward, rollback)
         test_collisions(keys, initial, base, forward)
+        test_archive_history_and_signers(keys, initial, base, forward, rollback)
         after_rollback.selector = base.ident
         assert reconcile(after_rollback, keys, base.ident) == base.ident
         rewind = copy.deepcopy(initial)

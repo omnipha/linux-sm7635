@@ -216,6 +216,16 @@ signatures, the identifier and sequence binding, and the retained earlier
 source before installing. Recovery of an interrupted, uncommitted
 transaction to its previous generation is not a committed release rollback.
 
+A host-only prototype, `scripts/verify-root-generation-bundle.py --self-test`,
+checks framed chains with real SSHSIG, a pinned baseline, distinct key blobs and
+exact older-ancestor rollback. It is not wired into any image, userdata or write
+path and is not a target-side verifier closure. Its forward rule is an
+experimental full-tuple reissue refusal only: a forward reusing one earlier
+payload, or trivially altered older bytes, is still accepted, and the logical
+model accepts full reissue. Hash comparison is not semantic downgrade
+prevention. That difference needs an owner decision before either rule is
+adopted.
+
 Realistic replay limits: sequence and selector checks hold only relative to
 intact local state. A privileged actor — or a whole-userdata rollback —
 that rewinds the selector, the matching history, or the locally stored
@@ -390,8 +400,8 @@ device, USB, flash or partition access):
 - `scripts/test-persistent-root-migration.py` (passes) is a synthetic
   logical model with disposable `ssh-keygen` Ed25519 keys. It exercises canonical-manifest and authorization vectors, a
   separately keyed and domain-separated higher-sequence rollback, and
-  interruption cuts at every modelled publication and recovery step (49
-  forward and 52 rollback publication cuts, each with 650 recovery cuts).
+   interruption cuts at every modelled publication and recovery step (49
+   forward and 52 rollback publication cuts, each with 1300 recovery cuts).
   Recovery coverage is of that abstract state machine, not of ext4, `fsync`
   or a power cut. Its legacy-fixture sections run on unprivileged host
   directories with path-based `lstat` checks that have reopen races and no
@@ -465,9 +475,109 @@ authorized, answers with the pair already installed and unchanged:
    pinned paths, is still there after a reboot with no partition flash and
    with `init_boot_a` `d7bba454…` and `vendor_boot_b` `221bfd82…` unchanged.
 
-That single boot is the whole budget for this variable. It is not the
-reversible-root-fault rescue test and not an update/rollback test; each of
-those needs its own later technical reason and coordinator approval.
+Persistence acceptance for this variable needs **two** coordinator-approved
+boots under one technical reason, not one. A single boot cannot observe both
+marker creation and survival across a reboot, so an earlier wording that called
+one boot the whole budget for this variable was wrong and is withdrawn.
+
+- **Boot 1** creates the marker outside the three pinned paths and captures
+  the `sda13` root mount mode, filesystem features, clean state and error
+  counters.
+- **Boot 2** is a reboot with **no partition flash**. It verifies the marker
+  is still present and that the carrier hashes are unchanged
+  (`init_boot_a` `d7bba454…`, `vendor_boot_b` `221bfd82…`).
+
+The two boots share that one reason: measure persistence of an unpinned file
+and the final root mount mode on the already-installed pair. Each additional
+boot beyond those two needs its own technical reason and its own coordinator
+approval. This pair of boots is not the reversible-root-fault rescue test and
+not an update/rollback test.
+
+### Guard-window measurement runbook (installed pair)
+
+Draft only. This runbook authorizes nothing. The coordinator runs it, or does
+not; no step here is a device action, a flash, a boot, or a command to execute
+from this repository. Which tools exist on the installed system is **not
+invented here**. The coordinator names the read-only tools actually present
+before boot 1. If a required observation has no known read-only tool, stop.
+Do not substitute a tool that writes.
+
+**What may write.** The single intentional userdata write is marker creation
+on boot 1 only: one new regular file, outside the three pinned paths, with no
+other content change. Every inspection tool is read-only. No host radio action;
+the installed guest's autonomous pre-ACK chain is not changed by this runbook.
+No ACK. No remount. No `fsck`, no journal replay, no mount-option change, no
+package install, no editor, and no shell redirection onto the device filesystem
+except the single boot-1 marker write.
+
+**Commands that implicitly write are not inspection.** Do not use a tool
+because its name sounds read-only if invoking it replays a journal, updates
+a superblock mount count or last-mount time, rewrites an inode, creates a
+dotfile, or truncates a capture path on the phone. If that behavior is
+uncertain for a candidate tool, do not use it. Host-side session logs are the
+capture: the coordinator host records the session transcript. Do not write
+logs, checksums or notes onto userdata, `/tmp` on the device, or pstore.
+
+**Deadline.** The PID 1 guard budget is 160 seconds from arming, measured on
+the device's boot-relative `/proc/uptime` clock
+(`scripts/pmos-pid1-transition.sh` arms at 160;
+`scripts/pmos-pid1-guard.sh` accepts 1..178). On the installed pair arming was
+measured around 155 seconds of uptime, so the absolute deadline is near 315
+seconds after kernel start. A timer started when the session opens does not
+track that clock. The host reads `/proc/uptime` over the session and leaves
+before the armed uptime plus 160 seconds, with teardown margin. If the deadline
+expires, the device returns to the bootloader itself; record that. Do not ACK,
+extend the window, or start another procedure in the same boot. The separate
+150-second initramfs timer is canceled by the installed pair's `/run/keep`
+hold and is not this deadline.
+
+**Boot 1, in order, only if the previous step is unambiguous:**
+
+1. Confirm the session is the installed pair (carrier identity as already
+   pinned) and that the PID 1 guard is armed and not ACKed. Read
+   `/proc/uptime`, derive the remaining guard time, and start the host-side
+   session log.
+2. Record `sda13` mount mode (read-only or read-write) and the mount
+   identity. Read-only observation only.
+3. Record filesystem features, clean state and error counters by reading the
+   superblock. See the observational limit below.
+4. Record carrier hashes for `init_boot_a` and `vendor_boot_b` over the
+   key-only session. The known read-only option is the run-79 temporary
+   BusyBox block-node read; an earlier node attempt reset its session, so
+   that hazard is part of the method. If the method is uncertain or could
+   write, stop; do not substitute a remembered digest.
+5. Only then, and only on boot 1, create the one marker file outside the
+   three pinned paths. Record its path, size and digest in the **host** log.
+   Do not create it on boot 2. Do not touch the three pinned paths.
+6. Leave the session before the guard deadline. No ACK.
+
+**Boot 2**, reboot, no flash, same constraints, no marker creation:
+
+1. Same session, timer and host log rules. No ACK, no radio, no remount.
+2. Confirm the marker path, size and digest match the host log from boot 1.
+   Absence or mismatch is the result; do not recreate the marker. Absence
+   after the guard's unclean bootloader return is ambiguous: unclean-shutdown
+   loss is not excluded, so it is not by itself proof of a non-persistent root.
+3. Re-read mount mode, features, clean state and error counters.
+4. Re-read carrier hashes and compare to `d7bba454…` and `221bfd82…`.
+5. Leave before the guard deadline.
+
+**Superblock read while mounted read-write.** A raw read of the ext4
+superblock on a filesystem that is mounted read-write is an observational
+snapshot of bytes at one moment. It is not an offline integrity check and
+not proof of a clean shutdown. Mount-count, timestamps and error fields can
+change under a writer this runbook does not control, and a read does not
+establish what a later unmount would commit. If the snapshot is inconsistent,
+partial, or disagrees with the mount table, stop. Do not "fix" it, do not
+unmount to re-read, and do not treat a matching clean flag as clearance for
+a later transaction.
+
+**Stop on uncertainty.** Any ambiguous tool, hash, mount mode, marker path
+or deadline miss ends the run. Record the stop on the coordinator host. Do
+not improvise a write, a remount, an ACK, or another boot. Boot 2 overwrites
+boot 1's ramoops, and the recorded preboot pstore fetch was unsupported.
+Pstore retention or loss remains a separate owner decision on #324; this
+runbook does not accept pstore loss and does not request that decision.
 
 ## Budget and fallback
 

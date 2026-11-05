@@ -253,6 +253,13 @@ fi
 
 if [ "${1:-}" = --switched ]; then
 	[ "$$" = 1 ] && [ "$($BB readlink /proc/1/exe)" = /bin/busybox ] || fail 'switch_root did not exec native BusyBox PID 1'
+	leaked=
+	for fd_link in /proc/1/fd/*; do
+		[ -e "$fd_link" ] || [ -L "$fd_link" ] || continue
+		fd_target=$($BB readlink "$fd_link") || continue
+		case "$fd_target" in /dev/loop*|/dev/block/sda13|/tmp/pmos-pid1.*) leaked="$leaked $fd_link=$fd_target";; esac
+	done
+	[ -z "$leaked" ] && [ ! -e /proc/1/fd/9 ] && [ ! -L /proc/1/fd/9 ] || fail "switched PID 1 holds a host loop or image descriptor:$leaked"
 	mounted / ext4 && mounted /dev tmpfs && mounted /dev/pts devpts && mounted /proc proc && mounted /run tmpfs && separate /run /dev && separate /run / &&
 		$BB awk '$2 == "/sys" || index($2, "/sys/") == 1 {bad++} END {exit(bad != 0)}' /proc/mounts || fail 'switch_root lost private guest mounts'
 	( . /run/pmos-root-contract.sh && root_contract_switched_root /proc/1/mounts /proc/1/mountinfo ) || fail 'switched ext4 root contract failed'
@@ -363,6 +370,8 @@ if (not stat.S_ISREG(image.st_mode) or image.st_nlink != 1 or image.st_size != 2
     raise SystemExit(1)
 os.close(9)
 PY
+	exec 9>&-
+	[ ! -e /proc/1/fd/9 ] && [ ! -L /proc/1/fd/9 ] || fail 'loop descriptor still open in the namespace init'
 	export MAIN_NUMS
 	$BB mount --make-rprivate / || fail 'private mount namespace unavailable'
 	$BB mount -t tmpfs -o mode=0755 tmpfs /dev || fail 'private host dev'
