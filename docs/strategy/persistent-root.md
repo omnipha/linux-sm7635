@@ -599,19 +599,34 @@ validated), faults of other files, `:22` loss, power-loss behavior, and every
 item below. See
 [records/2026-11-05-125321-run121-acceptance3-os-release-fault-rescue.md](../../records/2026-11-05-125321-run121-acceptance3-os-release-fault-rescue.md).
 
-**Next single variable after run 121 (coordinator-owned, separately
-authorized):** unchanged from the dossier: the remainder of acceptance item 2
-on the installed pair, meaning the offline fsck/journal policy and
-`METADATA_CSUM` semantics for a later writable transaction, which are still
-host-only proposals, plus the carrier-hash re-read, which has no admissible
-read-only reader yet. Run 121 does not change that. The host-side parser gap
-in the baseline-provenance fixture (altered-radio denylist) is closed by the
-same change set as this note; it is the only host step for item 4 that the
-dossier had already scoped. The device leg of item 4 (a different verified
-pair) stays blocked on a bootstrap that does not exist and on separate
-coordinator authorization. The `:22`-outage rescue gap is not a dossier
-variable; it would be its own coordinator request with its own technical
-reason. No further model redesign rounds.
+**Next single variable (plan owner, 2026-11-05 evening; replaces the
+run-121 text):** build the missing deployable bootstrap, host-only. Reason:
+items 1 (partial), 2 (mount mode, superblock snapshot) and 3 (one fault) have
+measured what the installed pair can answer; the remaining device-measurable
+items (fsck policy on a live `sda13`, carrier-hash re-read) have no admissible
+read-only reader, and item 4 is blocked only because the bootstrap does not
+exist. Waiting for a coordinator measurement that cannot be taken produced
+three `no_candidate` strategist episodes and 5+ hours without a new fact. The
+bootstrap is host work, not a flash: one `init_boot_a`/`vendor_boot_b`
+candidate pair, built and verified on the host only, embedding the two
+anchors of `configs/persistent-root-trust-anchors.json` and a signed baseline
+generation that reproduces today's three pinned files byte for byte, with the
+existing diagnostic `:22` rescue, guard and ACK paths unchanged. Check (host):
+builder output verified by `verify-root-generation-bundle.py` and the pair
+verifier, baseline files byte-identical to the pinned digests, refusal cases
+(wrong anchor, replayed sequence, altered radio `d7b74c24…`) fail closed.
+No device boot, flash or pair authorization comes with it; a flash needs a
+separate coordinator decision on the finished, reviewed candidate.
+Budget: at most three worker sessions or one working day to a verified host
+candidate. Fallback if the bootstrap cannot be made to fit the carrier size
+or cannot keep `:22` rescue intact on the host: stop, report the measured
+reason, and ask the owner whether item 4 is accepted as "pins stay, changes to
+the three pinned paths need a new image" (items 1 to 3 already hold for all
+other userland). Not this: more model redesign rounds, fixtures that re-prove
+refuted exclusion mechanisms, wording-only PRs, a `:22`-outage fault boot
+without a validated non-`:22` restore path. Coordinator-side, separately
+authorized and unchanged: the fsck/journal policy read and the carrier-hash
+re-read once an admissible read-only reader exists.
 
 ### Guard-window measurement runbook (installed pair)
 
