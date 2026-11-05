@@ -57,6 +57,13 @@ def digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def tool(name: str) -> str:
+    path = shutil.which(name)
+    if path is None:
+        fail(f"required host tool missing: {name}")
+    return path
+
+
 def run(args: list[str], data: bytes = b"") -> subprocess.CompletedProcess[bytes]:
     return subprocess.run(args, input=data, capture_output=True, check=False, env={})
 
@@ -97,10 +104,11 @@ def member(archive: tarfile.TarFile, name: str) -> bytes:
     return data
 
 
-def extract(deb: bytes, private: pathlib.Path) -> bytes:
+def extract(deb: bytes, private: pathlib.Path, dpkg_deb: str) -> bytes:
+    require_deb(deb)
     raw = private / "package.deb"
     raw.write_bytes(deb)
-    listing = run(["dpkg-deb", "--fsys-tarfile", str(raw)])
+    listing = run([dpkg_deb, "--fsys-tarfile", str(raw)])
     require(listing.returncode == 0 and listing.stdout[257:262] == b"ustar",
             "package filesystem archive is not a tar stream")
     archive_path = private / "filesystem.tar"
@@ -110,14 +118,13 @@ def extract(deb: bytes, private: pathlib.Path) -> bytes:
             binary = member(archive, MEMBER)
     except tarfile.TarError:
         fail("cannot parse package filesystem archive")
-    require(len(binary) == BUSYBOX_SIZE, "BusyBox binary size differs")
-    require(digest(binary) == BUSYBOX_SHA256, "BusyBox binary SHA differs")
+    require_binary(binary)
     elf_static(binary)
     return binary
 
 
-def applets(binary: pathlib.Path) -> tuple[str, ...]:
-    listed = run([QEMU, str(binary), "--list"])
+def applets(binary: pathlib.Path, qemu: str) -> tuple[str, ...]:
+    listed = run([qemu, str(binary), "--list"])
     require(listed.returncode == 0 and listed.stderr == b"", "qemu applet listing failed")
     names = tuple(listed.stdout.decode("ascii").splitlines())
     require(len(names) == APPLET_COUNT, "applet count differs from pinned package")
@@ -133,17 +140,17 @@ def applets(binary: pathlib.Path) -> tuple[str, ...]:
     return names
 
 
-def smoke(binary: pathlib.Path) -> None:
-    done = run([QEMU, str(binary), "true"])
+def smoke(binary: pathlib.Path, qemu: str) -> None:
+    done = run([qemu, str(binary), "true"])
     require(done.returncode == 0 and done.stdout == b"", "true applet failed")
-    done = run([QEMU, str(binary), "false"])
+    done = run([qemu, str(binary), "false"])
     require(done.returncode == 1 and done.stdout == b"", "false applet did not exit 1")
-    done = run([QEMU, str(binary), "sh", "-c", "exit 7"])
+    done = run([qemu, str(binary), "sh", "-c", "exit 7"])
     require(done.returncode == 7, "sh applet did not propagate exit status")
-    done = run([QEMU, str(binary), "sha256sum"], b"abc")
+    done = run([qemu, str(binary), "sha256sum"], b"abc")
     require(done.returncode == 0 and done.stdout.split() == [ABC_SHA256.encode(), b"-"],
             "sha256sum applet known-answer test failed")
-    done = run([QEMU, str(binary), "omnipha-not-an-applet"])
+    done = run([qemu, str(binary), "omnipha-not-an-applet"])
     require(done.returncode != 0, "unknown applet was accepted")
 
 
@@ -157,7 +164,16 @@ def rejects(label: str, call: Callable[[], object]) -> None:
     print(f"rejected: {label}")
 
 
-def negatives(binary: bytes, deb: bytes) -> None:
+def require_deb(deb: bytes) -> None:
+    require(digest(deb) == DEB_SHA256, "BusyBox deb SHA differs")
+
+
+def require_binary(binary: bytes) -> None:
+    require(len(binary) == BUSYBOX_SIZE, "BusyBox binary size differs")
+    require(digest(binary) == BUSYBOX_SHA256, "BusyBox binary SHA differs")
+
+
+def negatives(binary: bytes, deb: bytes, private: pathlib.Path, dpkg_deb: str) -> None:
     phoff = struct.unpack_from("<Q", binary, 32)[0]
     phnum = struct.unpack_from("<H", binary, 56)[0]
     require(phnum > 0, "BusyBox has no program headers")
@@ -172,31 +188,31 @@ def negatives(binary: bytes, deb: bytes) -> None:
     rejects("x86-64 machine", lambda: elf_static(patched(18, struct.pack("<H", EM_X86_64))))
     rejects("ELF32 class", lambda: elf_static(patched(4, b"\x01")))
     rejects("truncated ELF", lambda: elf_static(binary[:63]))
-    require(digest(patched(len(binary) // 2, b"\x00" if binary[len(binary) // 2] else b"\x01")) != BUSYBOX_SHA256,
-            "flipped byte kept the BusyBox SHA")
-    require(digest(deb[:-1]) != DEB_SHA256 and digest(deb + b"\x00") != DEB_SHA256,
-            "altered deb kept the pinned SHA")
-    print("rejected: altered BusyBox byte, truncated deb, extended deb")
+    flipped = patched(len(binary) // 2, b"\x00" if binary[len(binary) // 2] else b"\x01")
+    rejects("altered BusyBox byte", lambda: require_binary(flipped))
+    rejects("truncated deb", lambda: require_deb(deb[:-1]))
+    rejects("extended deb", lambda: require_deb(deb + b"\x00"))
+    rejects("altered deb", lambda: extract(deb[:-1] + bytes([deb[-1] ^ 1]), private, dpkg_deb))
 
 
 def main() -> None:
-    require(shutil.which("dpkg-deb") is not None and shutil.which(QEMU) is not None,
-            "required host tool missing")
+    dpkg_deb = tool("dpkg-deb")
+    qemu = tool(QEMU)
     require(CACHE.is_file() and not CACHE.is_symlink(), "cached BusyBox deb unavailable; not downloading")
     deb = CACHE.read_bytes()
-    require(digest(deb) == DEB_SHA256, "cached BusyBox deb SHA differs")
+    require_deb(deb)
     build_pin()
     print("build-bootimg.sh BUSYBOX_SHA256 equals cached deb SHA-256 " + DEB_SHA256)
     with tempfile.TemporaryDirectory(prefix="pmos-ram-tool-closure.") as private:
         root = pathlib.Path(private)
         root.chmod(0o700)
-        binary = extract(deb, root)
+        binary = extract(deb, root, dpkg_deb)
         path = root / "busybox"
         path.write_bytes(binary)
         path.chmod(0o700)
-        names = applets(path)
-        smoke(path)
-        negatives(binary, deb)
+        names = applets(path, qemu)
+        smoke(path, qemu)
+        negatives(binary, deb, root, dpkg_deb)
     print("pass: pinned deb, BusyBox " + BUSYBOX_SHA256 + ", static AArch64, no PT_INTERP, no PT_DYNAMIC")
     print(f"selected applets present: {len(SELECTED)} of {len(names)} listed under qemu")
     print("symlink-invoked applets listed only: " + " ".join(SYMLINK_APPLETS))

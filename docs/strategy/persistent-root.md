@@ -408,12 +408,16 @@ device, USB, flash or partition access):
   root ownership, ACL, capability, mount, `fsync` or case-insensitive
   filesystem coverage. It prints that it is not deployable and has no
   device, durability, concurrency, mount, guard or hardware anti-replay proof.
-- Known gaps the model asserts so a fix is noticed: clean boot ignores
-  leftover temporary objects (stray fixed, selector or journal temporaries)
-  and trusts a boolean "recognized" stage flag; and a recovered transition
-  cannot be retried, because the same target hits a generation or journal
-  history collision. Both must be resolved by the reviewed implementation,
-  not by relaxing the stop-on-unknown rules in the recovery table.
+- Known gaps and trade-offs the model asserts: clean boot inspects leftover
+  temporary objects via `inspect_leftovers` rather than ignoring them, but
+  judges staged generation prefixes only against a caller-supplied verified
+  candidate generation (a real boot has no such oracle); an uncleaned previous
+  staging attempt causes `staging collision` and refuses another update until
+  resolved; retries succeed after a recovered journal-publish cut or
+  selector-rename cut, whereas fixed/selector temporary staging cuts refuse
+  another update without cleanup; and `recognized`/`isolated`/`safe_metadata`
+  remain abstract model booleans.
+
 - `scripts/test-pmos-writer-exclusion.sh` (synthetic tmpfs in a private mount
   namespace) shows the negatives described in the threat boundary; it
   establishes no sufficient exclusion for any real block device.
@@ -425,7 +429,7 @@ device, USB, flash or partition access):
   authorized device baseline signature, reviewed schema implementation,
   updater or pair.
 
-The **one planned physical measurement** is a separately authorized,
+The first physical measurement is a separately authorized,
 coordinator-run baseline cutover boot, not part of this proposal. Preflight
 must establish targeted fastboot identity, checksum-verified backups before
 writes, verified untouched stock rescue partitions, current carrier and
@@ -435,7 +439,7 @@ signature, selector and all three file digests/modes, root mount and guard
 state, and the outcome without disclosing private profiles, keys or device
 data. No guard acceptance or WLAN pass is assumed.
 
-That single boot cannot by itself prove a subsequent no-flash reboot, an
+That first boot cannot by itself prove a subsequent no-flash reboot, an
 update **and** a rollback. #324 remains open until the coordinator separately
 plans and measures those facts: an innocuous SSH edit persists across a reboot
 with carrier hashes unchanged and no intervening partition flash; a signed
@@ -518,34 +522,46 @@ uncertain for a candidate tool, do not use it. Host-side session logs are the
 capture: the coordinator host records the session transcript. Do not write
 logs, checksums or notes onto userdata, `/tmp` on the device, or pstore.
 
-**Deadline.** The PID 1 guard budget is 160 seconds from arming, measured on
-the device's boot-relative `/proc/uptime` clock
-(`scripts/pmos-pid1-transition.sh` arms at 160;
-`scripts/pmos-pid1-guard.sh` accepts 1..178). On the installed pair arming was
-measured around 155 seconds of uptime, so the absolute deadline is near 315
-seconds after kernel start. A timer started when the session opens does not
-track that clock. The host reads `/proc/uptime` over the session and leaves
-before the armed uptime plus 160 seconds, with teardown margin. If the deadline
-expires, the device returns to the bootloader itself; record that. Do not ACK,
-extend the window, or start another procedure in the same boot. The separate
-150-second initramfs timer is canceled by the installed pair's `/run/keep`
-hold and is not this deadline.
+**Deadline.** The guard enforces a per-boot budget from arming:
+armed uptime + budget defines the deadline on the device's `/proc/uptime`
+clock. The installed pair arms with a 160-second budget
+(`scripts/pmos-pid1-transition.sh` requests 160; `scripts/pmos-pid1-guard.sh`
+rejects budgets outside 1..178). `/run/pid1-guard/armed` contains the boot ID,
+not an arm timestamp, and the script computes `deadline = floor(arm uptime) +
+160`. A `/proc/uptime` read in a later session shows only the current uptime,
+not the arm uptime: it provides an upper bound on remaining time only if a
+conservative lower bound for the same boot's arm uptime is available.
+If no defensible same-boot lower bound is established, stop: absolute or
+cross-image arm/uptime claims are not safe substitutes. Run 61 armed at a
+measured kernel uptime near 155.4 seconds on a different image reaching
+post-cutover PID 1; the installed run-113 pair ended around uptime 315 seconds
+but this does not establish the same boot's arm timestamp, so no inspect
+derived from those two numbers is a safe deadline for the physical session.
+If uncertain, stop rather than infer. When armed and safe: leave before the
+computed deadline minus teardown margin. If the deadline expires, the guard
+attempts bootloader recovery, but that recovery is not guaranteed: it refuses
+if the device identity or `/bin/restart2` helper checks fail, and it falls
+through to sleep rather than forcing an untrusted reboot.
 
 **Boot 1, in order, only if the previous step is unambiguous:**
 
 1. Confirm the session is the installed pair (carrier identity as already
    pinned) and that the PID 1 guard is armed and not ACKed. Read
-   `/proc/uptime`, derive the remaining guard time, and start the host-side
-   session log.
+   `/proc/uptime` and establish, before any other step, whether a defensible
+   conservative lower bound for this boot's guard arming time is available
+   (same boot only). If it is not, stop; do not estimate from other boots or
+   images. Otherwise compute `floor(arm uptime) + 160` minus teardown margin
+   as the leave-by time, and start the host-side session log.
 2. Record `sda13` mount mode (read-only or read-write) and the mount
    identity. Read-only observation only.
 3. Record filesystem features, clean state and error counters by reading the
    superblock. See the observational limit below.
 4. Record carrier hashes for `init_boot_a` and `vendor_boot_b` over the
-   key-only session. The known read-only option is the run-79 temporary
-   BusyBox block-node read; an earlier node attempt reset its session, so
-   that hazard is part of the method. If the method is uncertain or could
-   write, stop; do not substitute a remembered digest.
+   key-only session using a genuinely read-only method. The run-79 temporary
+   BusyBox block-node read is **not** approved here: node creation is not
+   purely read-only, and an earlier attempt reset its session. If no
+   genuinely read-only carrier-hash method is available, stop; do not
+   substitute a remembered digest and do not create device nodes.
 5. Only then, and only on boot 1, create the one marker file outside the
    three pinned paths. Record its path, size and digest in the **host** log.
    Do not create it on boot 2. Do not touch the three pinned paths.
@@ -559,7 +575,8 @@ hold and is not this deadline.
    after the guard's unclean bootloader return is ambiguous: unclean-shutdown
    loss is not excluded, so it is not by itself proof of a non-persistent root.
 3. Re-read mount mode, features, clean state and error counters.
-4. Re-read carrier hashes and compare to `d7bba454…` and `221bfd82…`.
+4. Re-read carrier hashes with the same genuinely read-only method and
+   compare to `d7bba454…` and `221bfd82…`; if none exists, stop.
 5. Leave before the guard deadline.
 
 **Superblock read while mounted read-write.** A raw read of the ext4
@@ -574,18 +591,27 @@ a later transaction.
 
 **Stop on uncertainty.** Any ambiguous tool, hash, mount mode, marker path
 or deadline miss ends the run. Record the stop on the coordinator host. Do
-not improvise a write, a remount, an ACK, or another boot. Boot 2 overwrites
-boot 1's ramoops, and the recorded preboot pstore fetch was unsupported.
-Pstore retention or loss remains a separate owner decision on #324; this
-runbook does not accept pstore loss and does not request that decision.
+not improvise a write, a remount, an ACK, or another boot. A guard expiry that
+returns to the bootloader is an unclean end of the boot, not a substitute for
+the coordinator-approved no-flash second boot, and it is not guaranteed (see
+Deadline). Booting again may overwrite the first boot's ramoops, and the
+recorded preboot pstore fetch was unsupported, so loss of boot-1 pstore is a
+risk. Pstore retention or loss remains an unresolved separate owner decision
+on #324; this runbook does not accept pstore loss, does not request that
+decision, and authorizes no boot.
 
 ## Budget and fallback
 
 Host-side, the model now implements the separately keyed new-generation
 rollback, and `test-pmos-pid1.sh` is rewritten to supply `success-ready` and an
 ordered boot record on an isolated loop-backed ext4 root; it passes all six
-cases on the host with the production scripts unchanged, and that evidence is
-fixture-authored, so it is not a device ACK. Still open: the deployable bootstrap reconciled with the model. No image is
+cases on the host with the production scripts unchanged. The fixture's
+post-cutover descriptor sweep reads `/proc/1/fd` once before service start,
+skips links whose `readlink` fails, passes if nothing is listed, matches only
+`/dev/loop*`, `/dev/block/sda13` and `/tmp/pmos-pid1.*` targets, and has not
+been shown to fail under an injected post-cutover leak; only the pre-cutover
+fd-9 assertion was negative-tested. That evidence is fixture-authored, so it
+is not a device ACK. Still open: the deployable bootstrap reconciled with the model. No image is
 built and no pair is flashed until the owner records a decision on the two
 trust-anchor keys.
 
