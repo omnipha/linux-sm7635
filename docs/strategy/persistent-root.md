@@ -35,8 +35,8 @@ verified. **Never reflash this measured pair**; it is not the fallback after a
 failed cutover. This proposal does not authorize any other pair. Run 113
 reached persistent-root PID 1 and the internet gate refused; no WLAN success
 or cause of the missing route output is established. Its installed-files
-check implies a writable stage, but the final root mount mode needs a fresh
-measurement.
+check implied a writable stage; run 116 later observed the final root mounted
+`ext4 rw,relatime,norecovery` on `sda13` (see "Next single variable").
 
 The current generated chain checks these three regular, single-link,
 `root:root` `0700` files against exact SHA-256 pins:
@@ -518,45 +518,61 @@ synthetic journal-fsck fixture above does not replace that measurement.
 
 ## Next single variable
 
-Read-only measurement of the **installed** pair, before any replacement exists.
-Every acceptance fact of #324 is still unmeasured on the device. The exact
-owner public-key values are now recorded in
+Coordinator run 116 (2026-11-05, #324 comment 6654794020, recorded in
+[records/2026-11-05-095841-run-116-unpinned-marker-survives-no-flash-reboot.md](../../records/2026-11-05-095841-run-116-unpinned-marker-survives-no-flash-reboot.md))
+measured two of the acceptance facts below on the installed pair: the root
+mounted `ext4 rw,relatime,norecovery` on `/dev/block/sda13` on both boots, and
+one unpinned 98-byte file survived a no-flash reboot with an identical sha256.
+The dossier fallback below (root stays read-only, or the marker does not
+survive) did **not** trigger, so the migration design is not re-scoped. Still
+unmeasured, and still caveats on that result: ext4 features, clean state,
+error counters, journal behavior and fsck policy; the carrier hashes, which
+were not re-read on the device because no admissible read-only reader exists;
+durability beyond the one observed survival (the guest has no `sync` binary
+and boot 1 ended in the guard's unclean bootloader return); USB SSH rescue
+after a reversible root fault; and replacement of the hash pins. The signed
+generation model gets no further redesign rounds from this result.
+
+The exact owner public-key values are now recorded in
 `configs/persistent-root-trust-anchors.json`, which closes the missing-keys
 blocker named by the
 [pair-deliverable proofs](../../records/2026-11-04-190612-pair-deliverable-host-proofs.md);
 the replacement pair is still blocked on a bootstrap that does not exist yet.
 Spending further boots and design rounds on a pair that cannot be built does
-not move the check. The next measurement, coordinator-owned and separately
-authorized, answers with the pair already installed and unchanged:
+not move the check.
 
-1. Final root mount mode of `sda13` after cutover: read-only or read-write,
-   and the filesystem features, clean state and error counters, captured with
-   read-only tools. No `fsck -y`, no journal replay, no remount, no write.
-2. Whether one innocuous new file, created over SSH **outside** the three
-   pinned paths, is still there after a reboot with no partition flash and
-   with `init_boot_a` `d7bba454…` and `vendor_boot_b` `221bfd82…` unchanged.
+**Next single variable (coordinator-owned, separately authorized):** the
+remainder of acceptance item 2 on the installed pair, unchanged: the `sda13`
+ext4 features, clean state and error counters, captured with read-only tools
+only (no `fsck -y`, no journal replay, no remount, no write), so a journal and
+fsck policy can be stated from measurement instead of inference. Whether that
+read can be made without a further boot, and which read-only tool exists on the
+installed system, is the coordinator's call; nothing here names a tool or
+authorizes a boot. A superblock read of a filesystem mounted read-write is an
+observational snapshot only (see the runbook below). Any boot beyond run 116
+needs its own technical reason and its own coordinator approval.
 
-Persistence acceptance for this variable needs **two** coordinator-approved
-boots under one technical reason, not one. A single boot cannot observe both
-marker creation and survival across a reboot, so an earlier wording that called
-one boot the whole budget for this variable was wrong and is withdrawn.
+Run 116 against the original two-item variable:
 
-- **Boot 1** creates the marker outside the three pinned paths and captures
-  the `sda13` root mount mode, filesystem features, clean state and error
-  counters.
-- **Boot 2** is a reboot with **no partition flash**. It verifies the marker
-  is still present and that the carrier hashes are unchanged
-  (`init_boot_a` `d7bba454…`, `vendor_boot_b` `221bfd82…`).
+1. Final root mount mode of `sda13`: **measured**, read-write
+   (`rw,relatime,norecovery`). Filesystem features, clean state and error
+   counters: **not measured**; this is the next single variable above.
+2. One unpinned file outside the three pinned paths surviving a no-flash
+   reboot: **measured once**, identical sha256. "Carrier hashes unchanged"
+   was **not measured**, because no admissible read-only reader exists; it
+   stays a caveat, not a pass, until one is named.
 
-The two boots share that one reason: measure persistence of an unpinned file
-and the final root mount mode on the already-installed pair. Each additional
-boot beyond those two needs its own technical reason and its own coordinator
-approval. This pair of boots is not the reversible-root-fault rescue test and
-not an update/rollback test.
+The two boots shared one technical reason and are spent. A single boot cannot
+observe both marker creation and survival across a reboot, so the earlier
+one-boot wording stays withdrawn. Run 116 is not the reversible-root-fault
+rescue test and not an update/rollback test; those stay unmeasured.
 
 ### Guard-window measurement runbook (installed pair)
 
-Draft only. This runbook authorizes nothing. The coordinator runs it, or does
+Draft only. Run 116 executed its marker and mount-mode parts (with the
+process deviation and unread items in the run-116 record); the ext4 feature,
+clean-state and error-counter reads and the carrier-hash re-read were not done.
+This runbook authorizes nothing. The coordinator runs it, or does
 not; no step here is a device action, a flash, a boot, or a command to execute
 from this repository. Which tools exist on the installed system is **not
 invented here**. The coordinator names the read-only tools actually present
@@ -684,11 +700,13 @@ model. No image is built and no pair is flashed until the bootstrap exists and
 is independently reviewed; the owner public-key values for the two
 trust-anchor keys are now recorded, closing that blocker.
 
-If that measurement shows the final root stays read-only, or that an unpinned
-file does not survive the reboot, then persistent PC-style operation is not a
+Fallback condition: if the final root stays read-only, or an unpinned file does
+not survive a no-flash reboot, then persistent PC-style operation is not a
 property of the installed system at all and the migration design alone cannot
 deliver it: stop designing the replacement pair and re-scope #324 around the
-measured mount and persistence behavior instead of assuming it.
+measured mount and persistence behavior instead of assuming it. Run 116 saw a
+read-write root and one surviving marker, so this condition did **not**
+trigger. That is one marker and one reboot, not a durability proof.
 
 Fallback for the privileged-writer problem is the phase separation above. Do
 not spend another fixture round proving that locks, read-only bind mounts or
