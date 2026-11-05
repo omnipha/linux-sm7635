@@ -2,6 +2,7 @@
 
 ## Latest 10
 
+- [2026-11-05-125321-run121-acceptance3-os-release-fault-rescue](records/2026-11-05-125321-run121-acceptance3-os-release-fault-rescue.md) | userspace run 121 | inconclusive | linux-sm7635#324 | run 121 acceptance 3 os-release fault rescue
 - [2026-11-05-111842-persistent-root-selfheal-rescue-policy-and-carrier-reader](records/2026-11-05-111842-persistent-root-selfheal-rescue-policy-and-carrier-reader.md) | userspace | inconclusive | linux-sm7635#324 | persistent root self-heal, host rescue fixture, fsck policy and carrier-reader candidate
 - [2026-11-05-105734-persistent-root-cross-device-checklist-and-host-test](records/2026-11-05-105734-persistent-root-cross-device-checklist-and-host-test.md) | userspace | inconclusive | linux-sm7635#324 | persistent root cross device checklist and host test
 - [2026-11-05-103703-run-116-record-correction-two-wording-flaws](records/2026-11-05-103703-run-116-record-correction-two-wording-flaws.md) | userspace | inconclusive | linux-sm7635#324 | run 116 record correction two wording flaws
@@ -11,7 +12,6 @@
 - [2026-11-05-042845-host-signed-generation-sequence-bound-unification-and-audit](records/2026-11-05-042845-host-signed-generation-sequence-bound-unification-and-audit.md) | userspace | confirmed | linux-sm7635#324 | host signed-generation sequence bound, carrier-read and guard-time proposal review
 - [2026-11-05-023815-host-measurement-runbook-deadline-inequality-and-review-audit](records/2026-11-05-023815-host-measurement-runbook-deadline-inequality-and-review-audit.md) | userspace | inconclusive | linux-sm7635#324 | host measurement runbook deadline inequality and review audit
 - [2026-11-05-021930-host-measurement-runbook-and-tool-closure-corrections](records/2026-11-05-021930-host-measurement-runbook-and-tool-closure-corrections.md) | userspace | inconclusive | linux-sm7635#324 | host measurement runbook and tool closure corrections
-- [2026-11-05-003759-host-signed-bootstrap-closure-audit](records/2026-11-05-003759-host-signed-bootstrap-closure-audit.md) | userspace | inconclusive | linux-sm7635#324 | host signed bootstrap closure audit
 
 ## By subsystem (latest 3, total in brackets)
 
@@ -35,10 +35,10 @@
 - [2026-10-29-2206-host-re-address-of-a-renamed-diagnostic-gadget-2](records/2026-10-29-2206-host-re-address-of-a-renamed-diagnostic-gadget-2.md) | usb | inconclusive | omnipha/linux-sm7635#169 | Host re-address of a renamed diagnostic gadget (2026-10-29, #169)
 - [2026-10-28-2284-run-52-measured-postmarketos-pid-1-cutover-and-u](records/2026-10-28-2284-run-52-measured-postmarketos-pid-1-cutover-and-u.md) | usb run 52 | confirmed | omnipha/linux-sm7635#145 | Run-52 measured postmarketOS PID-1 cutover and USB SSH (#145, live-session finding, 2026-10-28)
 
-### userspace [39]
+### userspace [40]
+- [2026-11-05-125321-run121-acceptance3-os-release-fault-rescue](records/2026-11-05-125321-run121-acceptance3-os-release-fault-rescue.md) | userspace run 121 | inconclusive | linux-sm7635#324 | run 121 acceptance 3 os-release fault rescue
 - [2026-11-05-111842-persistent-root-selfheal-rescue-policy-and-carrier-reader](records/2026-11-05-111842-persistent-root-selfheal-rescue-policy-and-carrier-reader.md) | userspace | inconclusive | linux-sm7635#324 | persistent root self-heal, host rescue fixture, fsck policy and carrier-reader candidate
 - [2026-11-05-105734-persistent-root-cross-device-checklist-and-host-test](records/2026-11-05-105734-persistent-root-cross-device-checklist-and-host-test.md) | userspace | inconclusive | linux-sm7635#324 | persistent root cross device checklist and host test
-- [2026-11-05-103703-run-116-record-correction-two-wording-flaws](records/2026-11-05-103703-run-116-record-correction-two-wording-flaws.md) | userspace | inconclusive | linux-sm7635#324 | run 116 record correction two wording flaws
 
 ### wlan [87]
 - [2026-11-04-154823-run113-route-attribution-inconclusive](records/2026-11-04-154823-run113-route-attribution-inconclusive.md) | wlan run 113 | inconclusive | linux-sm7635#311 | run113 route refusal attribution remains inconclusive
@@ -50,5 +50,5 @@
 
 ## By month
 
-- [2026-11](records/index-2026-11.md) [68]
+- [2026-11](records/index-2026-11.md) [69]
 - [2026-10](records/index-2026-10.md) [162]
