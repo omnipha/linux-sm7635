@@ -479,10 +479,12 @@ device, USB, flash or partition access):
   offline `dumpe2fs` allowlist and a clean `e2fsck -fn` transcript; it is not
   a production filesystem safety proof or the live `sda13` measurement.
 -   `scripts/test-pmos-baseline-provenance.py` (synthetic throwaway keys)
-  derives the three baseline payloads and checks the contract except the
-  altered-radio denylist, which its parser does not enforce (`ALTERED_RADIO`
-  is only asserted against the derived bytes). The model and the verifier do
-  refuse that digest inside their parsers.
+  derives the three baseline payloads and checks the contract. Its parser
+  now refuses the altered-radio digest `d7b74c24…` (`manifest denylisted
+  digest`) the same way the model and the verifier do. The model and the
+  verifier also refuse that digest inside their parsers. This closes the
+  parser gap named above; it is still a synthetic host fixture, not a device
+  measurement or a replacement pair.
 
 The first physical measurement is a separately authorized,
 coordinator-run baseline cutover boot, not part of this proposal. Preflight
@@ -580,6 +582,36 @@ The two boots shared one technical reason and are spent. A single boot cannot
 observe both marker creation and survival across a reboot, so the earlier
 one-boot wording stays withdrawn. Run 116 is not the reversible-root-fault
 rescue test and not an update/rollback test; those stay unmeasured.
+
+**Measured 2026-11-05, run 121 (coordinator, Acceptance 3, this one fault):**
+on the installed pair, one `mv` of `usr/lib/os-release` to
+`os-release.disabled` over `:22` on boot 1 made the fault boot stop at
+`pmos-session-stage failed` (kmsg 5.035 s) with diagnostic key-only `:22`
+reachable from ~6 s to at least 207 s, PID 1 `init`, `/run/keep` present,
+`sda13` `rw` at `/run/pmos`, the guard never armed, and no `:2222` in the
+fault boot. Exactly one `mv` over `:22` restored the 329-byte file (sha256
+`efc600e4…`); `busybox sync`, `restart2 bootloader` and the exact fastboot
+gate followed; no flash, erase, remount, fsck or `mknod`. That answers the
+run-119 open question for this fault: the post-failure root was `rw` at
+`/run/pmos`, and no remount was needed for the rescue. Still unmeasured:
+the `:22`-outage recovery path (no rescue path without diagnostic SSH is
+validated), faults of other files, `:22` loss, power-loss behavior, and every
+item below. See
+[records/2026-11-05-125321-run121-acceptance3-os-release-fault-rescue.md](../../records/2026-11-05-125321-run121-acceptance3-os-release-fault-rescue.md).
+
+**Next single variable after run 121 (coordinator-owned, separately
+authorized):** unchanged from the dossier: the remainder of acceptance item 2
+on the installed pair, meaning the offline fsck/journal policy and
+`METADATA_CSUM` semantics for a later writable transaction, which are still
+host-only proposals, plus the carrier-hash re-read, which has no admissible
+read-only reader yet. Run 121 does not change that. The host-side parser gap
+in the baseline-provenance fixture (altered-radio denylist) is closed by the
+same change set as this note; it is the only host step for item 4 that the
+dossier had already scoped. The device leg of item 4 (a different verified
+pair) stays blocked on a bootstrap that does not exist and on separate
+coordinator authorization. The `:22`-outage rescue gap is not a dossier
+variable; it would be its own coordinator request with its own technical
+reason. No further model redesign rounds.
 
 ### Guard-window measurement runbook (installed pair)
 

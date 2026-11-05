@@ -198,6 +198,8 @@ def parse_manifest(data: bytes) -> dict[str, Any]:
             raise Reject("manifest entry size")
         if not isinstance(entry["sha256"], str) or HEX64.fullmatch(entry["sha256"]) is None:
             raise Reject("manifest entry digest")
+        if entry["sha256"] == ALTERED_RADIO:
+            raise Reject("manifest denylisted digest")
         if type(entry["uid"]) is not int or entry["uid"] != 0:
             raise Reject("manifest entry owner")
         if type(entry["gid"]) is not int or entry["gid"] != 0:
@@ -610,6 +612,8 @@ def check_parser(baseline: dict[str, bytes]) -> None:
         ("wrong owner", "entry owner", text.replace('"uid":0', '"uid":1', 1).encode()),
         ("wrong group", "entry group", text.replace('"gid":0', '"gid":1', 1).encode()),
         ("uppercase digest", "entry digest", text.replace(PINNED[0][3], PINNED[0][3].upper()).encode()),
+        *[(f"denylisted digest at {item[1]}", "denylisted digest",
+           text.replace(item[3], ALTERED_RADIO, 1).encode()) for item in PINNED],
         ("zero size", "entry size", text.replace('"size":29356', '"size":0').encode()),
         ("oversized manifest", "manifest size", good + b" " * MANIFEST_MAX),
         ("baseline nonzero sequence", "baseline shape", text.replace('"sequence":0', '"sequence":1').encode()),
