@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 import hashlib
 import importlib.util
+import itertools
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import tempfile
@@ -235,6 +237,17 @@ race=$5
 dev_spoof=$6
 root_kind=$7
 fixture_bb() {
+    if [ -n "${PROBE_TRACE:-}" ]; then
+        for probe_arg in "$@"; do
+            case "
+${PROBE_LIST:-}
+" in
+                *"
+$probe_arg
+"*) printf '%s %s\\n' "$1" "$probe_arg" >> "$PROBE_TRACE";;
+            esac
+        done
+    fi
     case "$1" in
         ln)
             [ "$2" = -T ] || return 1
@@ -261,17 +274,6 @@ fixture_bb() {
             if [ "$2" = -v ] && [ "$3" = "r=$GUEST" ]; then
                 "$REAL_BB" awk "$2" "$3" "$4" "$mountinfo"
                 return
-            fi;;
-        sha256sum)
-            if [ -n "${SHA_MODE:-}" ] && [ "$#" -eq 2 ] && [ "$2" = "${SHA_PATH:-}" ]; then
-                printf '%s\\n' "$2" >> "$SHA_TRACE"
-                case "$SHA_MODE" in
-                    digest) printf '%s  %s\\n' "$SHA_VALUE" "$2"; return 0;;
-                    fail) return 1;;
-                    fail-with-output) printf '%s  %s\\n' "$SHA_VALUE" "$2"; return 1;;
-                    empty) return 0;;
-                    garbage) printf 'not-a-digest  %s\\n' "$2"; return 0;;
-                esac
             fi;;
         stat)
             if [ "$2" = -c ]; then
@@ -337,11 +339,12 @@ test_installer = installer.replace('chain_dir=/run/omnipha-self-stage\n', 'chain
 test_installer = test_installer.replace('/run/pmos-root-contract.sh', '"$sources/fixture-contract"')
 assert 'chain_dir="$sources"' in test_installer and '. "$sources/fixture-contract"' in test_installer
 assert '/run/pmos-root-contract.sh' not in test_installer
-def run_installer(guest, sources, mountinfo_path=None, race='none', dev_spoof='none', root_kind='rw', bb=busybox, sha=None):
+def run_installer(guest, sources, mountinfo_path=None, race='none', dev_spoof='none', root_kind='rw', bb=busybox, probe=None):
     env = dict(os.environ)
-    env.pop('SHA_MODE', None)
-    if sha is not None:
-        env.update({'SHA_MODE': sha[0], 'SHA_PATH': str(sha[1]), 'SHA_VALUE': sha[2], 'SHA_TRACE': str(sha[3])})
+    env.pop('PROBE_TRACE', None)
+    env.pop('PROBE_LIST', None)
+    if probe is not None:
+        env.update({'PROBE_LIST': '\n'.join(str(item) for item in probe[0]), 'PROBE_TRACE': str(probe[1])})
     return subprocess.run([bb, 'sh', '-c', installer_setup + test_installer, 'fixture',
                            bb, str(guest), str(sources), str(mountinfo_path or (guest / 'mountinfo')), race, dev_spoof, root_kind],
                           capture_output=True, text=True, check=False, env=env)
@@ -744,20 +747,22 @@ with tempfile.TemporaryDirectory(prefix='chain-install-311.') as tmp:
         unpinned = load('mb003_unpinned', 'build-init-boot-mb003-unpinned.py')
         assert unpinned.canonical is not builder and unpinned.builder is not builder
         assert unpinned.canonical.FRESH_RADIO_SHA == builder.FRESH_RADIO_SHA
-        assert unpinned.BAD_RADIO == 'd7b74c2450fec86b17f325cab4100cc19c0a6319b8f9c5baa73e83a9acb0bfd3'
         unpinned_scripts = unpinned.runtime_scripts()
         self_stage = unpinned_scripts['pmos-self-stage.sh'].decode()
         start = self_stage.index('chain_dir=/run/omnipha-self-stage\n')
-        end = self_stage.index('done\n', self_stage.index("persistent chain changed after installation", start)) + len('done\n')
+        end = self_stage.index('$BB sh /run/pmos-radio-bringup.sh "$boot" prepare', start)
         unpinned_installer = self_stage[start:end]
-        assert 'chain_metadata()' in unpinned_installer
-        assert unpinned_installer.count(unpinned.BAD_RADIO) == 1 and 'refused persistent chain file' in unpinned_installer
-        assert unpinned.BAD_RADIO not in builder.persistent_installer().decode()
+        for removed in ('chain_metadata()', 'chain_digest()', 'chain_trust()', 'chain_legacy_for()',
+                        'radio_snapshot_check', 'omnipha-radio-snapshot', 'omnipha-legacy',
+                        'refused persistent chain file', 'untrusted persistent chain file',
+                        'persistent chain legacy backup', 'legacy chain file', 'partial persistent chain migration',
+                        'cannot replace legacy chain file'):
+            assert removed not in unpinned_installer, removed
+        assert 'unpinned carrier payload' in unpinned_installer and 'chain_check' in unpinned_installer
         assert builder.FRESH_RADIO_SHA in unpinned_installer
-        assert unpinned_installer.count(builder.GATED_POST_SHA) == 1 and unpinned_installer.count(builder.GATED_HOOK_SHA) == 1
-        assert '.omnipha-legacy' in unpinned_installer and '.start.omnipha-legacy' not in unpinned_installer
         assert hashlib.sha256(unpinned_scripts['pmos-self-post-fresh-boot.sh']).hexdigest() in unpinned_installer
         assert hashlib.sha256(unpinned_scripts['10-omnipha-self-stage.start']).hexdigest() in unpinned_installer
+        assert unpinned_installer.count('chain_check') == 2 and unpinned_installer.count('chain_check "$chain_dir/$1"') == 1
         unpinned_stage = unpinned_scripts['pmos-session-stage.sh'].decode()
         assert unpinned_stage != runtime['pmos-session-stage.sh'].decode()
         assert builder.GATED_HOOK_SHA.encode() not in unpinned_scripts['pmos-session-stage.sh']
@@ -792,377 +797,397 @@ with tempfile.TemporaryDirectory(prefix='chain-install-311.') as tmp:
             'pmos-self-post-fresh-boot.sh': b': host_only_post_edit\n',
             '10-omnipha-self-stage.start': b': host_only_hook_edit\n',
         }
-        for edited_name, _edited_target in specs:
+        canonical_scripts = unpinned.canonical.runtime_scripts()
+        assert all(canonical_scripts[name] == payloads[name] for name, _ in specs)
+        radio_name, post_name, hook_name = (name for name, _ in specs)
+        assert unpinned_scripts[radio_name] == canonical_scripts[radio_name]
+        bad_digest = 'd7b74c2450fec86b17f325cab4100cc19c0a6319b8f9c5baa73e83a9acb0bfd3'
+        for script_name, script_data in unpinned_scripts.items():
+            assert bad_digest.encode() not in script_data, script_name
+            assert hashlib.sha256(script_data).hexdigest() != bad_digest, script_name
+            for token in ('radio_snapshot_check', 'omnipha-radio-snapshot', 'chain_metadata', 'chain_digest',
+                          'chain_trust', 'chain_legacy_for', 'omnipha-legacy', 'refused persistent chain file',
+                          'legacy backup'):
+                assert token.encode() not in script_data, (script_name, token)
+        assert hashlib.sha256(canonical_scripts[radio_name]).hexdigest() != bad_digest
+        assert 'mv -fT' not in unpinned_installer and 'ln -T' in unpinned_installer
+        assert unpinned.canonical.GATED_POST_SHA not in unpinned_installer
+        assert unpinned.canonical.GATED_HOOK_SHA not in unpinned_installer
+        assert 'published chain inode changed' not in unpinned_installer and 'staged chain inode unavailable' not in unpinned_installer
+        unpinned_post_text = unpinned_scripts[post_name].decode()
+        canonical_post_text = canonical_scripts[post_name].decode()
+        assert 'RADIO="/usr/libexec/omnipha/pmos-radio-bringup-fresh-boot.sh"\n' in unpinned_post_text
+        for token in ('RADIO_SHA', 'hash "$RADIO"', 'sha256sum "$RADIO"', 'radio_snapshot',
+                      'omnipha-radio-snapshot', 'unsafe radio snapshot'):
+            assert token not in unpinned_post_text, token
+        for launch in ('$BB sh "$RADIO" "$boot" "$stage" "$marker"',
+                       '$BB sh "$RADIO" "$boot" services "$marker" < "$PROFILE"'):
+            assert unpinned_post_text.count(launch) == canonical_post_text.count(launch) == 1, launch
+        unpinned_hook_text = unpinned_scripts[hook_name].decode()
+        assert 'sha256sum' not in unpinned_hook_text and re.search(r'[0-9a-f]{64}', unpinned_hook_text) is None
+        assert 'sha256sum' in canonical_scripts[hook_name].decode()
+        legacy_post_bytes = canonical_scripts[post_name]
+        legacy_hook_bytes = canonical_scripts[hook_name]
+        legacy_radio_pin = builder.FRESH_RADIO_SHA.encode()
+        assert b'RADIO_SHA=' + legacy_radio_pin in legacy_post_bytes
+        assert legacy_radio_pin in legacy_hook_bytes and builder.GATED_POST_SHA.encode() in legacy_hook_bytes
+        assert legacy_radio_pin not in unpinned_scripts[post_name] + unpinned_scripts[hook_name]
+        assert unpinned_scripts[post_name] != legacy_post_bytes and unpinned_scripts[hook_name] != legacy_hook_bytes
+
+        def lstat_state(path):
+            metadata = path.lstat()
+            return (metadata.st_dev, metadata.st_ino, metadata.st_mode, metadata.st_uid, metadata.st_gid,
+                    metadata.st_nlink, metadata.st_size, metadata.st_mtime_ns, metadata.st_ctime_ns)
+        target_paths = [guest / target for _, target in specs]
+        def guest_lstats():
+            return {path: lstat_state(path) for path in target_paths}
+        probe_trace = work / 'probe-trace'
+        def run_probed(existing, **kwargs):
+            probe_trace.unlink(missing_ok=True)
+            result = run_installer(guest, sources, mountinfo_path, probe=(existing, probe_trace), **kwargs)
+            seen = probe_trace.read_text().splitlines() if probe_trace.exists() else []
+            return result, seen
+        def assert_no_leftovers(label):
+            assert not any(guest.rglob('*.omnipha-new')) and not any(guest.rglob('*.omnipha-legacy')), label
+        unrelated_before = file_state(unrelated_file)
+        def assert_retained(label, existing, passes=2):
+            before = {path: lstat_state(path) for path in existing}
+            sources_before = {name: file_state(sources / name) for name, _ in specs}
+            for number in range(passes):
+                ok, seen = run_probed(existing)
+                assert ok.returncode == 0, (label, number, ok.stderr)
+                assert seen == [], (label, number, seen)
+                assert {path: lstat_state(path) for path in existing} == before, (label, number)
+                assert {name: file_state(sources / name) for name, _ in specs} == sources_before, (label, number)
+                assert file_state(unrelated_file) == unrelated_before, (label, number)
+            assert_no_leftovers(label)
+        def write_target(name, target, data, mode=0o700):
+            path = guest / target
+            path.unlink(missing_ok=True)
+            path.write_bytes(data)
+            path.chmod(mode)
+            return path
+
+        for edited_name, edited_target in specs:
             reset_unpinned()
-            edited_path = guest / _edited_target
-            assert unpinned_scripts[edited_name].endswith(b'\n')
-            edited_path.write_bytes(unpinned_scripts[edited_name] + edits[edited_name])
-            edited_path.chmod(0o700)
-            assert edited_path.read_bytes().count(edits[edited_name]) == 1
-            before_guest = {target: file_state(guest / target) for _, target in specs}
-            before_sources = {name: file_state(sources / name) for name, _ in specs}
-            for _pass in range(2):
-                ok = run_installer(guest, sources, mountinfo_path)
-                assert ok.returncode == 0, (edited_name, _pass, ok.stderr)
-                assert {target: file_state(guest / target) for _, target in specs} == before_guest, edited_name
-                assert {name: file_state(sources / name) for name, _ in specs} == before_sources, edited_name
+            write_target(edited_name, edited_target, unpinned_scripts[edited_name] + edits[edited_name])
+            assert_retained(('edited', edited_name), target_paths)
             for name, target in specs:
                 path = guest / target
                 metadata = path.lstat()
                 assert path.is_file() and not path.is_symlink() and metadata.st_nlink == 1
                 assert metadata.st_mode & 0o777 == 0o700 and metadata.st_uid == os.getuid(), target
-                if name == edited_name:
-                    assert path.read_bytes() == unpinned_scripts[name] + edits[name]
-                else:
-                    assert path.read_bytes() == unpinned_scripts[name], (edited_name, name)
-                assert not (guest / (target + '.omnipha-new')).exists()
+                expected = unpinned_scripts[name] + (edits[name] if name == edited_name else b'')
+                assert path.read_bytes() == expected, (edited_name, name)
         reset_unpinned()
-        radio_target = guest / 'usr/libexec/omnipha/pmos-radio-bringup-fresh-boot.sh'
-        radio_target.write_bytes(unpinned_scripts['pmos-radio-bringup-fresh-boot.sh'] + edits['pmos-radio-bringup-fresh-boot.sh'])
-        radio_target.chmod(0o700)
+        assert_retained('pristine', target_paths)
+
+        for mode in (0o755, 0o644, 0o600, 0o500, 0o400, 0o200, 0o000, 0o777):
+            for scope in [[path] for path in target_paths] + [target_paths]:
+                reset_unpinned()
+                for path in scope:
+                    path.chmod(mode)
+                assert_retained(('mode', oct(mode), len(scope)), target_paths)
+                for path in scope:
+                    assert path.lstat().st_mode & 0o7777 == mode
+                    path.chmod(0o700)
+                for name, target in specs:
+                    assert (guest / target).read_bytes() == unpinned_scripts[name], (oct(mode), target)
+        owner_variations = 0
+        def vary_owner(path):
+            if os.geteuid() == 0:
+                os.chown(path, 12345, 23456)
+                return True
+            others = [group for group in os.getgroups() if group != os.getegid()]
+            if others:
+                os.chown(path, -1, others[0])
+                return True
+            return False
+        for scope in [[path] for path in target_paths] + [target_paths]:
+            reset_unpinned()
+            changed = [vary_owner(path) for path in scope]
+            if not all(changed):
+                continue
+            owner_variations += 1
+            before_owner = {path: (path.lstat().st_uid, path.lstat().st_gid) for path in scope}
+            assert_retained(('owner', len(scope)), target_paths)
+            assert {path: (path.lstat().st_uid, path.lstat().st_gid) for path in scope} == before_owner
+            for name, target in specs:
+                assert (guest / target).read_bytes() == unpinned_scripts[name]
+
+        for edited in (False, True):
+            for name, target in specs:
+                reset_unpinned()
+                path = guest / target
+                if edited:
+                    write_target(name, target, unpinned_scripts[name] + edits[name])
+                expected = path.read_bytes()
+                aliases = [work / f'alias-{number}' for number in range(2)]
+                for alias in aliases:
+                    os.link(path, alias)
+                assert path.lstat().st_nlink == 3
+                alias_before = [lstat_state(alias) for alias in aliases]
+                assert_retained(('hardlink', edited, target), target_paths)
+                assert path.lstat().st_nlink == 3 and [lstat_state(alias) for alias in aliases] == alias_before
+                assert path.read_bytes() == expected and all(alias.read_bytes() == expected for alias in aliases)
+                assert all(alias.lstat().st_ino == path.lstat().st_ino for alias in aliases)
+                for alias in aliases:
+                    alias.unlink()
+
+        for name, target in specs:
+            for label, link_to in (('absolute', '/bin/true'), ('dangling', 'omnipha-missing-link-target'),
+                                   ('self', pathlib.PurePath(target).name), ('carrier', str(sources / name))):
+                reset_unpinned()
+                path = guest / target
+                path.unlink()
+                path.symlink_to(link_to)
+                assert_retained(('symlink', label, target), target_paths)
+                assert path.is_symlink() and os.readlink(path) == link_to, (label, target)
+                assert not (path.parent / 'omnipha-missing-link-target').exists()
+                assert (sources / name).read_bytes() == unpinned_scripts[name]
+
+        legacy_hook_variants = {
+            'exact canonical': legacy_hook_bytes,
+            'modified canonical': legacy_hook_bytes + b': modified_legacy_hook\n',
+            'historic pre-gate': legacy_hook,
+        }
+        legacy_post_variants = {
+            'exact canonical': legacy_post_bytes,
+            'modified canonical': legacy_post_bytes + b': modified_legacy_post\n',
+        }
+        scenarios = [(f'post {label}', {post_name: data}) for label, data in legacy_post_variants.items()]
+        scenarios += [(f'hook {label}', {hook_name: data}) for label, data in legacy_hook_variants.items()]
+        scenarios += [(f'post+hook {post_label} / {hook_label}', {post_name: post_data, hook_name: hook_data})
+                      for post_label, post_data in legacy_post_variants.items()
+                      for hook_label, hook_data in legacy_hook_variants.items()]
+        for label, overrides in scenarios:
+            for edited_radio in (False, True):
+                for mode in (0o700, 0o755):
+                    reset_unpinned()
+                    expected = {}
+                    for name, data in overrides.items():
+                        target = dict(specs)[name]
+                        expected[write_target(name, target, data, mode)] = data
+                    if edited_radio:
+                        radio_path = write_target(radio_name, dict(specs)[radio_name],
+                                                  unpinned_scripts[radio_name] + edits[radio_name])
+                        expected[radio_path] = unpinned_scripts[radio_name] + edits[radio_name]
+                    assert_retained(('legacy', label, edited_radio, oct(mode)), target_paths)
+                    for path, data in expected.items():
+                        assert path.read_bytes() == data, (label, path)
+                    for name, target in specs:
+                        if name in overrides:
+                            assert (guest / target).read_bytes() == overrides[name]
+        reset_unpinned()
+        radio_path = guest / dict(specs)[radio_name]
+        radio_path.unlink()
+        for name, data in ((post_name, legacy_post_bytes), (hook_name, legacy_hook_bytes)):
+            write_target(name, dict(specs)[name], data)
+        legacy_paths = [guest / dict(specs)[post_name], guest / dict(specs)[hook_name]]
+        legacy_before = {path: lstat_state(path) for path in legacy_paths}
+        ok, seen = run_probed(legacy_paths)
+        assert ok.returncode == 0 and seen == [], (ok.stderr, seen)
+        assert radio_path.read_bytes() == unpinned_scripts[radio_name] and radio_path.lstat().st_nlink == 1
+        assert radio_path.lstat().st_mode & 0o777 == 0o700
+        assert {path: lstat_state(path) for path in legacy_paths} == legacy_before
+        assert legacy_paths[0].read_bytes() == legacy_post_bytes and legacy_paths[1].read_bytes() == legacy_hook_bytes
+        assert_no_leftovers('legacy with missing radio')
+        assert_retained('legacy with installed radio', target_paths)
+
+        install_runs = 0
+        for size in (1, 2, 3):
+            for missing in itertools.combinations(specs, size):
+                reset_unpinned()
+                missing_targets = {target for _, target in missing}
+                for name, target in specs:
+                    if target in missing_targets:
+                        (guest / target).unlink()
+                    else:
+                        write_target(name, target, unpinned_scripts[name] + edits[name])
+                existing = [guest / target for _, target in specs if target not in missing_targets]
+                existing_before = {path: lstat_state(path) for path in existing}
+                ok, seen = run_probed(existing)
+                assert ok.returncode == 0, (missing_targets, ok.stderr)
+                assert seen == [], (missing_targets, seen)
+                for name, target in specs:
+                    path = guest / target
+                    if target in missing_targets:
+                        metadata = path.lstat()
+                        assert path.is_file() and not path.is_symlink() and metadata.st_nlink == 1
+                        assert metadata.st_mode & 0o777 == 0o700 and metadata.st_uid == os.getuid()
+                        assert path.read_bytes() == unpinned_scripts[name], target
+                    else:
+                        assert lstat_state(path) == existing_before[path], target
+                        assert path.read_bytes() == unpinned_scripts[name] + edits[name], target
+                assert_no_leftovers(('install', missing_targets))
+                after = guest_lstats()
+                ok, seen = run_probed(target_paths)
+                assert ok.returncode == 0 and seen == [], (missing_targets, ok.stderr, seen)
+                assert guest_lstats() == after
+                install_runs += 1
+        reset_unpinned()
+        for _name, target in specs:
+            (guest / target).unlink()
+        shutil.rmtree(guest / 'usr/libexec')
+        ok, seen = run_probed([])
+        assert ok.returncode == 0, ok.stderr
+        for name, target in specs:
+            assert (guest / target).read_bytes() == unpinned_scripts[name]
+            assert (guest / target).lstat().st_mode & 0o777 == 0o700
+        assert (guest / 'usr/libexec').lstat().st_mode & 0o777 == 0o700
+        assert (guest / 'usr/libexec/omnipha').lstat().st_mode & 0o777 == 0o700
+        assert_no_leftovers('fresh install')
+        assert_retained('fresh install repeat', target_paths)
+        for _name, target in specs:
+            (guest / target).unlink()
+        published, published_seen = run_probed([guest / target for _, target in specs])
+        assert published.returncode == 0, published.stderr
+        assert all(line.startswith(('chmod ', 'ln ', 'rm '))
+                   for line in published_seen), published_seen
+        assert not any(line.startswith(('stat ', 'sha256sum ')) for line in published_seen), published_seen
+        for name, target in specs:
+            assert (guest / target).read_bytes() == unpinned_scripts[name]
+        assert_no_leftovers('fresh publication without target probes')
+        for name, target in specs:
+            reset_unpinned()
+            retained = guest / target
+            sibling = pathlib.Path(str(retained) + '.omnipha-new')
+            for label, sibling_mutate in (('file', lambda path: path.write_bytes(b'stale sibling\n')),
+                                  ('symlink', lambda path: path.symlink_to('missing-sibling')),
+                                  ('directory', lambda path: path.mkdir(mode=0o700))):
+                if sibling.is_symlink() or sibling.is_file():
+                    sibling.unlink()
+                elif sibling.is_dir():
+                    sibling.rmdir()
+                sibling_mutate(sibling)
+                retained_before = lstat_state(retained)
+                sibling_before = lstat_state(sibling)
+                ok, seen = run_probed([retained, sibling])
+                assert ok.returncode == 0, (name, label, ok.stderr)
+                assert seen == [], (name, label, seen)
+                assert lstat_state(retained) == retained_before and lstat_state(sibling) == sibling_before
+                if label == 'file':
+                    assert sibling.read_bytes() == b'stale sibling\n'
+                elif label == 'symlink':
+                    assert os.readlink(sibling) == 'missing-sibling'
+                else:
+                    assert sibling.is_dir()
+                if sibling.is_symlink() or sibling.is_file():
+                    sibling.unlink()
+                else:
+                    sibling.rmdir()
+            retained.unlink()
+            sibling.write_bytes(b'spoofed staging\n')
+            sibling.chmod(0o600)
+            bad = run_installer(guest, sources, mountinfo_path)
+            assert bad.returncode != 0 and 'persistent chain staging path already exists' in bad.stderr, (name, bad.stderr)
+            assert sibling.read_bytes() == b'spoofed staging\n' and not retained.exists()
+            sibling.unlink()
+
+        for name, target in specs:
+            carrier = sources / name
+            mutations = [('bytes', lambda path: path.write_bytes(b'carrier-mismatch\n')),
+                         ('mode', lambda path: path.chmod(0o755))]
+            if canonical_scripts[name] != unpinned_scripts[name]:
+                legacy_bytes = canonical_scripts[name]
+                def write_legacy(path: pathlib.Path, payload: bytes = legacy_bytes) -> int:
+                    return path.write_bytes(payload)
+                mutations.append(('canonical-legacy', write_legacy))
+            mutations.append(('stand-in', lambda path: path.write_bytes(b'denylisted carrier stand-in\n')))
+            for label, mutate in mutations:
+                for scenario in ('existing', 'missing-one', 'missing-all'):
+                    reset_unpinned()
+                    for other_name, other_target in specs:
+                        if scenario == 'missing-all' or (scenario == 'missing-one' and other_name == name):
+                            (guest / other_target).unlink()
+                        else:
+                            write_target(other_name, other_target, unpinned_scripts[other_name] + edits[other_name])
+                    mutate(carrier)
+                    carrier.chmod(0o755) if label == 'mode' else None
+                    carrier_before = {path: lstat_state(path) for path in target_paths if path.exists() or path.is_symlink()}
+                    bad = run_installer(guest, sources, mountinfo_path)
+                    assert bad.returncode != 0 and 'unpinned carrier payload' in bad.stderr, (name, label, scenario, bad.stderr)
+                    assert {path: lstat_state(path) for path in target_paths if path.exists() or path.is_symlink()} == carrier_before
+                    assert sum(1 for path in target_paths if path.exists()) == len(carrier_before)
+                    if scenario != 'existing':
+                        assert any(not path.exists() for path in target_paths)
+                    assert_no_leftovers((name, label, scenario))
+                    carrier.write_bytes(unpinned_scripts[name])
+                    carrier.chmod(0o700)
+        radio_target = guest / dict(specs)[radio_name]
+        reset_unpinned()
+        write_target(radio_name, dict(specs)[radio_name], unpinned_scripts[radio_name] + edits[radio_name])
         edited_radio_state = file_state(radio_target)
-        bad_carrier = sources / 'pmos-radio-bringup-fresh-boot.sh'
+        bad_carrier = sources / radio_name
         bad_carrier.write_bytes(radio_target.read_bytes())
         bad_carrier.chmod(0o700)
         bad = run_installer(guest, sources, mountinfo_path)
         assert bad.returncode != 0 and 'unpinned carrier payload' in bad.stderr, bad.stderr
         assert file_state(radio_target) == edited_radio_state
-        bad_carrier.write_bytes(b'denylisted carrier stand-in\n')
+        bad_carrier.write_bytes(unpinned_scripts[radio_name])
         bad_carrier.chmod(0o700)
-        assert hashlib.sha256(bad_carrier.read_bytes()).hexdigest() != unpinned.BAD_RADIO
-        bad = run_installer(guest, sources, mountinfo_path)
-        assert bad.returncode != 0 and 'unpinned carrier payload' in bad.stderr, bad.stderr
-        assert file_state(radio_target) == edited_radio_state
-        bad_carrier.write_bytes(unpinned_scripts['pmos-radio-bringup-fresh-boot.sh'])
-        bad_carrier.chmod(0o700)
-        canonical_scripts = unpinned.canonical.runtime_scripts()
-        assert all(canonical_scripts[name] == payloads[name] for name, _ in specs)
-        assert unpinned_scripts['pmos-radio-bringup-fresh-boot.sh'] == canonical_scripts['pmos-radio-bringup-fresh-boot.sh']
+
         reset_unpinned()
-        for name, target in specs:
-            path = guest / target
-            path.write_bytes(unpinned_scripts[name])
-            path.chmod(0o700)
-        state = {target: file_state(guest / target) for _, target in specs}
-        for pass_number in range(2):
-            ok = run_installer(guest, sources, mountinfo_path)
-            assert ok.returncode == 0, ok.stderr
-            assert {target: file_state(guest / target) for _, target in specs} == state
-        reset_unpinned()
-        for _name, target in specs:
-            path = guest / target
-            assert hashlib.sha256(path.read_bytes()).hexdigest() != unpinned.BAD_RADIO
-            before_files = {item: file_state(guest / item) for _, item in specs}
-            carrier_before = {name: file_state(sources / name) for name, _ in specs}
-            trace = work / 'sha-trace'
-            trace.unlink(missing_ok=True)
-            bad = run_installer(guest, sources, mountinfo_path, sha=('digest', path, unpinned.BAD_RADIO, trace))
-            assert bad.returncode != 0 and 'refused persistent chain file' in bad.stderr, (target, bad.stderr)
-            assert trace.read_text().splitlines() == [str(path)]
-            assert {item: file_state(guest / item) for _, item in specs} == before_files
-            assert {name: file_state(sources / name) for name, _ in specs} == carrier_before
-            assert not any(guest.rglob('*.omnipha-new'))
-        trace.unlink()
-        reset_unpinned()
+        contract_saved = work / 'contract-saved'
+        usr_mode = (guest / 'usr').lstat().st_mode & 0o7777
+        parent_modes = {parent: (guest / parent).lstat().st_mode & 0o7777 for parent in ('usr', 'etc', 'etc/local.d')}
+        def expect_refusal(label, message, **kwargs):
+            before = guest_lstats()
+            bad, seen = run_probed(target_paths, **kwargs)
+            assert bad.returncode != 0 and message in bad.stderr, (label, bad.stderr)
+            assert seen == [], (label, seen)
+            assert guest_lstats() == before, label
+            assert_no_leftovers(label)
+        pinned_message = 'persistent chain root is not pinned read-write userdata'
+        contract.rename(contract_saved)
+        expect_refusal('contract missing', pinned_message)
+        contract.symlink_to(contract_saved)
+        expect_refusal('contract symlink', pinned_message)
+        contract.unlink()
+        contract_saved.rename(contract)
+        expect_refusal('read-only root', pinned_message, root_kind='ro,noload')
+        expect_refusal('device spoof', 'unsafe persistent chain parent metadata', dev_spoof='dev')
+        mountinfo_path.write_text(f'1 0 0:1 / {guest}/usr rw - ext4 fake rw\n')
+        expect_refusal('nested mount', 'nested mount in persistent chain parents')
+        mountinfo_path.write_text('17 35 0:31 / /run rw - tmpfs tmpfs rw\n')
+        for parent, mode in (('usr', 0o777), ('usr', 0o775), ('etc', 0o777), ('etc/local.d', 0o775)):
+            (guest / parent).chmod(mode)
+            expect_refusal(('parent', parent, oct(mode)), 'unsafe persistent chain parent metadata')
+            (guest / parent).chmod(parent_modes[parent])
+        sources.chmod(0o755)
+        expect_refusal('carrier directory', 'unsafe carrier payload directory')
+        sources.chmod(0o700)
         foreign_hook = guest / 'etc/local.d/99-foreign.start'
         foreign_hook.write_text('foreign\n')
         foreign_hook.chmod(0o700)
-        bad = run_installer(guest, sources, mountinfo_path)
-        assert bad.returncode != 0 and 'unexpected local startup hook' in bad.stderr, bad.stderr
+        expect_refusal('foreign hook', 'unexpected local startup hook')
         foreign_hook.unlink()
         foreign_hook.symlink_to('/etc/init.d/local')
-        bad = run_installer(guest, sources, mountinfo_path)
-        assert bad.returncode != 0 and 'unexpected local startup hook' in bad.stderr, bad.stderr
+        expect_refusal('foreign hook symlink', 'unexpected local startup hook')
         foreign_hook.unlink()
-        for label, mutate, undo in (
-                ('hardlink', lambda p: os.link(p, work / 'unpinned-alias'), lambda p: os.unlink(work / 'unpinned-alias')),
-                ('mode', lambda p: p.chmod(0o755), lambda p: p.chmod(0o700))):
-            for _name, target in specs:
-                path = guest / target
-                state = file_state(path)
-                mutate(path)
-                bad = run_installer(guest, sources, mountinfo_path)
-                assert bad.returncode != 0 and bad.stderr.count('untrusted persistent chain file') == 1, (label, target, bad.stderr)
-                undo(path)
-                assert file_state(path)[0] == state[0]
-        for _name, target in specs:
-            path = guest / target
-            data = path.read_bytes()
-            path.unlink()
-            path.symlink_to('/bin/true')
-            bad = run_installer(guest, sources, mountinfo_path)
-            assert bad.returncode != 0 and 'untrusted persistent chain file' in bad.stderr, (target, bad.stderr)
-            path.unlink()
-            path.write_bytes(data)
-            path.chmod(0o700)
-        ok = run_installer(guest, sources, mountinfo_path)
-        assert ok.returncode == 0, ok.stderr
-        for name, target in specs:
-            path = guest / target
-            before_files = {item: file_state(guest / item) for _, item in specs}
-            trace.unlink(missing_ok=True)
-            for mode, value in (('fail', ''), ('fail-with-output', unpinned.BAD_RADIO),
-                                ('empty', ''), ('garbage', '')):
-                trace.unlink(missing_ok=True)
-                result = run_installer(guest, sources, mountinfo_path, sha=(mode, path, value, trace))
-                assert result.returncode != 0 and 'untrusted persistent chain file' in result.stderr, (mode, target, result.stderr)
-                assert trace.read_text().splitlines() == [str(path)], (mode, target)
-                assert {item: file_state(guest / item) for _, item in specs} == before_files
-            trace.unlink()
-            bad = run_installer(guest, sources, mountinfo_path,
-                                sha=('digest', path, '0' * 64, trace))
-            assert bad.returncode == 0, (target, bad.stderr)
-            assert {item: file_state(guest / item) for _, item in specs} == before_files
+        chain_dir = guest / 'usr/libexec/omnipha'
+        chain_saved = work / 'chain-dir-saved'
+        chain_dir.rename(chain_saved)
+        chain_dir.symlink_to(chain_saved)
+        bad = run_installer(guest, sources, mountinfo_path)
+        assert bad.returncode != 0 and 'unsafe persistent chain directory' in bad.stderr, bad.stderr
+        chain_dir.unlink()
+        chain_saved.rename(chain_dir)
+        assert_retained('after refusals', target_paths)
+        for parent, mode in parent_modes.items():
+            assert (guest / parent).lstat().st_mode & 0o7777 == mode
+
         reset_unpinned()
-        for name, target in specs:
-            path = guest / target
-            path.unlink()
-            before_files = {item: file_state(guest / item) for _, item in specs if item != target}
-            trace.unlink(missing_ok=True)
-            bad = run_installer(guest, sources, mountinfo_path,
-                                sha=('digest', sources / name, unpinned.BAD_RADIO, trace))
-            assert bad.returncode != 0 and 'unpinned carrier payload' in bad.stderr, (name, bad.stderr)
-            assert trace.read_text().splitlines() == [str(sources / name)]
-            assert not path.exists() and not path.is_symlink()
-            assert {item: file_state(guest / item) for _, item in specs if item != target} == before_files
-            path.write_bytes(unpinned_scripts[name])
-            path.chmod(0o700)
-            trace.unlink()
-        test_installer = canonical_test_installer
-        reset_unpinned()
-        for name, target in specs:
-            path = guest / target
-            path.write_bytes(payloads[name])
-            path.chmod(0o700)
-        canonical_before = {target: file_state(guest / target) for _, target in specs}
-        bad = run_installer(guest, sources, mountinfo_path,
-                            sha=('digest', guest / specs[0][1], unpinned.BAD_RADIO, trace))
-        assert bad.returncode != 0 and 'untrusted persistent chain file' in bad.stderr, bad.stderr
-        assert 'refused persistent chain file' not in bad.stderr
-        assert {target: file_state(guest / target) for _, target in specs} == canonical_before
-        trace.unlink(missing_ok=True)
-        test_installer = unpinned_test_installer
-        reset_unpinned()
-        legacy_hook_path = guest / 'etc/local.d/10-omnipha-self-stage.start'
-        legacy_hook_path.write_bytes(canonical_scripts['10-omnipha-self-stage.start'])
-        legacy_hook_path.chmod(0o700)
-        legacy_post_path = guest / 'usr/libexec/omnipha/pmos-self-post-fresh-boot.sh'
-        legacy_post_path.write_bytes(canonical_scripts['pmos-self-post-fresh-boot.sh'])
-        legacy_post_path.chmod(0o700)
-        edited_radio_path = guest / 'usr/libexec/omnipha/pmos-radio-bringup-fresh-boot.sh'
-        edited_radio_bytes = unpinned_scripts['pmos-radio-bringup-fresh-boot.sh'] + edits['pmos-radio-bringup-fresh-boot.sh']
-        edited_radio_path.write_bytes(edited_radio_bytes)
-        edited_radio_path.chmod(0o700)
-        legacy_states = {legacy_hook_path: file_state(legacy_hook_path),
-                         legacy_post_path: file_state(legacy_post_path)}
-        hook_backup = guest / 'etc/local.d/10-omnipha-self-stage.start.omnipha-legacy'
-        post_backup = guest / 'usr/libexec/omnipha/pmos-self-post-fresh-boot.sh.omnipha-legacy'
-        ok = run_installer(guest, sources, mountinfo_path)
-        assert ok.returncode == 0, ok.stderr
-        assert file_state(edited_radio_path)[0] == edited_radio_bytes
-        assert legacy_hook_path.read_bytes() == unpinned_scripts['10-omnipha-self-stage.start']
-        assert legacy_post_path.read_bytes() == unpinned_scripts['pmos-self-post-fresh-boot.sh']
-        assert file_state(edited_radio_path)[0] == edited_radio_bytes
-        assert hook_backup.read_bytes() == canonical_scripts['10-omnipha-self-stage.start']
-        assert post_backup.read_bytes() == canonical_scripts['pmos-self-post-fresh-boot.sh']
-        assert tuple(file_state(path)[0] for path in (hook_backup, post_backup)) == \
-            tuple(state[0] for state in (legacy_states[legacy_hook_path], legacy_states[legacy_post_path]))
-        assert hook_backup.stat().st_mode & 0o777 == 0o700 and post_backup.stat().st_mode & 0o777 == 0o700
-        assert legacy_hook_path.stat().st_nlink == 1 and legacy_post_path.stat().st_nlink == 1
-        assert hook_backup.stat().st_nlink == 1 and post_backup.stat().st_nlink == 1
-        assert not (guest / 'etc/local.d/10-omnipha-self-stage.start.omnipha-new').exists()
-        assert not (guest / 'usr/libexec/omnipha/pmos-self-post-fresh-boot.sh.omnipha-new').exists()
-        assert hook_backup.stat().st_ino == legacy_states[legacy_hook_path][1][1]
-        assert post_backup.stat().st_ino == legacy_states[legacy_post_path][1][1]
-        migrated = {legacy_hook_path: file_state(legacy_hook_path),
-                    legacy_post_path: file_state(legacy_post_path),
-                    edited_radio_path: file_state(edited_radio_path)}
-        ok = run_installer(guest, sources, mountinfo_path)
-        assert ok.returncode == 0, ok.stderr
-        assert {legacy_hook_path: file_state(legacy_hook_path),
-                legacy_post_path: file_state(legacy_post_path),
-                edited_radio_path: file_state(edited_radio_path)} == migrated
-        assert hook_backup.read_bytes() == canonical_scripts['10-omnipha-self-stage.start']
-        assert post_backup.read_bytes() == canonical_scripts['pmos-self-post-fresh-boot.sh']
-        modified_post = unpinned_scripts['pmos-self-post-fresh-boot.sh'] + edits['pmos-self-post-fresh-boot.sh']
-        modified_hook = unpinned_scripts['10-omnipha-self-stage.start'] + edits['10-omnipha-self-stage.start']
-        for modified_name, modified_target, modified_digest in (
-                ('pmos-self-post-fresh-boot.sh', 'usr/libexec/omnipha/pmos-self-post-fresh-boot.sh', modified_post),
-                ('10-omnipha-self-stage.start', 'etc/local.d/10-omnipha-self-stage.start', modified_hook)):
+        for race, check in (('file', lambda: radio_target.read_text() == 'raced target\n'),
+                            ('dir', lambda: radio_target.is_dir())):
             reset_unpinned()
-            modified_path = guest / modified_target
-            modified_path.write_bytes(modified_digest)
-            modified_path.chmod(0o700)
-            assert hashlib.sha256(modified_path.read_bytes()).hexdigest() != unpinned.BAD_RADIO
-            before_files = {item: file_state(guest / item) for _, item in specs}
-            for pass_number in range(2):
-                ok = run_installer(guest, sources, mountinfo_path)
-                assert ok.returncode == 0, (modified_name, ok.stderr)
-                assert {item: file_state(guest / item) for _, item in specs} == before_files
-            assert modified_path.read_bytes() == modified_digest
-            assert not (guest / (modified_target + '.omnipha-legacy')).exists()
-        edited_radio_target = guest / 'usr/libexec/omnipha/pmos-radio-bringup-fresh-boot.sh'
-        reset_unpinned()
-        edited_radio_target.write_bytes(edited_radio_bytes)
-        edited_radio_target.chmod(0o700)
-        assert hashlib.sha256(edited_radio_target.read_bytes()).hexdigest() != unpinned.BAD_RADIO
-        edited_radio_state = file_state(edited_radio_target)
-        for pass_number in range(2):
-            ok = run_installer(guest, sources, mountinfo_path)
-            assert ok.returncode == 0, ok.stderr
-            assert file_state(edited_radio_target) == edited_radio_state
-        assert edited_radio_target.read_bytes() == edited_radio_bytes
-        assert not (guest / 'usr/libexec/omnipha/pmos-radio-bringup-fresh-boot.sh.omnipha-legacy').exists()
-        reset_unpinned()
-        edited_radio_target.write_bytes(edited_radio_bytes)
-        edited_radio_target.chmod(0o700)
-        legacy_hook_path.write_bytes(canonical_scripts['10-omnipha-self-stage.start'])
-        legacy_hook_path.chmod(0o700)
-        legacy_post_path.write_bytes(canonical_scripts['pmos-self-post-fresh-boot.sh'])
-        legacy_post_path.chmod(0o700)
-        partial_states = {legacy_hook_path: file_state(legacy_hook_path),
-                          legacy_post_path: file_state(legacy_post_path),
-                          edited_radio_target: file_state(edited_radio_target)}
-        for label, mutate, undo in (
-                ('stale', lambda p: p.with_name(p.name + '.omnipha-legacy').write_bytes(b'stale\n'), lambda p: p.with_name(p.name + '.omnipha-legacy').unlink()),
-                ('backup-dir', lambda p: p.with_name(p.name + '.omnipha-legacy').mkdir(mode=0o700), lambda p: p.with_name(p.name + '.omnipha-legacy').rmdir())):
-            for target_name, target_path in (('pmos-self-post-fresh-boot.sh', legacy_post_path),
-                                             ('10-omnipha-self-stage.start', legacy_hook_path)):
-                mutate(target_path)
-                bad = run_installer(guest, sources, mountinfo_path)
-                assert bad.returncode != 0 and 'persistent chain legacy backup' in bad.stderr, (label, target_name, bad.stderr)
-                assert target_path.read_bytes() == partial_states[target_path][0]
-                undo(target_path)
-        ok = run_installer(guest, sources, mountinfo_path)
-        assert ok.returncode == 0, ok.stderr
-        assert hook_backup.read_bytes() == canonical_scripts['10-omnipha-self-stage.start']
-        assert post_backup.read_bytes() == canonical_scripts['pmos-self-post-fresh-boot.sh']
-        assert file_state(edited_radio_target)[0] == edited_radio_bytes
-        ok = run_installer(guest, sources, mountinfo_path)
-        assert ok.returncode == 0, ok.stderr
-        for collision in ('file', 'dir'):
-            sabotage = guest / 'usr/libexec/omnipha/pmos-self-post-fresh-boot.sh.omnipha-new'
-            reset_unpinned()
-            legacy_hook_path.write_bytes(canonical_scripts['10-omnipha-self-stage.start'])
-            legacy_hook_path.chmod(0o700)
-            legacy_post_path.write_bytes(canonical_scripts['pmos-self-post-fresh-boot.sh'])
-            legacy_post_path.chmod(0o700)
-            post_state = file_state(legacy_post_path)
-            hook_state = file_state(legacy_hook_path)
-            if collision == 'file':
-                sabotage.write_bytes(b'spoofed staging\n')
-                sabotage.chmod(0o600)
-            else:
-                for victim in guest.rglob('*.omnipha-new'):
-                    if victim.is_dir():
-                        victim.rmdir()
-                    else:
-                        victim.unlink()
-                sabotage.mkdir(mode=0o700)
-            bad = run_installer(guest, sources, mountinfo_path)
-            assert bad.returncode != 0 and 'persistent chain staging path already exists' in bad.stderr, (collision, bad.stderr)
-            assert file_state(legacy_post_path) == post_state
-            assert file_state(legacy_hook_path) == hook_state
-            assert not post_backup.exists() and not hook_backup.exists()
-        reset_unpinned()
-        legacy_hook_path.write_bytes(canonical_scripts['10-omnipha-self-stage.start'])
-        legacy_hook_path.chmod(0o700)
-        legacy_post_path.write_bytes(canonical_scripts['pmos-self-post-fresh-boot.sh'])
-        legacy_post_path.chmod(0o700)
-        edited_radio_target.write_bytes(edited_radio_bytes)
-        edited_radio_target.chmod(0o700)
-        pristine_before = {legacy_hook_path: file_state(legacy_hook_path),
-                           legacy_post_path: file_state(legacy_post_path),
-                           edited_radio_target: file_state(edited_radio_target)}
-        for race, expected in (
-                ('backup-fail', 'cannot create persistent chain legacy backup'),
-                ('backup-exists', 'cannot create persistent chain legacy backup'),
-                ('target-edit', 'persistent chain legacy backup changed'),
-                ('replace-fail', 'cannot replace legacy chain file')):
-            for path in (legacy_hook_path, legacy_post_path):
-                path.write_bytes(pristine_before[path][0])
-                path.chmod(0o700)
-                path.with_name(path.name + '.omnipha-legacy').unlink(missing_ok=True)
-                path.with_name(path.name + '.omnipha-new').unlink(missing_ok=True)
-            edited_radio_target.write_bytes(edited_radio_bytes)
-            edited_radio_target.chmod(0o700)
+            radio_target.unlink()
             bad = run_installer(guest, sources, mountinfo_path, race=race)
-            assert bad.returncode != 0 and expected in bad.stderr, (race, bad.stderr)
-            assert file_state(edited_radio_target)[0] == edited_radio_bytes
-            for path in (legacy_hook_path, legacy_post_path):
-                backup = path.with_name(path.name + '.omnipha-legacy')
-                staged = path.with_name(path.name + '.omnipha-new')
-                if race in ('backup-fail', 'backup-exists'):
-                    assert path.read_bytes() == pristine_before[path][0], race
-                    assert not backup.exists() or backup.read_bytes() != pristine_before[path][0] or race == 'backup-exists'
-                elif race == 'target-edit':
-                    assert not backup.exists() or backup.read_bytes() != pristine_before[path][0]
-                else:
-                    assert path.read_bytes() == pristine_before[path][0]
-                    if staged.exists():
-                        assert backup.is_file() and backup.read_bytes() == pristine_before[path][0], race
-                        assert backup.stat().st_ino == path.stat().st_ino and path.stat().st_nlink == 2
-                        assert staged.read_bytes() == unpinned_scripts[
-                            'pmos-self-post-fresh-boot.sh' if path is legacy_post_path else '10-omnipha-self-stage.start']
-                        again = run_installer(guest, sources, mountinfo_path)
-                        assert again.returncode != 0 and (
-                            'persistent chain staging path already exists' in again.stderr or
-                            'unsafe persistent chain legacy backup' in again.stderr or
-                            'partial persistent chain migration' in again.stderr), (race, again.stderr)
-                        assert path.read_bytes() == pristine_before[path][0] and backup.read_bytes() == pristine_before[path][0]
-                    else:
-                        assert not backup.exists(), race
-                staged.unlink(missing_ok=True)
-                backup.unlink(missing_ok=True)
+            assert bad.returncode != 0 and 'cannot publish chain file without replacement' in bad.stderr, (race, bad.stderr)
+            assert check(), race
         reset_unpinned()
-        legacy_hook_path.write_bytes(canonical_scripts['10-omnipha-self-stage.start'])
-        legacy_hook_path.chmod(0o700)
-        legacy_post_path.write_bytes(canonical_scripts['pmos-self-post-fresh-boot.sh'])
-        legacy_post_path.chmod(0o700)
-        edited_radio_target.write_bytes(edited_radio_bytes)
-        edited_radio_target.chmod(0o700)
-        ok = run_installer(guest, sources, mountinfo_path)
-        assert ok.returncode == 0, ok.stderr
-        assert legacy_hook_path.read_bytes() == unpinned_scripts['10-omnipha-self-stage.start']
-        assert legacy_post_path.read_bytes() == unpinned_scripts['pmos-self-post-fresh-boot.sh']
-        assert hook_backup.read_bytes() == canonical_scripts['10-omnipha-self-stage.start']
-        assert post_backup.read_bytes() == canonical_scripts['pmos-self-post-fresh-boot.sh']
-        assert file_state(edited_radio_target)[0] == edited_radio_bytes
-        assert hook_backup.stat().st_ino != legacy_hook_path.stat().st_ino
-        assert post_backup.stat().st_ino != legacy_post_path.stat().st_ino
-        recovered_hook = hook_backup.read_bytes()
-        recovered_post = post_backup.read_bytes()
-        legacy_hook_path.write_bytes(recovered_hook)
-        legacy_hook_path.chmod(0o700)
-        legacy_post_path.write_bytes(recovered_post)
-        legacy_post_path.chmod(0o700)
-        hook_backup.unlink()
-        post_backup.unlink()
-        assert legacy_hook_path.read_bytes() == canonical_scripts['10-omnipha-self-stage.start']
-        assert legacy_post_path.read_bytes() == canonical_scripts['pmos-self-post-fresh-boot.sh']
-        ok = run_installer(guest, sources, mountinfo_path)
-        assert ok.returncode == 0, ok.stderr
-        assert legacy_hook_path.read_bytes() == unpinned_scripts['10-omnipha-self-stage.start']
-        assert legacy_post_path.read_bytes() == unpinned_scripts['pmos-self-post-fresh-boot.sh']
-        assert hook_backup.read_bytes() == recovered_hook and post_backup.read_bytes() == recovered_post
-        for name, target in specs:
-            path = guest / target
-            before = file_state(path)
-            bad = run_installer(guest, sources, mountinfo_path, sha=('digest', path, unpinned.BAD_RADIO, work / 'sha-trace'))
-            assert bad.returncode != 0 and 'refused persistent chain file' in bad.stderr, (name, bad.stderr)
-            assert file_state(path)[0] == before[0]
-            (work / 'sha-trace').unlink(missing_ok=True)
-        reset_unpinned()
-        for name, target in specs:
-            path = sources / name
-            path.write_bytes(b'carrier-mismatch\n')
-            path.chmod(0o700)
-            bad = run_installer(guest, sources, mountinfo_path)
-            assert bad.returncode != 0 and 'unpinned carrier payload' in bad.stderr, (name, bad.stderr)
-            path.write_bytes(unpinned_scripts[name])
-            path.chmod(0o700)
-        ok = run_installer(guest, sources, mountinfo_path)
-        assert ok.returncode == 0, ok.stderr
+        assert_retained('after races', target_paths)
+        unrelated_file.unlink()
         edited_hook = unpinned_scripts['10-omnipha-self-stage.start'] + edits['10-omnipha-self-stage.start']
         canonical_fragment = stage_block(runtime['pmos-session-stage.sh'].decode())
         candidate_fragment = stage_block(unpinned_stage)
@@ -1186,12 +1211,13 @@ with tempfile.TemporaryDirectory(prefix='chain-install-311.') as tmp:
             assert file_state(hook_target) == before, label
         hook_target.write_bytes(payloads['10-omnipha-self-stage.start'])
         hook_target.chmod(0o700)
-        unrelated_file.unlink()
-        print('pass: pristine canonical legacy hook and post migrate to unpinned defaults with same-inode .omnipha-legacy backups; edited radio retained; repeat boots are no-ops')
-        print('pass: modified hook and post stay byte-identical without backup; backup collisions, stale or directory backups, staging collisions and races (backup failure, target edit, replace failure) fail closed')
-        print('pass: BAD digest, failed, empty, malformed and fail-with-output sha256sum are refused for radio, post and hook; carrier mismatches refused')
-        print('pass: unpinned edited radio/post/hook preserved one at a time across installer passes')
-        print('pass: unpinned installer keeps root-contract, foreign-hook and untrusted file refusals')
+        print('pass: no-check unpinned installer drops snapshot, radio_snapshot_check, chain metadata/digest/trust, target-file metadata/hash probes and legacy-backup aborts; BAD digest absent from every unpinned runtime script')
+        print('pass: unpinned default post launches the persistent radio directly for stages and services with no pin, snapshot or BAD check; unpinned hook carries no digests')
+        print(f'pass: existing radio, post and hook retained byte- and inode-identical across repeat passes with no busybox applet invoked on them (shell builtin existence tests are not traceable) (edited one at a time; {8 * 4} mode/scope cases; {owner_variations} owner cases; hardlinks; symlinks)')
+        print('pass: exact canonical and modified legacy hook/post (and historic pre-gate hook) retained in place with no backup, staging or migration; missing radio still installed beside them')
+        print(f'pass: missing files installed no-replace with 0700 single-link bytes ({install_runs} missing-subset runs plus fresh tree), repeat passes are no-ops; staging collision and ln races fail closed')
+        print('pass: carrier payload still validated (bytes, mode, canonical-legacy and stand-in) before any install; root-contract, mount, parent, carrier-directory, foreign-hook and chain-directory refusals unchanged')
+        print('caveat: retained legacy canonical hook and post still embed their sha pins (post RADIO_SHA, hook post and radio digests); host tests do not change them, so an edited radio only runs under a legacy post/hook if the coordinator replaces those files by explicitly authorized means')
         print('pass: candidate session stage accepts the edited hook that canonical stage rejects')
     else:
         raise AssertionError('build-init-boot-mb003-unpinned.py is required for unpinned host checks')

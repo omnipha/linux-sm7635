@@ -6,7 +6,7 @@ if [ "${1:-}" != --inner ]; then
 	chmod 755 "$work"
 	trap 'rm -rf "$work"' EXIT
 	HERE="$HERE" WORK="$work" python3 -B - <<'PY'
-import importlib.util, os, pathlib
+import hashlib, importlib.util, os, pathlib
 here = pathlib.Path(os.environ['HERE'])
 def load(name, filename):
     spec = importlib.util.spec_from_file_location(name, here / filename)
@@ -34,9 +34,30 @@ assert edited != scripts['pmos-radio-bringup-fresh-boot.sh']
 (work / 'chook').write_bytes(scripts['10-omnipha-self-stage.start'])
 (work / 'chook-canonical').write_bytes(canonical_scripts['10-omnipha-self-stage.start'])
 (work / 'cradio').write_bytes(edited)
-(work / 'bad-sha').write_text(unpinned.BAD_RADIO + '\n')
 assert canonical_scripts['pmos-self-post-fresh-boot.sh'] != scripts['pmos-self-post-fresh-boot.sh']
 assert canonical_scripts['10-omnipha-self-stage.start'] != scripts['10-omnipha-self-stage.start']
+def sha(data):
+    return hashlib.sha256(data).hexdigest()
+legacy = unpinned.canonical
+fresh_sha = legacy.FRESH_RADIO_SHA.encode()
+legacy_post_sha = legacy.GATED_POST_SHA.encode()
+legacy_hook_sha = legacy.GATED_HOOK_SHA.encode()
+canon_post = canonical_scripts['pmos-self-post-fresh-boot.sh']
+canon_hook = canonical_scripts['10-omnipha-self-stage.start']
+cand_post = scripts['pmos-self-post-fresh-boot.sh']
+cand_hook = scripts['10-omnipha-self-stage.start']
+assert sha(canon_post).encode() == legacy_post_sha and sha(canon_hook).encode() == legacy_hook_sha
+assert canon_post.count(b'RADIO_SHA=' + fresh_sha) == 1 and b'sha256sum' in canon_hook
+assert canon_hook.count(legacy_post_sha) == 1 and canon_hook.count(fresh_sha) == 1
+assert b'pinned radio bring-up script missing' in canon_post
+for name, data in (('post', cand_post), ('hook', cand_hook)):
+    for forbidden in (fresh_sha, legacy_post_sha, legacy_hook_sha, b'RADIO_SHA', b'omnipha-radio-snapshot',
+                      b'radio_snapshot', b'pinned radio bring-up script missing',
+                      b'd7b74c2450fec86b17f325cab4100cc19c0a6319b8f9c5baa73e83a9acb0bfd3'):
+        assert forbidden not in data, (name, forbidden)
+assert b'sha256sum' not in cand_hook and b'stat ' not in cand_hook and b'[ -f "$1" ]' not in cand_hook
+assert cand_post.count(b'$BB sh "$RADIO" "$boot"') == 2
+assert sha(edited).encode() != fresh_sha and sha(edited) != 'd7b74c2450fec86b17f325cab4100cc19c0a6319b8f9c5baa73e83a9acb0bfd3'
 PY
 	sudo -n unshare --mount --pid --fork --mount-proc env HERE="$HERE" WORK="$work" /bin/busybox sh "$0" --inner
 	exit 0
@@ -77,12 +98,7 @@ case "${1:-}" in
 			*'/proc/1/root'*|*"%d:%i /"*) printf '1:2\n'; exit 0;;
 		esac;;
 	sha256sum)
-		[ "${2:-}" != /proc/1/exe ] || exec "$BB" sha256sum /bin/busybox
-		if [ -f /tmp/mock-bad ] && [ -f "${2:-}" ] && "$BB" cmp -s "$2" /tmp/edited-radio; then
-			printf '%s\n' "$2" >> /tmp/mock-bad-hit
-			printf '%s  %s\n' "$("$BB" cat /tmp/bad-sha)" "$2"
-			exit 0
-		fi;;
+		[ "${2:-}" != /proc/1/exe ] || exec "$BB" sha256sum /bin/busybox;;
 	awk)
 		case "$*" in *'/proc/1/mounts'*) exit 0;; esac;;
 	dmesg)
@@ -94,8 +110,7 @@ case "${1:-}" in
 		exit 0;;
 	sleep) exit 0;;
 	sh)
-		if [ "${2:-}" = /usr/libexec/omnipha/pmos-radio-bringup-fresh-boot.sh ] ||
-			{ [ "$#" -ge 5 ] && [ -f "${2:-}" ] && case "${4:-}" in modem|wpss|driver|scan|services) true;; *) false;; esac && case "${3:-}" in *-*-*-*-*) true;; *) false;; esac; }; then
+		if [ "$#" -ge 5 ] && [ -f "${2:-}" ] && case "${4:-}" in modem|wpss|driver|scan|services) true;; *) false;; esac && case "${3:-}" in *-*-*-*-*) true;; *) false;; esac; then
 			printf '%s\n' "$2" >> /tmp/launch-paths
 			"$BB" cat "$2" > /tmp/launched-radio
 			printf '%s\n' "$4" >> /tmp/stages
@@ -107,8 +122,7 @@ case "${1:-}" in
 		printf 'started\n' >> /tmp/hook-started
 		if [ -f /tmp/execute-hook ]; then
 			shift
-			"$@"; result=$?
-			printf '%s\n' "$result" > /tmp/hook-post-status
+			"$@"
 		fi
 		exit 0;;
 esac
@@ -153,9 +167,10 @@ for stage in modem wpss driver scan services; do
 	[ "$( $BB cat "$R/run/radio-bringup/$stage.marker")" = "$token" ] &&
 		[ "$( $BB stat -c '%u:%a:%h' "$R/run/radio-bringup/$stage.marker")" = 0:600:1 ] || fail "marker $stage invalid"
 done
+RADIO_PATH=/usr/libexec/omnipha/pmos-radio-bringup-fresh-boot.sh
 reset_post() {
 	$BB rm -rf "$R/run/radio-bringup/omnipha-radio-snapshot" "$R/run/radio-bringup/success-gate-294"
-	$BB rm -f "$R/run/radio-bringup/"*.marker "$R/run/radio-bringup/self-post.log" "$R/run/pmos-pre-ssh-panel.record" "$R/tmp/stages" "$R/tmp/services-stdin" "$R/tmp/launch-paths" "$R/tmp/launched-radio" "$R/tmp/mock-bad-hit" "$R/tmp/hook-started" "$R/tmp/hook-post-status"
+	$BB rm -f "$R/run/radio-bringup/"*.marker "$R/run/radio-bringup/self-post.log" "$R/run/pmos-pre-ssh-panel.record" "$R/tmp/stages" "$R/tmp/services-stdin" "$R/tmp/launch-paths" "$R/tmp/launched-radio" "$R/tmp/hook-started"
 	$BB cp "$R/tmp/record.before" "$R/.omnipha-boot-record"
 	$BB printf 'synthetic-profile\n' > "$R/run/radio-bringup/wpa_supplicant.conf"
 	$BB chmod 600 "$R/run/radio-bringup/wpa_supplicant.conf"
@@ -207,16 +222,11 @@ $BB printf '\n' >> "$R/usr/libexec/omnipha/pmos-radio-bringup-fresh-boot.sh"
 $BB chroot "$R" /real/busybox sh /hook && fail 'modified radio accepted by hook'
 [ ! -e "$R/tmp/hook-started" ] || fail 'hook launched modified radio'
 $BB cmp -s "$WORK/radio" "$WORK/cradio" && fail 'candidate radio unchanged'
-$BB cp "$WORK/cpost" "$R/usr/libexec/omnipha/pmos-self-post-fresh-boot.sh"
-$BB cp "$WORK/chook" "$R/hook"
-$BB cp "$WORK/cradio" "$R/tmp/edited-radio"
-$BB cp "$WORK/bad-sha" "$R/tmp/bad-sha"
-$BB chmod 700 "$R/usr/libexec/omnipha/pmos-self-post-fresh-boot.sh" "$R/hook" "$R/tmp/edited-radio"
-$BB chmod 600 "$R/tmp/bad-sha" "$R/run/pid1-guard/armed" "$R/run/pid1-guard/root-identity" "$R/run/pid1-guard/root-contract.sh"
 $BB cp "$WORK/cpost-canonical" "$R/usr/libexec/omnipha/pmos-self-post-fresh-boot.sh"
 $BB cp "$WORK/chook-canonical" "$R/hook-canonical"
-$BB cp "$WORK/radio" "$R/usr/libexec/omnipha/pmos-radio-bringup-fresh-boot.sh"
-$BB chmod 700 "$R/usr/libexec/omnipha/pmos-self-post-fresh-boot.sh" "$R/usr/libexec/omnipha/pmos-radio-bringup-fresh-boot.sh" "$R/hook-canonical"
+$BB cp "$WORK/radio" "$R$RADIO_PATH"
+$BB chmod 700 "$R/usr/libexec/omnipha/pmos-self-post-fresh-boot.sh" "$R$RADIO_PATH" "$R/hook-canonical"
+$BB chmod 600 "$R/run/pid1-guard/armed" "$R/run/pid1-guard/root-identity" "$R/run/pid1-guard/root-contract.sh"
 $BB rm -f "$R/tmp/hook-started"
 $BB chroot "$R" /real/busybox sh /hook-canonical
 $BB sleep 1
@@ -231,8 +241,12 @@ $BB chroot "$R" /real/busybox sh /hook-edited-legacy && fail 'edited legacy hook
 [ ! -e "$R/tmp/hook-started" ] || fail 'edited legacy hook launched migrated post'
 $BB cp "$WORK/cpost-canonical" "$R/usr/libexec/omnipha/pmos-self-post-fresh-boot.sh"
 $BB chmod 700 "$R/usr/libexec/omnipha/pmos-self-post-fresh-boot.sh"
-$BB cp "$WORK/cradio" "$R/usr/libexec/omnipha/pmos-radio-bringup-fresh-boot.sh"
-$BB chmod 700 "$R/usr/libexec/omnipha/pmos-radio-bringup-fresh-boot.sh"
+$BB cp "$WORK/cradio" "$R$RADIO_PATH"
+$BB chmod 700 "$R$RADIO_PATH"
+$BB grep -q 'RADIO_SHA=146ed59271cde6b593f28212caf8871c0f00062a3c5b1d460c858e4c90271e14' "$R/usr/libexec/omnipha/pmos-self-post-fresh-boot.sh" || fail 'retained legacy post lost its radio pin'
+$BB grep -q '113553dddfc646b77dacb06777cc2c450e4f17d33aaf508e3113c993968ac0f3' "$R/hook-canonical" || fail 'retained legacy hook lost its post pin'
+$BB grep -q '146ed59271cde6b593f28212caf8871c0f00062a3c5b1d460c858e4c90271e14' "$R/hook-canonical" || fail 'retained legacy hook lost its radio pin'
+$BB grep -q 'sha256sum' "$R/hook-canonical" || fail 'retained legacy hook lost its digest check'
 $BB chroot "$R" /real/busybox sh /hook-canonical && fail 'retained canonical gated hook launched edited radio'
 [ ! -e "$R/tmp/hook-started" ] || fail 'retained canonical gated hook launch recorded with edited radio'
 reset_post
@@ -240,43 +254,49 @@ run_post && fail 'canonical gated post accepted edited radio'
 $BB grep -q 'pinned radio bring-up script missing' "$R/tmp/post.out" || fail 'canonical gated post refusal reason missing'
 [ ! -e "$R/tmp/stages" ] || fail 'canonical gated post reached a stage with edited radio'
 $BB cp "$WORK/cpost" "$R/usr/libexec/omnipha/pmos-self-post-fresh-boot.sh"
-$BB chmod 700 "$R/usr/libexec/omnipha/pmos-self-post-fresh-boot.sh"
-reset_post
-$BB touch "$R/tmp/mock-bad"
-$BB cp "$R/tmp/edited-radio" "$R/usr/libexec/omnipha/pmos-radio-bringup-fresh-boot.sh"
-$BB chmod 700 "$R/usr/libexec/omnipha/pmos-radio-bringup-fresh-boot.sh"
-run_post && fail 'mocked denylisted radio hash was launched'
-$BB grep -q 'unsafe, unreadable or refused radio snapshot' "$R/tmp/post.out" || fail 'denylist refusal reason missing'
-[ ! -e "$R/tmp/stages" ] || fail 'denylisted radio reached a stage'
-$BB rm "$R/tmp/mock-bad"
-reset_post
-run_post && fail 'fixture unexpectedly passed the full success gate'
-[ "$( $BB cat "$R/tmp/stages")" = 'modem
+$BB cp "$WORK/chook" "$R/hook"
+$BB chmod 700 "$R/usr/libexec/omnipha/pmos-self-post-fresh-boot.sh" "$R/hook"
+$BB grep -q 'RADIO_SHA=\|sha256sum\|omnipha-radio-snapshot\|radio_snapshot\|d7b74c2450fec86b17f325cab4100cc19c0a6319b8f9c5baa73e83a9acb0bfd3' "$R/hook" && fail 'candidate hook retained a pin, digest or snapshot check'
+$BB grep -q 'RADIO_SHA=\|omnipha-radio-snapshot\|radio_snapshot\|pinned radio bring-up script missing\|d7b74c2450fec86b17f325cab4100cc19c0a6319b8f9c5baa73e83a9acb0bfd3' "$R/usr/libexec/omnipha/pmos-self-post-fresh-boot.sh" && fail 'candidate post retained a radio pin, snapshot or digest refusal'
+check_direct_launch() {
+	run_post && fail 'candidate fixture unexpectedly completed the success gate'
+	[ "$( $BB cat "$R/tmp/stages")" = 'modem
 wpss
 driver
 scan
-services' ] || fail 'edited radio did not reach all stages'
-[ "$( $BB sort -u "$R/tmp/launch-paths")" = /run/radio-bringup/omnipha-radio-snapshot/radio.sh ] || fail 'edited radio not launched from snapshot'
-$BB cmp -s "$R/tmp/launched-radio" "$R/tmp/edited-radio" || fail 'launched snapshot differs from edited radio'
-[ "$( $BB stat -c '%u:%g:%a:%h' "$R/run/radio-bringup/omnipha-radio-snapshot/radio.sh")" = 0:0:600:1 ] || fail 'radio snapshot metadata unsafe'
-$BB rm -f "$R/tmp/hook-started" "$R/tmp/stages" "$R/tmp/launch-paths" "$R/tmp/launched-radio"
-$BB chroot "$R" /real/busybox sh /hook
-$BB sleep 1
-[ -f "$R/tmp/hook-started" ] || fail 'candidate hook did not launch edited radio path'
-$BB touch "$R/tmp/execute-hook"
-$BB touch "$R/tmp/mock-bad"
+services' ] || fail 'edited radio did not reach all simulated stages'
+	[ "$( $BB sort -u "$R/tmp/launch-paths")" = "$RADIO_PATH" ] || fail 'edited radio was not launched from its persistent path'
+	$BB cmp -s "$R/tmp/launched-radio" "$WORK/cradio" || fail 'launched radio bytes differ from synthetic edited radio'
+	[ ! -e "$R/run/radio-bringup/omnipha-radio-snapshot" ] && [ ! -L "$R/run/radio-bringup/omnipha-radio-snapshot" ] || fail 'candidate post created a radio snapshot'
+	$BB grep -q 'omnipha-radio-snapshot\|refused radio snapshot\|d7b74c2450fec86b17f325cab4100cc19c0a6319b8f9c5baa73e83a9acb0bfd3' "$R/tmp/post.out" && fail 'candidate post reported a snapshot or digest refusal'
+	return 0
+}
 reset_post
+$BB cp "$WORK/cradio" "$R$RADIO_PATH"
+$BB chmod 644 "$R$RADIO_PATH"
+check_direct_launch
+reset_post
+$BB cp "$WORK/cradio" "$R/tmp/synthetic-radio"
+$BB chmod 600 "$R/tmp/synthetic-radio"
+$BB rm -f "$R$RADIO_PATH"
+$BB ln -s /tmp/synthetic-radio "$R$RADIO_PATH"
+check_direct_launch
+$BB rm -f "$R/tmp/hook-started"
+$BB chmod 644 "$R/usr/libexec/omnipha/pmos-self-post-fresh-boot.sh" "$R/tmp/synthetic-radio"
 $BB chroot "$R" /real/busybox sh /hook
 $BB sleep 1
-[ -f "$R/tmp/hook-started" ] || fail 'candidate hook did not detach post helper'
-[ -f "$R/tmp/mock-bad-hit" ] || fail 'candidate hook post did not check radio hash'
-[ ! -e "$R/tmp/stages" ] || fail 'denylisted radio reached stage via hook'
-[ "$( $BB cat "$R/tmp/hook-post-status")" != 0 ] || fail 'denylisted post helper exited 0'
-$BB rm -f "$R/tmp/mock-bad" "$R/tmp/execute-hook"
+[ -f "$R/tmp/hook-started" ] || fail 'candidate hook refused existing scripts because of mode or link'
+$BB rm -f "$R/tmp/hook-started" "$R$RADIO_PATH"
+$BB chroot "$R" /real/busybox sh /hook
+$BB sleep 1
+[ -f "$R/tmp/hook-started" ] || fail 'candidate hook performed a file test instead of launching post directly'
+reset_post
+run_post && fail 'candidate post succeeded without the persistent radio'
+[ ! -e "$R/tmp/stages" ] || fail 'candidate post reached a stage without the persistent radio'
 $BB chmod 600 "$R/run/pid1-guard/nonce"
 [ "$( $BB cat "$R/run/pid1-guard/nonce")" = "$nonce" ] || fail 'guard nonce changed'
 [ ! -e "$R/run/pid1-guard/ack" ] && [ ! -e "$R/run/pid1-guard/accepted" ] || fail 'guard acknowledgement changed'
 printf 'pass: mocked fresh self-post ordering, nonce markers, priority-prefixed panel restore, refusal paths and pinned hook; no device\n'
-printf 'pass: canonical gated hook and post refuse the edited radio when retained; candidate post launches the edited radio only from its snapshot\n'
-printf 'scope: exact canonical hook and post are migrated by the installer; an already edited legacy hook is retained and its embedded old post pin still refuses the migrated post, so the coordinator must prove the hook is the exact legacy file before the first candidate boot\n'
-printf 'mock caveat: BAD_RADIO is a mocked sha256sum reply for the synthetic edited radio, matched by byte comparison inside the fixture wrapper; no real denylisted payload was used, so this proves refusal logic on that digest only; the snapshot success gate still refuses in this fixture and no ack is exercised\n'
+printf 'pass: retained legacy hook and post still contain their old pins and refuse the synthetic edited radio; candidate post launches that radio directly from its persistent path\n'
+printf 'scope: an already edited legacy hook is retained and its embedded old post pin still refuses the migrated post; proving the installed hook is that exact legacy file before the first candidate boot is coordinator preboot responsibility, not a candidate hook or host-fixture check\n'
+printf 'limitation: radio stage execution is simulated by the busybox wrapper and is not device radio execution; no device was accessed; the launched bytes are the synthetic edit only, not a known-bad payload; this fixture does not prove radio safety, digest refusal, snapshot metadata or success-gate acknowledgement\n'

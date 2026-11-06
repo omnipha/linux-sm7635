@@ -49,54 +49,12 @@ def replace_count(data, old, new, count=1):
 
 def unpinned_post(post):
     post = replace_count(post, b"RADIO_SHA=" + canonical.FRESH_RADIO_SHA.encode() + b"\n", b"")
-    old = b'''[ -f "$RADIO" ] && [ ! -L "$RADIO" ] &&
+    post = replace_count(post, b'''[ -f "$RADIO" ] && [ ! -L "$RADIO" ] &&
 \t[ "$($BB stat -c '%u:%a' "$RADIO")" = 0:700 ] &&
 \t[ "$(hash "$RADIO")" = "$RADIO_SHA" ] || die 'pinned radio bring-up script missing'
-'''
-    new = b'''[ -d /run ] && [ ! -L /run ] &&
-\t[ "$($BB stat -c '%u:%g:%a' /run 2>/dev/null)" = 0:0:700 ] &&
-\t[ -d "$STATE" ] && [ ! -L "$STATE" ] &&
-\t[ "$($BB stat -c '%u:%g:%a' "$STATE" 2>/dev/null)" = 0:0:700 ] || die 'unsafe radio snapshot parent'
-[ -f "$RADIO" ] && [ ! -L "$RADIO" ] &&
-\t[ "$($BB stat -c '%u:%a' "$RADIO")" = 0:700 ] &&
-\t[ "$($BB stat -c '%g:%h' "$RADIO" 2>/dev/null)" = 0:1 ] || die 'unsafe persistent radio script'
-radio_dir="$STATE/omnipha-radio-snapshot"
-[ ! -e "$radio_dir" ] && [ ! -L "$radio_dir" ] || die 'radio snapshot directory already exists'
-$BB mkdir -m 700 "$radio_dir" || die 'cannot create radio snapshot directory'
-[ -d "$radio_dir" ] && [ ! -L "$radio_dir" ] &&
-\t[ "$($BB stat -c '%u:%g:%a' "$radio_dir" 2>/dev/null)" = 0:0:700 ] || die 'unsafe radio snapshot directory'
-radio_snapshot="$radio_dir/radio.sh"
-(umask 077; set -C; $BB cat "$RADIO" > "$radio_snapshot") || die 'cannot copy radio snapshot'
-RADIO="$radio_snapshot"
-radio_snapshot_check() {
-\t[ -d /run ] && [ ! -L /run ] &&
-\t\t[ "$($BB stat -c '%u:%g:%a' /run 2>/dev/null)" = 0:0:700 ] &&
-\t\t[ -d "$STATE" ] && [ ! -L "$STATE" ] &&
-\t\t[ "$($BB stat -c '%u:%g:%a' "$STATE" 2>/dev/null)" = 0:0:700 ] &&
-\t\t[ -d "$radio_dir" ] && [ ! -L "$radio_dir" ] &&
-\t\t[ "$($BB stat -c '%u:%g:%a' "$radio_dir" 2>/dev/null)" = 0:0:700 ] &&
-\t\t[ -f "$RADIO" ] && [ ! -L "$RADIO" ] && [ -s "$RADIO" ] &&
-\t\t[ "$($BB stat -c '%u:%g:%a:%h' "$RADIO" 2>/dev/null)" = 0:0:600:1 ] || return 1
-\tradio_sum=$($BB sha256sum "$RADIO" 2>/dev/null) || return 1
-\tradio_sum=${radio_sum%% *}
-\t[ "${#radio_sum}" = 64 ] || return 1
-\tcase "$radio_sum" in *[!0-9a-f]*) return 1;; esac
-\t[ "$radio_sum" != @BAD_RADIO@ ]
-}
-radio_snapshot_check || die 'unsafe, unreadable or refused radio snapshot'
-'''.replace(b"@BAD_RADIO@", BAD_RADIO.encode())
-    post = replace_count(post, old, new)
-    post = replace_count(post,
-        b'\t$BB sh "$RADIO" "$boot" "$stage" "$marker" || die "radio bring-up $stage failed"\n',
-        b'\tradio_snapshot_check || die "unsafe, unreadable or refused radio snapshot before $stage"\n'
-        b'\t$BB sh "$RADIO" "$boot" "$stage" "$marker" || die "radio bring-up $stage failed"\n')
-    post = replace_count(post,
-        b'$BB sh "$RADIO" "$boot" services "$marker" < "$PROFILE" || die \'radio bring-up services failed\'\n',
-        b'radio_snapshot_check || die \'unsafe, unreadable or refused radio snapshot before services\'\n'
-        b'$BB sh "$RADIO" "$boot" services "$marker" < "$PROFILE" || die \'radio bring-up services failed\'\n')
+''', b'')
     return replace_count(post,
-        b'[ "$(hash "$RADIO")" = "$RADIO_SHA" ] || gate_fail \'radio pin changed during stages\'\n',
-        b'radio_snapshot_check || gate_fail \'unsafe, unreadable or refused radio snapshot\'\n')
+        b'[ "$(hash "$RADIO")" = "$RADIO_SHA" ] || gate_fail \'radio pin changed during stages\'\n', b'')
 
 
 def unpinned_hook(hook):
@@ -110,160 +68,62 @@ def unpinned_hook(hook):
            b'\t\t[ "$($BB sha256sum "$1" | $BB cut -d \' \' -f 1)" = "$2" ] || {\n'
            b'\t\t$BB printf \'pmos-self-post-fresh: pinned persistent script missing or changed\\n\' >/dev/kmsg 2>/dev/null || true\n'
            b'\t\texit 1\n\t}\ndone\n')
-    new = b'''for spec in "/usr/libexec/omnipha/pmos-self-post-fresh-boot.sh" "/usr/libexec/omnipha/pmos-radio-bringup-fresh-boot.sh"; do
-\tset -- $spec
-\t[ -f "$1" ] && [ ! -L "$1" ] &&
-\t\t[ "$($BB stat -c '%u:%a' "$1")" = 0:700 ] &&
-\t\t[ "$($BB stat -c '%g:%h' "$1" 2>/dev/null)" = 0:1 ] || {
-\t\t$BB printf 'pmos-self-post-fresh: persistent script missing or unsafe\\n' >/dev/kmsg 2>/dev/null || true
-\t\texit 1
-\t}
-done
-'''
-    return replace_count(hook, old, new)
+    return replace_count(hook, old, b"")
 
 
 def unpinned_stage(stage):
     old = (b'\t\t\t[ -f "$hook" ] && [ ! -L "$hook" ] && [ "$($BB stat -c \'%u:%g:%a:%h\' "$hook")" = 0:0:700:1 ] &&\n'
            b'\t\t\t[ "$($BB sha256sum "$hook" | $BB cut -d \' \' -f 1)" = ' +
            canonical.GATED_HOOK_SHA.encode() + b' ] ||\n')
-    new = b'\t\t\t[ -f "$hook" ] && [ ! -L "$hook" ] && [ "$($BB stat -c \'%u:%g:%a:%h\' "$hook")" = 0:0:700:1 ] ||\n'
-    return replace_count(stage, old, new)
+    return replace_count(stage, old, b'\t\t\ttrue ||\n')
 
 
 def unpinned_self_stage(self_stage, old_stage, stage, post, hook):
-    self_stage = replace_count(self_stage, canonical.GATED_POST_SHA.encode(), sha(post).encode(), 3)
-    self_stage = replace_count(self_stage, canonical.GATED_HOOK_SHA.encode(), sha(hook).encode(), 3)
-    self_stage = replace_count(self_stage, b"STAGE_SHA=" + sha(old_stage).encode(),
-                               b"STAGE_SHA=" + sha(stage).encode())
-    old = b'''chain_check() {
-	[ -f "$1" ] && [ ! -L "$1" ] &&
-		[ "$($BB stat -c '%u:%g:%a:%h' "$1")" = "0:0:$2:1" ] &&
-		[ "$($BB sha256sum "$1" 2>/dev/null | $BB cut -d ' ' -f 1)" = "$3" ]
-}
-'''
-    new = b'''chain_metadata() {
-	[ -f "$1" ] && [ ! -L "$1" ] &&
-		[ "$($BB stat -c '%u:%g:%a:%h' "$1")" = "0:0:$2:1" ]
-}
-chain_digest() {
-	chain_sum=
-	chain_out=$($BB sha256sum "$1" 2>/dev/null) || return 1
-	[ -n "$chain_out" ] || return 1
-	chain_sum=${chain_out%% *}
-	[ "$chain_sum  $1" = "$chain_out" ] && [ "${#chain_sum}" = 64 ] || return 1
-	case "$chain_sum" in *[!0-9a-f]*) return 1;; esac
-	[ "$chain_sum" != @BAD_RADIO@ ] || return 2
-	return 0
-}
-chain_check() {
-	chain_metadata "$1" "$2" && chain_digest "$1" && [ "$chain_sum" = "$3" ]
-}
-chain_trust() {
-	if chain_digest "$1"; then return 0; else chain_rc=$?; fi
-	[ "$chain_rc" -ne 2 ] || die 'refused persistent chain file'
-	die "$2"
-}
-chain_legacy_for() {
-	case "$1" in
-		pmos-self-post-fresh-boot.sh) chain_legacy=@LEGACY_POST@;;
-		10-omnipha-self-stage.start) chain_legacy=@LEGACY_HOOK@;;
-		*) chain_legacy=;;
-	esac
-}
-'''.replace(b"@BAD_RADIO@", BAD_RADIO.encode()).replace(
-        b"@LEGACY_POST@", canonical.GATED_POST_SHA.encode()).replace(
-        b"@LEGACY_HOOK@", canonical.GATED_HOOK_SHA.encode())
-    self_stage = replace_count(self_stage, old, new)
-    inspect_old = b'''	if [ -e "$chain_target" ] || [ -L "$chain_target" ]; then
+    self_stage = replace_count(self_stage, b'''	if [ -e "$chain_target" ] || [ -L "$chain_target" ]; then
 		chain_check "$chain_target" 700 "$3" || die 'untrusted persistent chain file'
 	fi
 	[ ! -e "$chain_target.omnipha-new" ] && [ ! -L "$chain_target.omnipha-new" ] ||
 		die 'persistent chain staging path already exists'
-'''
-    inspect_new = b'''	chain_legacy_for "$1"
-	chain_backup="$chain_target.omnipha-legacy"
-	[ ! -e "$chain_target.omnipha-new" ] && [ ! -L "$chain_target.omnipha-new" ] ||
-		die 'persistent chain staging path already exists'
-	if [ -e "$chain_backup" ] || [ -L "$chain_backup" ]; then
-		[ -n "$chain_legacy" ] || die 'unexpected persistent chain legacy backup'
-		chain_metadata "$chain_backup" 700 || die 'unsafe persistent chain legacy backup'
-		chain_trust "$chain_backup" 'unsafe persistent chain legacy backup'
-		[ "$chain_sum" = "$chain_legacy" ] || die 'stale persistent chain legacy backup'
-		[ "$($BB stat -c '%d' "$chain_backup")" = "$chain_root_dev" ] ||
-			die 'persistent chain legacy backup left persistent filesystem'
-		chain_metadata "$chain_target" 700 || die 'partial persistent chain migration'
-		chain_trust "$chain_target" 'untrusted persistent chain file'
-		[ "$chain_sum" != "$chain_legacy" ] || die 'partial persistent chain migration'
-	elif [ -e "$chain_target" ] || [ -L "$chain_target" ]; then
-		chain_metadata "$chain_target" 700 || die 'untrusted persistent chain file'
-		chain_trust "$chain_target" 'untrusted persistent chain file'
-		if [ -n "$chain_legacy" ] && [ "$chain_sum" = "$chain_legacy" ]; then
-			[ "$($BB stat -c '%d' "$chain_target")" = "$chain_root_dev" ] ||
-				die 'legacy chain file left persistent filesystem'
-		fi
-	fi
-'''
-    self_stage = replace_count(self_stage, inspect_old, inspect_new)
-    migrate_old = b'''	chain_target="$GUEST$2"
-	if [ ! -e "$chain_target" ] && [ ! -L "$chain_target" ]; then
-'''
-    migrate_new = b'''	chain_target="$GUEST$2"
-	chain_legacy_for "$1"
-	chain_backup="$chain_target.omnipha-legacy"
-	if [ -n "$chain_legacy" ] && [ -e "$chain_target" ] && [ ! -e "$chain_backup" ] && [ ! -L "$chain_backup" ] &&
-		chain_check "$chain_target" 700 "$chain_legacy"; then
-		chain_identity='%d:%i:%u:%g:%a:%s:%Y'
-		chain_before=$($BB stat -c "$chain_identity" "$chain_target") || die 'legacy chain identity unavailable'
-		chain_old=$($BB stat -c '%d:%i' "$chain_target") || die 'legacy chain inode unavailable'
+''', b"")
+    install_old = b'''	if [ ! -e "$chain_target" ] && [ ! -L "$chain_target" ]; then
 		(umask 077; set -C; $BB cat "$chain_dir/$1" > "$chain_target.omnipha-new") || die 'cannot stage chain file'
 		chain_check "$chain_target.omnipha-new" 600 "$3" || die 'staged chain file invalid'
 		$BB chmod 700 "$chain_target.omnipha-new" || die 'cannot protect staged chain file'
 		chain_check "$chain_target.omnipha-new" 700 "$3" || die 'protected chain file invalid'
 		chain_inode=$($BB stat -c '%d:%i' "$chain_target.omnipha-new") || die 'staged chain inode unavailable'
-		[ "${chain_inode%%:*}" = "$chain_root_dev" ] && [ "$chain_inode" != "$chain_old" ] ||
-			die 'staged chain file is not separate on the persistent filesystem'
-		$BB sync -f "$chain_target.omnipha-new" || die 'cannot make staged chain file durable'
-		chain_check "$chain_target" 700 "$chain_legacy" &&
-			[ "$($BB stat -c "$chain_identity" "$chain_target")" = "$chain_before" ] ||
-			die 'persistent chain file changed before backup'
-		$BB ln -T "$chain_target" "$chain_backup" || die 'cannot create persistent chain legacy backup'
-		[ ! -L "$chain_backup" ] &&
-			[ "$($BB stat -c '%d:%i:%u:%g:%a:%h' "$chain_target")" = "$chain_old:0:0:700:2" ] &&
-			[ "$($BB stat -c '%d:%i:%u:%g:%a:%h' "$chain_backup")" = "$chain_old:0:0:700:2" ] &&
-			[ "$($BB stat -c "$chain_identity" "$chain_backup")" = "$chain_before" ] &&
-			chain_digest "$chain_backup" && [ "$chain_sum" = "$chain_legacy" ] ||
-			die 'persistent chain legacy backup changed'
-		$BB sync -f "$chain_backup" || die 'cannot make persistent chain legacy backup durable'
-		chain_digest "$chain_target" && [ "$chain_sum" = "$chain_legacy" ] &&
-			[ "$($BB stat -c '%d:%i:%u:%g:%a:%h' "$chain_target")" = "$chain_old:0:0:700:2" ] &&
-			[ "$($BB stat -c '%d:%i:%u:%g:%a:%h' "$chain_backup")" = "$chain_old:0:0:700:2" ] &&
-			chain_check "$chain_target.omnipha-new" 700 "$3" &&
-			[ "$($BB stat -c '%d:%i' "$chain_target.omnipha-new")" = "$chain_inode" ] ||
-			die 'persistent chain file changed before replacement'
-		$BB mv -fT "$chain_target.omnipha-new" "$chain_target" || die 'cannot replace legacy chain file'
-		chain_check "$chain_target" 700 "$3" && [ "$($BB stat -c '%d:%i' "$chain_target")" = "$chain_inode" ] &&
-			chain_check "$chain_backup" 700 "$chain_legacy" &&
-			[ "$($BB stat -c "$chain_identity" "$chain_backup")" = "$chain_before" ] ||
-			die 'migrated chain file invalid'
-		$BB sync -f "$chain_target" || die 'cannot make migrated chain file durable'
+		$BB ln -T "$chain_target.omnipha-new" "$chain_target" ||
+			die 'cannot publish chain file without replacement'
+		[ ! -L "$chain_target" ] &&
+			[ "$($BB stat -c '%d:%i:%u:%g:%a:%h' "$chain_target")" = "$chain_inode:0:0:700:2" ] &&
+			[ "$($BB stat -c '%d:%i:%u:%g:%a:%h' "$chain_target.omnipha-new")" = "$chain_inode:0:0:700:2" ] ||
+			die 'published chain inode changed'
+		$BB rm "$chain_target.omnipha-new" || die 'cannot complete chain publication'
 	fi
-	if [ ! -e "$chain_target" ] && [ ! -L "$chain_target" ]; then
+	chain_check "$chain_target" 700 "$3" || die 'installed chain file invalid'
 '''
-    self_stage = replace_count(self_stage, migrate_old, migrate_new)
-    self_stage = replace_count(self_stage,
-        b'chain_check "$chain_target" 700 "$3" || die \'installed chain file invalid\'',
-        b'chain_metadata "$chain_target" 700 || die \'installed chain file invalid\'\n'
-        b'\tchain_trust "$chain_target" \'installed chain file invalid\'')
-    return replace_count(self_stage,
-        b'chain_check "$GUEST$1" 700 "$2" || die \'persistent chain changed after installation\'',
-        b'chain_metadata "$GUEST$1" 700 || die \'persistent chain changed after installation\'\n'
-        b'\tchain_trust "$GUEST$1" \'persistent chain changed after installation\'\n'
-        b'\tchain_legacy_for "${1##*/}"\n'
-        b'\tif [ -n "$chain_legacy" ] && { [ -e "$GUEST$1.omnipha-legacy" ] || [ -L "$GUEST$1.omnipha-legacy" ]; }; then\n'
-        b'\t\tchain_check "$GUEST$1.omnipha-legacy" 700 "$chain_legacy" ||\n'
-        b'\t\t\tdie \'persistent chain legacy backup changed after installation\'\n'
-        b'\tfi')
+    install_new = b'''	if [ ! -e "$chain_target" ] && [ ! -L "$chain_target" ]; then
+		[ ! -e "$chain_target.omnipha-new" ] && [ ! -L "$chain_target.omnipha-new" ] ||
+			die 'persistent chain staging path already exists'
+		(umask 077; set -C; $BB cat "$chain_dir/$1" > "$chain_target.omnipha-new") || die 'cannot stage chain file'
+		$BB chmod 700 "$chain_target.omnipha-new" || die 'cannot protect staged chain file'
+		$BB ln -T "$chain_target.omnipha-new" "$chain_target" ||
+			die 'cannot publish chain file without replacement'
+		$BB rm "$chain_target.omnipha-new" || die 'cannot complete chain publication'
+	fi
+'''
+    self_stage = replace_count(self_stage, install_old, install_new)
+    final = (b'for chain_spec in \\\n'
+             b'\t"/usr/libexec/omnipha/pmos-radio-bringup-fresh-boot.sh ' + canonical.FRESH_RADIO_SHA.encode() + b'" \\\n'
+             b'\t"/usr/libexec/omnipha/pmos-self-post-fresh-boot.sh ' + canonical.GATED_POST_SHA.encode() + b'" \\\n'
+             b'\t"/etc/local.d/10-omnipha-self-stage.start ' + canonical.GATED_HOOK_SHA.encode() + b'"; do\n'
+             b'\tset -- $chain_spec\n'
+             b'''\tchain_check "$GUEST$1" 700 "$2" || die 'persistent chain changed after installation'\n'''
+             b'done\n')
+    self_stage = replace_count(self_stage, final, b"")
+    self_stage = replace_count(self_stage, canonical.GATED_POST_SHA.encode(), sha(post).encode(), 2)
+    self_stage = replace_count(self_stage, canonical.GATED_HOOK_SHA.encode(), sha(hook).encode(), 2)
+    return replace_count(self_stage, b"STAGE_SHA=" + sha(old_stage).encode(),
+                         b"STAGE_SHA=" + sha(stage).encode())
 
 
 def runtime_scripts():
@@ -290,9 +150,20 @@ def runtime_scripts():
     require(canonical.GATED_POST_SHA.encode() not in result["pmos-session-stage.sh"] and
             canonical.GATED_HOOK_SHA.encode() not in result["pmos-session-stage.sh"] and
             canonical.GATED_POST_SHA.encode() not in result[builder.GATED_HOOK] and
-            result["pmos-self-stage.sh"].count(canonical.GATED_POST_SHA.encode()) == 1 and
-            result["pmos-self-stage.sh"].count(canonical.GATED_HOOK_SHA.encode()) == 1 and
-            b"RADIO_SHA=" not in result[builder.FRESH_POST], VARIANT_MSG)
+            canonical.FRESH_RADIO_SHA.encode() not in result[builder.GATED_HOOK] and
+            canonical.GATED_POST_SHA.encode() not in result["pmos-self-stage.sh"] and
+            canonical.GATED_HOOK_SHA.encode() not in result["pmos-self-stage.sh"] and
+            result["pmos-self-stage.sh"].count(canonical.FRESH_RADIO_SHA.encode()) == 3 and
+            b"RADIO_SHA=" not in result[builder.FRESH_POST] and
+            b"radio_snapshot" not in result[builder.FRESH_POST] and
+            result["pmos-self-stage.sh"].count(b"chain_check") == 2 and
+            b"untrusted persistent chain file" not in result["pmos-self-stage.sh"] and
+            b"installed chain file invalid" not in result["pmos-self-stage.sh"] and
+            b"persistent chain changed after installation" not in result["pmos-self-stage.sh"] and
+            b"chain_metadata" not in result["pmos-self-stage.sh"] and
+            b"chain_digest" not in result["pmos-self-stage.sh"] and
+            b"chain_trust" not in result["pmos-self-stage.sh"] and
+            b"omnipha-legacy" not in result["pmos-self-stage.sh"], VARIANT_MSG)
     reconstructed = dict(result)
     reconstructed[builder.FRESH_POST] = original[canonical.FRESH_POST]
     reconstructed[builder.GATED_HOOK] = original[canonical.GATED_HOOK]
