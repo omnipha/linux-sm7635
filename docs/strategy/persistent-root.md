@@ -520,86 +520,29 @@ synthetic journal-fsck fixture above does not replace that measurement.
 
 ## Next single variable
 
-Coordinator run 116 (2026-11-05, #324 comment 6654794020, recorded in
-[records/2026-11-05-095841-run-116-unpinned-marker-survives-no-flash-reboot.md](../../records/2026-11-05-095841-run-116-unpinned-marker-survives-no-flash-reboot.md))
-measured two of the acceptance facts below on the installed pair: the root
-mounted `ext4 rw,relatime,norecovery` on `/dev/block/sda13` on both boots, and
-one unpinned 98-byte file survived a no-flash reboot with an identical sha256.
-The dossier fallback below (root stays read-only, or the marker does not
-survive) did **not** trigger, so the migration design is not re-scoped. Still
-unmeasured, and still caveats on that result: ext4 features, clean state,
-error counters, journal behavior and fsck policy; the carrier hashes, which
-were not re-read on the device because no admissible read-only reader exists;
-durability beyond the one observed survival (the guest has no `sync` binary
-and boot 1 ended in the guard's unclean bootloader return); USB SSH rescue
-after a reversible root fault; and replacement of the hash pins. The signed
-generation model gets no further redesign rounds from this result.
+Owner decision 2026-11-06 08:35 Europe/Berlin, recorded on #324 at
+07:42:14Z, supersedes the offline-signature decision: remove the radio,
+self-post and startup-hook hash pins as mb003 device configuration. The
+missing signed baseline no longer blocks item 4, and no bootstrap or signing
+task is authorized. The signed-generation design above is retained history,
+not the active approach.
 
-The exact owner public-key values are now recorded in
-`configs/persistent-root-trust-anchors.json`, which closes the missing-keys
-blocker named by the
-[pair-deliverable proofs](../../records/2026-11-04-190612-pair-deliverable-host-proofs.md);
-the replacement pair is still blocked on a bootstrap that does not exist yet.
-Spending further boots and design rounds on a pair that cannot be built does
-not move the check.
+**Next single variable:** one reviewed host-built `init_boot_a` /
+`vendor_boot_b` pair that no longer refuses or replaces those three files
+because their hashes differ. Host checks must prove that an edit to exactly
+one of them is retained, while USB SSH rescue, guard, nonce/ACK and targeted
+fastboot identity stay unchanged. The known altered radio
+`d7b74c2450fec86b17f325cab4100cc19c0a6319b8f9c5baa73e83a9acb0bfd3` must be
+proven unable to execute before any candidate boot. No userdata erase or
+format. After that host proof, the physical coordinator owns backups,
+identity checks and the one approved flash; the worker then measures that
+edited file surviving reboot without another image.
 
-**Next single variable (coordinator-owned, separately authorized):** the
-remainder of acceptance item 2 on the installed pair, unchanged: the `sda13`
-ext4 features, clean state and error counters, captured with read-only tools
-only (no `fsck -y`, no journal replay, no remount, no write), so a journal and
-fsck policy can be stated from measurement instead of inference. Whether that
-read can be made without a further boot, and which read-only tool exists on the
-installed system, is the coordinator's call; nothing here names a tool or
-authorizes a boot. A superblock read of a filesystem mounted read-write is an
-observational snapshot only (see the runbook below). Any boot beyond run 116
-needs its own technical reason and its own coordinator approval.
-
-**Measured 2026-11-05, run 117 (coordinator, boot `53bf9af3`, no flash,
-installed pair unchanged):** final root mount mode of `sda13` after cutover
-is read-write (`rw,relatime,norecovery`, PID-1 mountinfo root `ext4`
-`8:13`), and a read-only superblock snapshot — pre-cutover and
-post-cutover, byte-identical, sha256 `88c1849c…` — gives: ext4 without a
-journal, `s_state = 0` (not marked clean), error behavior continue,
-`s_error_count = 0`, `compat=0x28`, `incompat=0x2c2`,
-`ro_compat=0x46b` (including `METADATA_CSUM`). The run-116 marker was still
-present. Not established by this snapshot: `METADATA_CSUM` semantics for a
-later writable transaction, on-device carrier hashes, and the offline fsck
-policy. The boot's autonomous radio stages ran on their own and ended in the
-usual no-ACK guard return; no WLAN acceptance is claimed. See
-[records/2026-11-05-103554-run117-sda13-superblock-readonly-snapshot.md](../../records/2026-11-05-103554-run117-sda13-superblock-readonly-snapshot.md).
-
-Run 116 against the original two-item variable:
-
-1. Final root mount mode of `sda13`: **measured**, read-write
-   (`rw,relatime,norecovery`). Filesystem features, clean state and error
-   counters: **not measured**; this is the next single variable above.
-2. One unpinned file outside the three pinned paths surviving a no-flash
-   reboot: **measured once**, identical sha256. "Carrier hashes unchanged"
-   was **not measured**, because no admissible read-only reader exists; it
-   stays a caveat, not a pass, until one is named.
-
-The two boots shared one technical reason and are spent. A single boot cannot
-observe both marker creation and survival across a reboot, so the earlier
-one-boot wording stays withdrawn. Run 116 is not the reversible-root-fault
-rescue test and not an update/rollback test; those stay unmeasured.
-
-**Measured 2026-11-05, run 121 (coordinator, Acceptance 3, this one fault):**
-on the installed pair, one `mv` of `usr/lib/os-release` to
-`os-release.disabled` over `:22` on boot 1 made the fault boot stop at
-`pmos-session-stage failed` (kmsg 5.035 s) with diagnostic key-only `:22`
-reachable from ~6 s to at least 207 s, PID 1 `init`, `/run/keep` present,
-`sda13` `rw` at `/run/pmos`, the guard never armed, and no `:2222` in the
-fault boot. Exactly one `mv` over `:22` restored the 329-byte file (sha256
-`efc600e4…`); `busybox sync`, `restart2 bootloader` and the exact fastboot
-gate followed; no flash, erase, remount, fsck or `mknod`. That answers the
-run-119 open question for this fault: the post-failure root was `rw` at
-`/run/pmos`, and no remount was needed for the rescue. Still unmeasured:
-the `:22`-outage recovery path (no rescue path without diagnostic SSH is
-validated), faults of other files, `:22` loss, power-loss behavior, and every
-item below. See
-[records/2026-11-05-125321-run121-acceptance3-os-release-fault-rescue.md](../../records/2026-11-05-125321-run121-acceptance3-os-release-fault-rescue.md).
-
-**Next single variable (plan owner, 2026-11-06; replaces the spent bootstrap task):** none. The host-only bootstrap is measured blocked, not merely unbuilt: the three baseline payloads derived through `build-init-boot-persistent-root.py::runtime_scripts()` match the pinned digests and sizes, but `verify_owner_bootstrap_baseline` refuses every chain without an offline owner release-key signature, no such signed baseline exists, and throwaway keys are refused (worker comment on #324, 2026-11-05T21:12:56Z; supervisor recheck 22:46Z, worktree `6bfd3bae`, records check passed). The named fallback condition — the bootstrap cannot be produced on the host — has fired. Item 4 is now an owner decision, not another worker session: either the owner signs the reviewed baseline generation with the offline release key, or the owner accepts that the pins stay and changes to the three pinned paths need a new image. Items 1 to 3 already hold for every other userland path. Do not file another bootstrap, fixture, model or wording issue; it repeats a refuted task. The two coordinator reads (fsck/journal policy, carrier-hash re-read) stay separately authorized and unchanged, and neither can run until an admissible read-only reader exists.
+Do not add another fixture, model or wording task. The existing #324 worker
+owns this host candidate. Items 1 and 3 have partial device measurements;
+item 2 still lacks a measured fsck/journal policy, and carrier hashes still
+have no admissible read-only reader. Those reads remain separately
+coordinator-owned and are not this variable.
 
 ### Guard-window measurement runbook (installed pair)
 
