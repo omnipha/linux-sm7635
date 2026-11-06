@@ -18,10 +18,12 @@ blocked by a measurement.
 ## Now
 
 - Step: persistent PC-style root operation (#324). Check that SSH userland
-      edits survive reboot without a partition flash; measure read-write root
-      and its journal/fsck policy, USB SSH rescue after a reversible root fault,
-      and a provenance-checked update path with rollback and equivalent pin
-      protection. The physical coordinator owns device measurements.
+      edits survive reboot without a partition flash, including the radio,
+      self-post and startup-hook files. Owner direction 2026-11-06: remove
+      those three hash pins for mb003. Do not replace them with a signed
+      baseline. The known altered radio file must never run. USB SSH rescue,
+      guard and identity checks stay. The physical coordinator owns device
+      measurements.
 - Fresh-boot WLAN (#311) stays open but is not a prerequisite for this step.
       WLAN and any route-cache candidate await the #324 reviewed migration path;
       no live-route measurement boot, candidate build or flash before it exists.
