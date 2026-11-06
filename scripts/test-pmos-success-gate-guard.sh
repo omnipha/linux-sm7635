@@ -10,7 +10,7 @@ hash() { "$BB" sha256sum "$1" | "$BB" cut -d ' ' -f 1; }
 
 if [ "${1:-}" = --switched ]; then
 	[ "$#" = 2 ] && [ "$$" = 1 ] || fail 'switched process is not PID 1'
-	case "$2" in success|partial|invalid|interrupt|post-interrupt|dead-watcher|replay|late|premature|no-record|bad-record|record-mode|record-symlink|record-links|record-foreign|record-order|record-malformed|panel-absent|panel-record-absent|panel-foreign|panel-conflict|panel-malformed|panel-mode|panel-symlink|panel-links|contract-missing|contract-corrupt|contract-mode|contract-symlink|contract-links|ready-mode|ready-symlink|ready-links|ready-nonce|ready-boot|ready-newline|staging|staging-record-invalid|gate-staging|preplanted-multilink|full-success|full-radio-fail|full-invalid|full-route-cache-success|full-route-cache-internet-dev|full-route-cache-internet-extra|full-route-cache-dns-dev|full-route-cache-dns-extra|full-unpinned-success|full-unpinned-bad-radio|full-unpinned-mid-bad|full-unpinned-mid-hash|full-unpinned-gate-bad) CASE=$2;; *) fail 'invalid case';; esac
+	case "$2" in success|partial|invalid|interrupt|post-interrupt|dead-watcher|replay|late|premature|no-record|bad-record|record-mode|record-symlink|record-links|record-foreign|record-order|record-malformed|panel-absent|panel-record-absent|panel-foreign|panel-conflict|panel-malformed|panel-mode|panel-symlink|panel-links|contract-missing|contract-corrupt|contract-mode|contract-symlink|contract-links|ready-mode|ready-symlink|ready-links|ready-nonce|ready-boot|ready-newline|staging|staging-record-invalid|gate-staging|preplanted-multilink|full-success|full-radio-fail|full-invalid|full-route-cache-success|full-route-cache-internet-dev|full-route-cache-internet-extra|full-route-cache-dns-dev|full-route-cache-dns-extra|full-unpinned-success) CASE=$2;; *) fail 'invalid case';; esac
 	umask 077
 	for ns in mnt pid net; do
 		eval "host_ns=\${HOST_${ns}_NS:-}"
@@ -348,21 +348,6 @@ case "${1:-}" in
 		exec "$b" "$@";;
 	sha256sum)
 		if [ "$#" = 2 ]; then
-			if [ "$2" = /run/radio-bringup/omnipha-radio-snapshot/radio.sh ]; then
-				case "$($b cat /run/case)" in
-					full-unpinned-bad-radio)
-						req 'mocked snapshot hash BAD_RADIO before launch'
-						$b printf '%s  %s\n' d7b74c2450fec86b17f325cab4100cc19c0a6319b8f9c5baa73e83a9acb0bfd3 "$2"; exit 0;;
-					full-unpinned-mid-bad|full-unpinned-gate-bad)
-						if [ -f /run/unpinned-inject ]; then
-							req 'mocked snapshot hash BAD_RADIO after stage barrier'
-							$b printf '%s  %s\n' d7b74c2450fec86b17f325cab4100cc19c0a6319b8f9c5baa73e83a9acb0bfd3 "$2"; exit 0
-						fi;;
-					full-unpinned-mid-hash)
-						if [ -f /run/unpinned-inject ]; then req 'mocked snapshot hash command failure after stage barrier'; exit 1; fi;;
-				esac
-				req 'real snapshot sha256sum'
-			fi
 			if [ -n "$rmtfs_pid" ] && [ "$2" = "/proc/$rmtfs_pid/exe" ]; then
 				req 'intercepted rmtfs executable hash'
 				$b printf '%s  %s\n' d66204e7895a6fd4cf78af369a45cee5bf1c88fa3f8cdad27e24690f233251bd "$2"; exit 0
@@ -398,20 +383,8 @@ case "${1:-}" in
 		exit 1;;
 	sh)
 		if [ "$#" = 5 ] && [ "$2" = /usr/libexec/omnipha/pmos-radio-bringup-fresh-boot.sh ]; then
-			req "intercepted radio stage $4 marker $5"
+			req "intercepted radio stage $4 path $2 marker $5"
 			if [ "$($b cat /run/case)" = full-radio-fail ] && [ "$4" = scan ]; then exit 1; fi
-			exit 0
-		fi
-		if [ "$#" = 5 ] && [ "$2" = /run/radio-bringup/omnipha-radio-snapshot/radio.sh ]; then
-			req "intercepted snapshot radio stage $4 marker $5"
-			case "$($b cat /run/case):$4" in
-				full-unpinned-mid-bad:driver|full-unpinned-mid-hash:driver|full-unpinned-gate-bad:services)
-					$b printf '%s\n' "$4" > /run/unpinned-stage
-					$b chmod 600 /run/unpinned-stage
-					$b touch /run/unpinned-stage-barrier
-					while [ ! -f /run/unpinned-stage-release ]; do $b sleep 0.1; done
-					exit 0;;
-			esac
 			exit 0
 		fi
 		exec "$b" "$@";;
@@ -424,29 +397,10 @@ FULLWRAP
 			printf '%s\n' 'fixture full: pinned canonical, route-cache or unpinned candidate post executed after replacing only BB=/bin/busybox with /run/tool; PID 1, the real guard and /bin/busybox stay real BusyBox' \
 				'fixture full: wrapper passes guard, ACK/ready, ordered-record, identity and radio-marker file operations through unchanged; other invocations use the applet allowlist' \
 				'fixture full: mocked boundaries only: dmesg kmsg replay (synthetic pre-cutover panel line and marker publication), rmtfs/daemon process evidence and pinned hashes, pidof, ping, route replies, DNS probe answer, radio stage invocations' \
-				'fixture full unpinned: the candidate copies an edited synthetic radio; radio stage execution is mocked, not the physical radio' \
-				'fixture full unpinned: negative cases mock only the snapshot sha256sum result or exit; BAD_RADIO bytes are not present; guard deadline requests mock recovery'
+				'fixture full unpinned: the candidate launches the edited synthetic radio directly through the persistent path; radio stage execution is mocked, not the physical radio; no snapshot, chain metadata, hash or denylist check; no BAD_RADIO bytes'
 			: > /run/tool-requests
 			full_result=0
-			case "$CASE" in
-				full-unpinned-mid-*|full-unpinned-gate-bad)
-					"$BB" sh /run/full-post.sh > /run/full-post.log 2>&1 &
-					full_post=$!
-					i=0
-					until [ -f /run/unpinned-stage-barrier ]; do
-						[ "$i" -lt 100 ] && "$BB" kill -0 "$full_post" 2>/dev/null || { "$BB" cat /run/full-post.log >&2 2>/dev/null || true; fail "$CASE did not reach the mocked stage barrier"; }
-						"$BB" sleep 0.1
-						i=$((i + 1))
-					done
-					case "$CASE" in full-unpinned-gate-bad) barrier_stage=services;; *) barrier_stage=driver;; esac
-					[ "$("$BB" cat /run/unpinned-stage)" = "$barrier_stage" ] || fail "$CASE stopped at the wrong mocked stage"
-					snapshot=/run/radio-bringup/omnipha-radio-snapshot/radio.sh
-					[ -f "$snapshot" ] && [ ! -L "$snapshot" ] && [ "$("$BB" stat -c '%u:%g:%a:%h' "$snapshot")" = 0:0:600:1 ] || fail "$CASE snapshot metadata invalid at barrier"
-					"$BB" cmp -s "$snapshot" /usr/libexec/omnipha/pmos-radio-bringup-fresh-boot.sh || fail "$CASE snapshot bytes changed at barrier"
-					"$BB" touch /run/unpinned-inject /run/unpinned-stage-release
-					if wait "$full_post"; then full_result=0; else full_result=$?; fi;;
-				*) "$BB" sh /run/full-post.sh > /run/full-post.log 2>&1 || full_result=$?;;
-			esac
+			"$BB" sh /run/full-post.sh > /run/full-post.log 2>&1 || full_result=$?
 			"$BB" cp /run/pre-cutover-record /run/expected-full-record
 			"$BB" printf 'pmos-self-post: post-cutover PID 1 on boot %s; guard identity check passed; pid1 identity check passed\n' "$boot" >> /run/expected-full-record
 			"$BB" cmp -s /run/expected-full-record /.omnipha-boot-record || fail "$CASE record not exactly pre-cutover entries plus post entry"
@@ -494,24 +448,6 @@ FULLWRAP
 					[ ! -e /run/pid1-guard/.success-gated-ack-new ] && [ ! -e /run/pid1-guard/recovery-request ] || fail "$CASE left staging or recovery"
 					"$BB" sleep "$((TEST_BUDGET + 2))"
 					[ ! -e /run/pid1-guard/recovery-request ] && [ "$("$BB" cat /run/pid1-guard/accepted)" = "$boot" ] || fail "$CASE accepted guard requested recovery"
-					;;
-				full-unpinned-bad-radio)
-					[ "$full_result" != 0 ] || fail 'full-unpinned-bad-radio post unexpectedly succeeded'
-					"$BB" grep -q 'unsafe, unreadable or refused radio snapshot' /run/full-post.log || fail 'full-unpinned-bad-radio failure reason missing'
-					[ ! -e "$GATE_DIR" ] || fail 'full-unpinned-bad-radio started a gate'
-					[ ! -e /run/radio-bringup/modem.marker ] || fail 'full-unpinned-bad-radio launched a radio stage'
-					;;
-				full-unpinned-mid-*)
-					[ "$full_result" != 0 ] || fail "$CASE post unexpectedly succeeded"
-					"$BB" grep -q 'unsafe, unreadable or refused radio snapshot before scan' /run/full-post.log || fail "$CASE failure reason missing"
-					[ -f /run/radio-bringup/driver.marker ] && [ -f /run/radio-bringup/scan.marker ] && [ ! -e /run/radio-bringup/services.marker ] || fail "$CASE stage order wrong"
-					[ ! -e "$GATE_DIR" ] || fail "$CASE started a gate"
-					;;
-				full-unpinned-gate-bad)
-					[ "$full_result" != 0 ] || fail "$CASE post unexpectedly succeeded"
-					"$BB" grep -xF "boot=$boot stage=services result=refused-or-interrupted phase=before-publication reason=unsafe, unreadable or refused radio snapshot" "$GATE_DIR/refusal" >/dev/null ||
-						{ "$BB" cat /run/full-post.log "$GATE_DIR/refusal" >&2 2>/dev/null || true; fail "$CASE refusal reason"; }
-					[ -f "$GATE_DIR/radio-health.ok" ] && [ ! -e "$GATE_DIR/services.ok" ] || fail "$CASE gate stage order wrong"
 					;;
 				full-radio-fail)
 					[ "$full_result" != 0 ] || fail 'full-radio-fail post unexpectedly succeeded'
@@ -564,14 +500,9 @@ FULLWRAP
 			fi
 			case "$CASE" in
 				full-radio-fail) expected_stages='modem wpss driver scan';;
-				full-unpinned-bad-radio) expected_stages='';;
-				full-unpinned-mid-*) expected_stages='modem wpss driver';;
 				*) expected_stages='modem wpss driver scan services';;
 			esac
-			case "$CASE" in
-				full-unpinned-*) actual_stages=$("$BB" awk '/^intercepted snapshot radio stage / {printf "%s%s", sep, $5; sep=" "}' /run/tool-requests);;
-				*) actual_stages=$("$BB" awk '/^intercepted radio stage / {printf "%s%s", sep, $4; sep=" "}' /run/tool-requests);;
-			esac
+			actual_stages=$("$BB" awk '/^intercepted radio stage / {printf "%s%s", sep, $4; sep=" "}' /run/tool-requests)
 			[ "$actual_stages" = "$expected_stages" ] || fail "$CASE radio stage invocation order differs: $actual_stages"
 			! "$BB" grep -q '^refused ' /run/tool-requests || { "$BB" grep '^refused ' /run/tool-requests >&2; fail "$CASE wrapper refused an operation"; }
 			"$BB" grep -q 'intercepted dmesg' /run/tool-requests || fail "$CASE mocked panel/kmsg boundary not exercised"
@@ -587,14 +518,18 @@ FULLWRAP
 			esac
 			case "$CASE" in
 				full-unpinned-success)
-					"$BB" grep -qxF 'real snapshot sha256sum' /run/tool-requests || fail "$CASE snapshot hash was not computed by real BusyBox"
-					! "$BB" grep -q '^mocked snapshot hash' /run/tool-requests || fail "$CASE used a mocked snapshot hash"
-					snapshot=/run/radio-bringup/omnipha-radio-snapshot/radio.sh
-					"$BB" cmp -s "$snapshot" /usr/libexec/omnipha/pmos-radio-bringup-fresh-boot.sh || fail "$CASE snapshot differs from the edited synthetic radio"
-					[ "$(hash "$snapshot")" != 146ed59271cde6b593f28212caf8871c0f00062a3c5b1d460c858e4c90271e14 ] || fail "$CASE edited radio still has the canonical pin";;
-				full-unpinned-bad-radio) "$BB" grep -qxF 'mocked snapshot hash BAD_RADIO before launch' /run/tool-requests || fail "$CASE BAD_RADIO hash mock not exercised";;
-				full-unpinned-mid-bad|full-unpinned-gate-bad) "$BB" grep -qxF 'mocked snapshot hash BAD_RADIO after stage barrier' /run/tool-requests || fail "$CASE BAD_RADIO hash mock not exercised";;
-				full-unpinned-mid-hash) "$BB" grep -qxF 'mocked snapshot hash command failure after stage barrier' /run/tool-requests || fail "$CASE hash failure mock not exercised";;
+					persistent=/usr/libexec/omnipha/pmos-radio-bringup-fresh-boot.sh
+					[ "$("$BB" awk -v path="$persistent" '$1 == "intercepted" && $2 == "radio" && $3 == "stage" && $5 == "path" && $6 == path {print $4}' /run/tool-requests)" = "$(printf '%s\n' modem wpss driver scan services)" ] ||
+						fail "$CASE direct persistent radio path was not recorded"
+					! "$BB" grep -qE 'omnipha-radio-snapshot|radio_snapshot|radio snapshot|mocked snapshot hash|BAD_RADIO' /run/tool-requests /run/full-post.log ||
+						fail "$CASE used a snapshot, hash or denylist path"
+					[ ! -e /run/radio-bringup/omnipha-radio-snapshot ] && [ ! -L /run/radio-bringup/omnipha-radio-snapshot ] ||
+						fail "$CASE created a radio snapshot"
+					"$BB" grep -qxF ': mb003-unpinned-synthetic-edit' "$persistent" &&
+						"$BB" cmp -s "$persistent" /run/edited-radio || fail "$CASE edited synthetic radio was not passed through"
+					[ "$(hash "$persistent")" != 146ed59271cde6b593f28212caf8871c0f00062a3c5b1d460c858e4c90271e14 ] &&
+						[ "$(hash "$persistent")" != d7b74c2450fec86b17f325cab4100cc19c0a6319b8f9c5baa73e83a9acb0bfd3 ] ||
+						fail "$CASE edited radio has the canonical pin or BAD_RADIO digest";;
 			esac
 			printf 'pass: %s: generated post with BB redirected ran once; guard and ordered record were real; external evidence was synthetic\n' "$CASE"
 			exit 0;;
@@ -727,7 +662,7 @@ if [ "${1:-}" = --inner ]; then
 		[ -n "$host_ns" ] && [ "$("$BB" readlink "/proc/1/ns/$ns")" != "$host_ns" ] || fail "$ns namespace not isolated"
 	done
 	"$BB" awk -F: 'NR > 2 {gsub(/[ \t]/, "", $1); if ($1 != "lo") bad++; else n++} END {exit(bad || n != 1)}' /proc/net/dev || fail 'network namespace has unexpected interfaces'
-	case "$2" in success|partial|invalid|interrupt|post-interrupt|dead-watcher|replay|late|premature|no-record|bad-record|record-mode|record-symlink|record-links|record-foreign|record-order|record-malformed|panel-absent|panel-record-absent|panel-foreign|panel-conflict|panel-malformed|panel-mode|panel-symlink|panel-links|contract-missing|contract-corrupt|contract-mode|contract-symlink|contract-links|ready-mode|ready-symlink|ready-links|ready-nonce|ready-boot|ready-newline|staging|staging-record-invalid|gate-staging|preplanted-multilink|full-success|full-radio-fail|full-invalid|full-route-cache-success|full-route-cache-internet-dev|full-route-cache-internet-extra|full-route-cache-dns-dev|full-route-cache-dns-extra|full-unpinned-success|full-unpinned-bad-radio|full-unpinned-mid-bad|full-unpinned-mid-hash|full-unpinned-gate-bad) CASE=$2;; *) fail 'invalid case';; esac
+	case "$2" in success|partial|invalid|interrupt|post-interrupt|dead-watcher|replay|late|premature|no-record|bad-record|record-mode|record-symlink|record-links|record-foreign|record-order|record-malformed|panel-absent|panel-record-absent|panel-foreign|panel-conflict|panel-malformed|panel-mode|panel-symlink|panel-links|contract-missing|contract-corrupt|contract-mode|contract-symlink|contract-links|ready-mode|ready-symlink|ready-links|ready-nonce|ready-boot|ready-newline|staging|staging-record-invalid|gate-staging|preplanted-multilink|full-success|full-radio-fail|full-invalid|full-route-cache-success|full-route-cache-internet-dev|full-route-cache-internet-extra|full-route-cache-dns-dev|full-route-cache-dns-extra|full-unpinned-success) CASE=$2;; *) fail 'invalid case';; esac
 	"$BB" mount --make-rprivate / || fail 'cannot privatize mounts'
 	MAIN_NUMS=$HOST_MAIN_NUMS
 	"$BB" mount -t tmpfs -o mode=0700,size=32m tmpfs /run || fail 'private staging run'
@@ -814,6 +749,7 @@ if [ "${1:-}" = --inner ]; then
 	case "$CASE" in
 		full-unpinned-*)
 			"$BB" printf '\n: mb003-unpinned-synthetic-edit\n' >> "$G/usr/libexec/omnipha/pmos-radio-bringup-fresh-boot.sh"
+			"$BB" cp "$G/usr/libexec/omnipha/pmos-radio-bringup-fresh-boot.sh" "$G/run/edited-radio"
 			[ "$(hash "$G/usr/libexec/omnipha/pmos-radio-bringup-fresh-boot.sh")" != 146ed59271cde6b593f28212caf8871c0f00062a3c5b1d460c858e4c90271e14 ] &&
 				[ "$(hash "$G/usr/libexec/omnipha/pmos-radio-bringup-fresh-boot.sh")" != d7b74c2450fec86b17f325cab4100cc19c0a6319b8f9c5baa73e83a9acb0bfd3 ] || fail 'edited synthetic radio hash invalid';;
 	esac
@@ -991,7 +927,6 @@ PREAMBLE
 	"$BB" umount -l /oldroot || fail 'cannot detach host root'
 	case "$CASE" in
 		full-invalid|full-route-cache-internet-*|full-route-cache-dns-*) TEST_BUDGET=20;;
-		full-unpinned-bad-radio|full-unpinned-mid-*|full-unpinned-gate-bad) TEST_BUDGET=30;;
 		full-radio-fail) TEST_BUDGET=15;;
 		full-success|full-route-cache-success|full-unpinned-success) TEST_BUDGET=30;;
 		success|panel-absent|gate-staging|post-interrupt|preplanted-multilink) TEST_BUDGET=30;;
@@ -1221,14 +1156,14 @@ unpinned_ns = {'hashlib': hashlib, 'canonical': builder, 'require': builder.requ
 exec(compile(ast.Module(body=unpinned_body, type_ignores=[]), 'mb003-unpinned-post-interface', 'exec'), unpinned_ns)
 unpinned_bad_radio = unpinned_ns['BAD_RADIO']
 unpinned_post = unpinned_ns['unpinned_post'](builder.runtime_scripts()[builder.FRESH_POST])
-snapshot_needle = b'radio_snapshot="$radio_dir/radio.sh"'
 if (unpinned_bad_radio != 'd7b74c2450fec86b17f325cab4100cc19c0a6319b8f9c5baa73e83a9acb0bfd3' or
         b'RADIO_SHA=' in unpinned_post or unpinned_post.count(b'\nBB=/bin/busybox\n') != 1 or
-        unpinned_post.count(unpinned_bad_radio.encode()) != 1 or
-        unpinned_post.count(b'radio_snapshot_check()') != 1 or
-        unpinned_post.count(snapshot_needle) != 1 or
-        unpinned_post.count(b'radio_snapshot_check') != 5):
-    raise SystemExit('unpinned candidate post radio snapshot interface changed')
+        unpinned_bad_radio.encode() in unpinned_post or b'radio_snapshot' in unpinned_post or
+        b'omnipha-radio-snapshot' in unpinned_post or b'radio snapshot' in unpinned_post or
+        unpinned_post.count(b'\nRADIO="/usr/libexec/omnipha/pmos-radio-bringup-fresh-boot.sh"\n') != 1 or
+        unpinned_post.count(b'$BB sh "$RADIO" "$boot" "$stage" "$marker" || die "radio bring-up $stage failed"\n') != 1 or
+        unpinned_post.count(b'$BB sh "$RADIO" "$boot" services "$marker" < "$PROFILE" || die \'radio bring-up services failed\'\n') != 1):
+    raise SystemExit('unpinned candidate post direct radio launch interface changed')
 work = pathlib.Path(os.environ['WORK'])
 (work / 'gate').write_text(gate)
 (work / 'radio').write_text(radio)
@@ -1261,8 +1196,8 @@ run_case() {
 		/bin/busybox sh "$SCRIPT" --inner "$1"
 }
 if [ "$UNPINNED_ONLY" = 1 ]; then
-	for case in full-unpinned-success full-unpinned-bad-radio full-unpinned-mid-bad full-unpinned-mid-hash full-unpinned-gate-bad; do run_case "$case" || fail "$case isolated fixture"; done
-	printf '%s\n' 'pass: mb003 unpinned candidate cases in host-only isolated ext4 switch_root; radio stages and external evidence were mocked; no device or real BAD_RADIO payload'
+	run_case full-unpinned-success || fail 'full-unpinned-success isolated fixture'
+	printf '%s\n' 'pass: mb003 unpinned candidate direct persistent radio launch in host-only isolated ext4 switch_root; real guard, nonce and ACK; radio stages and external evidence were mocked; no device or BAD_RADIO radio'
 	exit 0
 fi
 if [ "$ROUTE_CACHE_ONLY" = 0 ]; then
@@ -1273,7 +1208,7 @@ if [ "$ROUTE_CACHE_ONLY" = 1 ]; then
 	printf '%s\n' 'pass: route-cache candidate cases in host-only isolated ext4 switch_root; external evidence was synthetic'
 	exit 0
 fi
-for case in full-unpinned-success full-unpinned-bad-radio full-unpinned-mid-bad full-unpinned-mid-hash full-unpinned-gate-bad; do run_case "$case" || fail "$case isolated fixture"; done
+run_case full-unpinned-success || fail 'full-unpinned-success isolated fixture'
 result=$(run_case success) || fail 'isolated success case'
 nonce=$(printf '%s\n' "$result" | "$BB" awk -F= '/^REPLAY_NONCE=/ {print $2}')
 case "$nonce" in ????????????????????????????????????????????????????????????????) case "$nonce" in *[!0-9a-f]*) fail 'invalid captured nonce';; esac;; *) fail 'missing captured nonce';; esac
@@ -1283,4 +1218,4 @@ for case in premature no-record bad-record record-mode record-symlink record-lin
 for case in partial invalid interrupt post-interrupt dead-watcher replay late; do run_case "$case" || fail "$case isolated fixture"; done
 printf '%s\n' 'pass: host-only isolated ext4 switch_root; digest-pinned guard and real generated gate; real ordered-record contract; mocked external evidence; no network or physical device'
 printf '%s\n' 'pass: full cases run the generated post with simulated radio stages; the real guard accepts success and requests mock recovery at the real deadline on failure'
-printf '%s\n' 'pass: unpinned cases run the builder file unpinned_post transform against the canonical fresh post; builder packaging, installer, images and device access are not exercised'
+printf '%s\n' 'pass: unpinned case runs the builder unpinned_post transform with an edited synthetic radio through the direct persistent path; builder packaging, installer, images and device access are not exercised'

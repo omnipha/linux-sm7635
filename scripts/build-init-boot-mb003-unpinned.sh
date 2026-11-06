@@ -6,9 +6,9 @@ OUT=${OUT:-$WORK/out}
 STOCK_INIT=${STOCK_INIT:-$HOME/phone-second-life-data/mb003/parts/init_boot_a.img}
 BASE=${BASE:-$WORK/out/init_boot-mindstorms-wlan.img}
 STOCK_VENDOR_B=${STOCK_VENDOR_B:-$HOME/phone-second-life-data/mb003/parts/vendor_boot_b.img}
-OUTPUT=${OUTPUT:-$OUT/init_boot-mb003-unpinned.img}
-CARRIER=${CARRIER:-$OUT/vendor_boot_b-mb003-unpinned.img}
-MANIFEST=${MANIFEST:-$OUT/mb003-unpinned-pair.manifest.json}
+OUTPUT=${OUTPUT:-$OUT/init_boot-mb003-unpinned-v2.img}
+CARRIER=${CARRIER:-$OUT/vendor_boot_b-mb003-unpinned-v2.img}
+MANIFEST=${MANIFEST:-$OUT/mb003-unpinned-pair-v2.manifest.json}
 LOCK=$WORK/i204-root-contract.lock
 export PYTHONDONTWRITEBYTECODE=1
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }

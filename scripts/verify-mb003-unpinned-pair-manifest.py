@@ -12,9 +12,9 @@ import tarfile
 
 HERE = pathlib.Path(__file__).resolve().parent
 SCHEMA = "omnipha-sm7635-mb003-unpinned-pair-v1"
-MANIFEST_NAME = "mb003-unpinned-pair.manifest.json"
-IMAGES = (("init_boot_a", "init_boot-mb003-unpinned.img", 8388608),
-          ("vendor_boot_b", "vendor_boot_b-mb003-unpinned.img", 100663296))
+MANIFEST_NAME = "mb003-unpinned-pair-v2.manifest.json"
+IMAGES = (("init_boot_a", "init_boot-mb003-unpinned-v2.img", 8388608),
+          ("vendor_boot_b", "vendor_boot_b-mb003-unpinned-v2.img", 100663296))
 USAGE = ("usage: verify-mb003-unpinned-pair-manifest.py "
          "write|verify INIT CARRIER MANIFEST STOCK_INIT BASE STOCK_VENDOR_B LOCK [--lock-fd N]")
 ROUTE_CACHE_SCHEMA = "omnipha-sm7635-route-cache-pair-v1"
