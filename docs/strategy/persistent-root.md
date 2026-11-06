@@ -599,34 +599,7 @@ validated), faults of other files, `:22` loss, power-loss behavior, and every
 item below. See
 [records/2026-11-05-125321-run121-acceptance3-os-release-fault-rescue.md](../../records/2026-11-05-125321-run121-acceptance3-os-release-fault-rescue.md).
 
-**Next single variable (plan owner, 2026-11-05 evening; replaces the
-run-121 text):** build the missing deployable bootstrap, host-only. Reason:
-items 1 (partial), 2 (mount mode, superblock snapshot) and 3 (one fault) have
-measured what the installed pair can answer; the remaining device-measurable
-items (fsck policy on a live `sda13`, carrier-hash re-read) have no admissible
-read-only reader, and item 4 is blocked only because the bootstrap does not
-exist. Waiting for a coordinator measurement that cannot be taken produced
-three `no_candidate` strategist episodes and 5+ hours without a new fact. The
-bootstrap is host work, not a flash: one `init_boot_a`/`vendor_boot_b`
-candidate pair, built and verified on the host only, embedding the two
-anchors of `configs/persistent-root-trust-anchors.json` and a signed baseline
-generation that reproduces today's three pinned files byte for byte, with the
-existing diagnostic `:22` rescue, guard and ACK paths unchanged. Check (host):
-builder output verified by `verify-root-generation-bundle.py` and the pair
-verifier, baseline files byte-identical to the pinned digests, refusal cases
-(wrong anchor, replayed sequence, altered radio `d7b74c24…`) fail closed.
-No device boot, flash or pair authorization comes with it; a flash needs a
-separate coordinator decision on the finished, reviewed candidate.
-Budget: at most three worker sessions or one working day to a verified host
-candidate. Fallback if the bootstrap cannot be made to fit the carrier size
-or cannot keep `:22` rescue intact on the host: stop, report the measured
-reason, and ask the owner whether item 4 is accepted as "pins stay, changes to
-the three pinned paths need a new image" (items 1 to 3 already hold for all
-other userland). Not this: more model redesign rounds, fixtures that re-prove
-refuted exclusion mechanisms, wording-only PRs, a `:22`-outage fault boot
-without a validated non-`:22` restore path. Coordinator-side, separately
-authorized and unchanged: the fsck/journal policy read and the carrier-hash
-re-read once an admissible read-only reader exists.
+**Next single variable (plan owner, 2026-11-06; replaces the spent bootstrap task):** none. The host-only bootstrap is measured blocked, not merely unbuilt: the three baseline payloads derived through `build-init-boot-persistent-root.py::runtime_scripts()` match the pinned digests and sizes, but `verify_owner_bootstrap_baseline` refuses every chain without an offline owner release-key signature, no such signed baseline exists, and throwaway keys are refused (worker comment on #324, 2026-11-05T21:12:56Z; supervisor recheck 22:46Z, worktree `6bfd3bae`, records check passed). The named fallback condition — the bootstrap cannot be produced on the host — has fired. Item 4 is now an owner decision, not another worker session: either the owner signs the reviewed baseline generation with the offline release key, or the owner accepts that the pins stay and changes to the three pinned paths need a new image. Items 1 to 3 already hold for every other userland path. Do not file another bootstrap, fixture, model or wording issue; it repeats a refuted task. The two coordinator reads (fsck/journal policy, carrier-hash re-read) stay separately authorized and unchanged, and neither can run until an admissible read-only reader exists.
 
 ### Guard-window measurement runbook (installed pair)
 
