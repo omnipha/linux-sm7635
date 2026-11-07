@@ -31,6 +31,4 @@ and UPSTREAM.md.
 - Device reference data lives only under `~/phone-second-life-data/mb003` on
   the build host; read-only, never committed.
 - Build artifacts (`Image`, DTBs, logs) stay outside this repo.
-- No flashing, booting or writing to the physical phone from repo work.
-  Physical device work is human-gated in the mission shift state.
 - One build at a time on a host; see README.md build instructions.
